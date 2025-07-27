@@ -1,0 +1,44 @@
+plugins {
+    id 'java'
+}
+
+group = 'org.jinx'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    versions = [
+            junit        : '5.10.0',
+            jackson      : '2.15.2',
+            lombok       : '1.18.32',
+            picocli      : '4.7.5',
+            jpaApi       : '3.1.0',
+            autoService  : '1.1.1'
+    ]
+}
+
+subprojects {
+    apply plugin: 'java'
+
+    group = 'org.jinx'
+    version = '1.0-SNAPSHOT'
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        compileOnly "org.projectlombok:lombok:${versions.lombok}"
+        annotationProcessor "org.projectlombok:lombok:${versions.lombok}"
+
+        testImplementation platform("org.junit:junit-bom:${versions.junit}")
+        testImplementation 'org.junit.jupiter:junit-jupiter'
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+}

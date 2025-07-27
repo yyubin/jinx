@@ -1,0 +1,21 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+dependencies {
+    implementation project(':jinx-core')
+
+    annotationProcessor project(':jinx-processor')
+
+    implementation "info.picocli:picocli:${versions.picocli}"
+    annotationProcessor "info.picocli:picocli-codegen:${versions.picocli}"
+
+    implementation "com.fasterxml.jackson.core:jackson-databind:${versions.jackson}"
+    implementation "com.fasterxml.jackson.core:jackson-core:${versions.jackson}"
+    implementation "com.fasterxml.jackson.core:jackson-annotations:${versions.jackson}"
+}
+
+application {
+    mainClass = 'org.jinx.cli.JinxCli'
+}

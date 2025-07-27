@@ -1,0 +1,12 @@
+plugins {
+    id 'java'
+}
+
+dependencies {
+    implementation project(':jinx-core')
+
+    compileOnly "com.google.auto.service:auto-service:${versions.autoService}"
+    annotationProcessor "com.google.auto.service:auto-service:${versions.autoService}"
+
+    implementation "com.fasterxml.jackson.core:jackson-databind:${versions.jackson}"
+}

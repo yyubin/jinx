@@ -1,0 +1,5 @@
+rootProject.name = 'jinx'
+include 'jinx-core'
+include 'jinx-processor'
+include 'jinx-cli'
+include 'jinx-gradle'
