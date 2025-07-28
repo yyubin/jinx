@@ -13,4 +13,6 @@ public class ConstraintModel {
     private String referencedColumn;
     private OnDeleteAction onDelete;
     private OnUpdateAction onUpdate;
+
+    private String checkClause;
 }

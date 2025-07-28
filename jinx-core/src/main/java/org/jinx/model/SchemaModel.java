@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -15,10 +16,19 @@ public class SchemaModel {
     private String version;
     @Builder.Default
     private Map<String, EntityModel> entities = new HashMap<>();
+    @Builder.Default
+    private Map<String, SequenceModel> sequences = new LinkedHashMap<>();
+    @Builder.Default
+    private Map<String, TableGeneratorModel> tableGenerators = new LinkedHashMap<>();
+
     @JsonCreator
     public SchemaModel(@JsonProperty("version") String version,
-                       @JsonProperty("entities") Map<String, EntityModel> entities) {
+                       @JsonProperty("entities") Map<String, EntityModel> entities,
+                       @JsonProperty("sequences") Map<String, SequenceModel> sequences,
+                       @JsonProperty("tableGenerators") Map<String, TableGeneratorModel> tableGenerators) {
         this.version = version;
         this.entities = entities != null ? entities : new ConcurrentHashMap<>();
+        this.sequences = sequences != null ? sequences : new LinkedHashMap<>();
+        this.tableGenerators = tableGenerators != null ? tableGenerators : new LinkedHashMap<>();
     }
 }

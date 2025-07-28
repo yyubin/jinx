@@ -14,6 +14,7 @@ import java.lang.annotation.Target;
 public @interface Constraint {
     String value();                         // 제약조건 이름
     ConstraintType type();                  // 제약조건 종류
+    String expression() default "";         // CHECK 전용 – SQL boolean 식
     OnDeleteAction onDelete() default OnDeleteAction.NO_ACTION;
     OnUpdateAction onUpdate() default OnUpdateAction.NO_ACTION;
 }

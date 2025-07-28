@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.google.auto.service.AutoService;
 import jakarta.persistence.*;
 import org.jinx.annotation.*;
-import org.jinx.migration.internal.MySQLDialect;
 import org.jinx.model.*;
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
@@ -15,10 +14,7 @@ import javax.lang.model.type.TypeMirror;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.io.Writer;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -40,8 +36,14 @@ import java.util.*;
         "jakarta.persistence.Embeddable",
         "jakarta.persistence.Inheritance",
         "jakarta.persistence.DiscriminatorColumn",
+        "jakarta.persistence.SequenceGenerator",
+        "jakarta.persistence.SequenceGenerators",
+        "jakarta.persistence.TableGenerator",
+        "jakarta.persistence.Transient",
+        "jakarta.persistence.Enumerated",
         "org.jinx.annotation.Constraint",
-        "org.jinx.annotation.Constraints"
+        "org.jinx.annotation.Constraints",
+        "org.jinx.annotation.Identity"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 public class JpaSqlGeneratorProcessor extends AbstractProcessor {
@@ -51,31 +53,27 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-        if (!roundEnv.processingOver()) {
-            return true;           // 중간 라운드에서는 패스
-        }
+        if (roundEnv.processingOver()) {
+            schemaModel = SchemaModel.builder()
+                    .version(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")))
+                    .build();
 
-        schemaModel = SchemaModel.builder()
-                .version(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")))
-                .build();
-
-        // Pass 1: 기본 정보 수집
-        for (Element element : roundEnv.getElementsAnnotatedWith(Entity.class)) {
-            if (element.getKind() == ElementKind.CLASS) {
-                buildBasicEntityModel((TypeElement) element);
+            for (Element element : roundEnv.getElementsAnnotatedWith(Entity.class)) {
+                if (element.getKind() == ElementKind.CLASS) {
+                    buildBasicEntityModel((TypeElement) element);
+                }
             }
-        }
 
-        // Pass 2: 관계 및 상속 처리
-        for (Element element : roundEnv.getElementsAnnotatedWith(Entity.class)) {
-            if (element.getKind() == ElementKind.CLASS) {
-                resolveComplexStructures((TypeElement) element, roundEnv);
+            for (Element element : roundEnv.getElementsAnnotatedWith(Entity.class)) {
+                if (element.getKind() == ElementKind.CLASS) {
+                    resolveComplexStructures((TypeElement) element, roundEnv);
+                }
             }
-        }
 
-        // JSON 저장
-        saveModelToJson();
-        return true;
+            saveModelToJson();
+            return true;
+        }
+        return false;
     }
 
     private void buildBasicEntityModel(TypeElement typeElement) {
@@ -85,7 +83,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
 
         if (schemaModel.getEntities().containsKey(entityName)) {
             processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                    "Duplicate entity name: " + entityName);
+                    "Duplicate entity found: " + entityName, typeElement);
             return;
         }
 
@@ -94,17 +92,19 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 .tableName(tableName)
                 .build();
 
-        // 클래스 레벨 제약조건 처리
+        processClassLevelSequenceGenerators(typeElement);
         processConstraints(typeElement, null, entity.getConstraints());
 
-        // 필드 처리 (@Column, @Id, @Embedded)
         for (Element enclosed : typeElement.getEnclosedElements()) {
+            if (enclosed.getAnnotation(Transient.class) != null ||
+                    enclosed.getModifiers().contains(Modifier.TRANSIENT)) {
+                continue;
+            }
             if (enclosed.getKind() != ElementKind.FIELD) continue;
             VariableElement field = (VariableElement) enclosed;
             Column column = field.getAnnotation(Column.class);
             Embedded embedded = field.getAnnotation(Embedded.class);
-
-            processConstraints(field, field.getSimpleName().toString(), entity.getConstraints());
+            Identity identity = field.getAnnotation(Identity.class);
 
             if (embedded != null) {
                 processEmbedded(field, entity.getColumns(), entity.getConstraints(), new HashSet<>());
@@ -112,10 +112,9 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
             }
 
             if (column != null) {
-                ColumnModel columnModel = ColumnModel.builder()
+                ColumnModel.ColumnModelBuilder columnBuilder = ColumnModel.builder()
                         .columnName(column.name().isEmpty() ? field.getSimpleName().toString() : column.name())
                         .javaType(field.asType().toString())
-                        .sqlType(MySQLDialect.mapJavaTypeToSqlType(field.asType().toString(), column))
                         .isPrimaryKey(field.getAnnotation(Id.class) != null)
                         .isNullable(column.nullable())
                         .isUnique(column.unique())
@@ -123,46 +122,186 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                         .precision(column.precision())
                         .scale(column.scale())
                         .defaultValue(column.columnDefinition().isEmpty() ? null : column.columnDefinition())
-                        .build();
-                if (entity.getColumns().containsKey(columnModel.getColumnName())) {
-                    processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                            "Duplicate column name: " + columnModel.getColumnName() + " in entity " + entityName);
-                    return;
+                        .generationStrategy(GenerationStrategy.NONE)
+                        .identityStartValue(1)
+                        .identityIncrement(1)
+                        .identityCache(0)
+                        .identityMinValue(Long.MIN_VALUE)
+                        .identityMaxValue(Long.MAX_VALUE)
+                        .identityOptions(new String[]{})
+                        .enumStringMapping(false)
+                        .enumValues(new String[]{});
+
+
+                Enumerated enumerated = field.getAnnotation(Enumerated.class);
+                if (enumerated != null) {
+                    columnBuilder.enumStringMapping(enumerated.value() == EnumType.STRING);
+                    columnBuilder.enumValues(getEnumConstants(field.asType()));
                 }
-                entity.getColumns().put(columnModel.getColumnName(), columnModel);
+
+                GeneratedValue gv = field.getAnnotation(GeneratedValue.class);
+                if (identity != null) {
+                    columnBuilder.generationStrategy(GenerationStrategy.IDENTITY)
+                            .identityStartValue(identity.start())
+                            .identityIncrement(identity.increment())
+                            .identityCache(identity.cache())
+                            .identityMinValue(identity.min())
+                            .identityMaxValue(identity.max())
+                            .identityOptions(identity.options());
+                } else if (gv != null) {
+                    switch (gv.strategy()) {
+                        case IDENTITY, AUTO:
+                            columnBuilder.generationStrategy(GenerationStrategy.IDENTITY);
+                            break;
+
+                        case SEQUENCE:
+                            columnBuilder.generationStrategy(GenerationStrategy.SEQUENCE);
+                            String generatorName = gv.generator();
+                            if (generatorName.isBlank()) {
+                                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
+                                        "@GeneratedValue(strategy=SEQUENCE) must specify a 'generator'", field);
+                                continue;
+                            }
+
+                            SequenceGenerator sg = field.getAnnotation(SequenceGenerator.class);
+                            if (sg != null) {
+                                if (!sg.name().equals(generatorName)) {
+                                    processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
+                                            "GeneratedValue generator '" + generatorName + "' does not match SequenceGenerator name '" + sg.name() + "'", field);
+                                    continue;
+                                }
+                                schemaModel.getSequences().computeIfAbsent(sg.name(), key ->
+                                        SequenceModel.builder()
+                                                .name(sg.sequenceName().isBlank() ? key : sg.sequenceName())
+                                                .initialValue(sg.initialValue())
+                                                .allocationSize(sg.allocationSize())
+                                                .build()
+                                );
+                            }
+
+                            if (!schemaModel.getSequences().containsKey(generatorName)) {
+                                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
+                                        "SequenceGenerator '" + generatorName + "' is not defined in the entity or its fields.", field);
+                                continue;
+                            }
+                            columnBuilder.sequenceName(generatorName);
+                            break;
+
+                        case TABLE:
+                            columnBuilder.generationStrategy(GenerationStrategy.TABLE);
+                            TableGenerator tg = field.getAnnotation(TableGenerator.class);
+                            if (tg != null) {
+                                schemaModel.getTableGenerators().computeIfAbsent(tg.name(), key ->
+                                        TableGeneratorModel.builder()
+                                                .name(tg.name())
+                                                .table(tg.table().isEmpty() ? "sequence_table" : tg.table())
+                                                .pkColumnName(tg.pkColumnName().isEmpty() ? "pk_column" : tg.pkColumnName())
+                                                .valueColumnName(tg.valueColumnName().isEmpty() ? "value_column" : tg.valueColumnName())
+                                                .pkColumnValue(tg.pkColumnValue())
+                                                .initialValue(tg.initialValue())
+                                                .allocationSize(tg.allocationSize())
+                                                .build()
+                                );
+                                columnBuilder.tableGeneratorName(tg.name());
+                            }
+                            break;
+                    }
+                } else if (columnBuilder.build().isPrimaryKey()) {
+                    columnBuilder.isManualPrimaryKey(true);
+                }
+
+                ColumnModel builtColumn = columnBuilder.build();
+                String colName = builtColumn.getColumnName();
+                if (entity.getColumns().containsKey(colName)) {
+                    processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
+                            "Duplicate column name '" + colName + "' in entity " + entityName, field);
+                    continue;
+                }
+                entity.getColumns().putIfAbsent(colName, builtColumn);
+                processConstraints(field, colName, entity.getConstraints());
             }
         }
 
-        // 인덱스 처리
         if (table != null) {
             for (Index index : table.indexes()) {
+                String indexName = index.name();
+                if (entity.getIndexes().containsKey(indexName)) {
+                    processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
+                            "Duplicate index name '" + indexName + "' in entity " + entityName, typeElement);
+                    continue;
+                }
                 IndexModel indexModel = IndexModel.builder()
-                        .indexName(index.name())
+                        .indexName(indexName)
                         .columnNames(Arrays.asList(index.columnList().split(",\\s*")))
                         .isUnique(index.unique())
                         .build();
-                if (entity.getIndexes().containsKey(indexModel.getIndexName())) {
-                    processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                            "Duplicate index name: " + indexModel.getIndexName() + " in entity " + entityName);
-                    return;
-                }
                 entity.getIndexes().put(indexModel.getIndexName(), indexModel);
             }
         }
 
-        schemaModel.getEntities().put(entity.getEntityName(), entity);
+        schemaModel.getEntities().putIfAbsent(entity.getEntityName(), entity);
+    }
+
+    private String[] getEnumConstants(TypeMirror tm) {
+        if (!(tm instanceof DeclaredType dt)) return new String[]{};
+        Element e = dt.asElement();
+        if (e.getKind() != ElementKind.ENUM) return new String[]{};
+
+        return e.getEnclosedElements().stream()
+                .filter(el -> el.getKind() == ElementKind.ENUM_CONSTANT)
+                .map(Element::getSimpleName)
+                .map(Object::toString)
+                .toArray(String[]::new);
+    }
+
+    private void processClassLevelSequenceGenerators(TypeElement typeElement) {
+        List<SequenceGenerator> sequenceGenerators = new ArrayList<>();
+
+        SequenceGenerator single = typeElement.getAnnotation(SequenceGenerator.class);
+        if (single != null) {
+            sequenceGenerators.add(single);
+        }
+
+        SequenceGenerators multiple = typeElement.getAnnotation(SequenceGenerators.class);
+        if (multiple != null) {
+            sequenceGenerators.addAll(Arrays.asList(multiple.value()));
+        }
+
+        for (SequenceGenerator sg : sequenceGenerators) {
+            if (sg.name().isBlank()) {
+                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
+                        "SequenceGenerator must have a non-blank name.", typeElement);
+                continue;
+            }
+
+            if (schemaModel.getSequences().containsKey(sg.name())) {
+                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
+                        "Duplicate SequenceGenerator name '" + sg.name() + "'", typeElement);
+                continue;
+            }
+
+            schemaModel.getSequences().computeIfAbsent(sg.name(), key ->
+                    SequenceModel.builder()
+                            .name(sg.sequenceName().isBlank() ? key : sg.sequenceName())
+                            .initialValue(sg.initialValue())
+                            .allocationSize(sg.allocationSize())
+                            .build()
+            );
+        }
     }
 
     private void resolveComplexStructures(TypeElement typeElement, RoundEnvironment roundEnv) {
         EntityModel ownerEntity = schemaModel.getEntities().get(typeElement.getQualifiedName().toString());
         if (ownerEntity == null) return;
 
-        // 상속 처리
         resolveInheritance(ownerEntity, typeElement, roundEnv);
 
-        // 관계 처리
         for (Element field : typeElement.getEnclosedElements()) {
             if (field.getKind() != ElementKind.FIELD) continue;
+            if (field.getAnnotation(Transient.class) != null ||
+                    field.getModifiers().contains(Modifier.TRANSIENT)) {
+                continue;
+            }
             VariableElement variableField = (VariableElement) field;
             resolveFieldRelationshipsAndConstraints(variableField, ownerEntity);
         }
@@ -173,14 +312,12 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         OneToOne oneToOne = field.getAnnotation(OneToOne.class);
         ManyToMany manyToMany = field.getAnnotation(ManyToMany.class);
 
-        // 관계 처리
         if (manyToOne != null || oneToOne != null) {
             processToOneRelationship(field, ownerEntity);
         } else if (manyToMany != null) {
             processManyToMany(field, ownerEntity);
         }
 
-        // 필드 레벨 제약조건 처리
         processConstraints(field, field.getSimpleName().toString(), ownerEntity.getConstraints());
     }
 
@@ -194,17 +331,17 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
             if (discriminatorColumn != null) {
                 ColumnModel dColumn = ColumnModel.builder()
                         .columnName(discriminatorColumn.name().isEmpty() ? "dtype" : discriminatorColumn.name())
-                        .sqlType(MySQLDialect.mapDiscriminatorType(discriminatorColumn.discriminatorType()))
                         .javaType("java.lang.String")
                         .isPrimaryKey(false)
                         .isNullable(false)
+                        .generationStrategy(GenerationStrategy.NONE)
                         .build();
                 if (entity.getColumns().containsKey(dColumn.getColumnName())) {
                     processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                            "Duplicate column name: " + dColumn.getColumnName() + " in entity " + entity.getEntityName());
+                            "Duplicate column name '" + dColumn.getColumnName() + "' for discriminator in entity " + entity.getEntityName(), typeElement);
                     return;
                 }
-                entity.getColumns().put(dColumn.getColumnName(), dColumn);
+                entity.getColumns().putIfAbsent(dColumn.getColumnName(), dColumn);
             }
         } else if (inheritance.strategy() == InheritanceType.JOINED) {
             entity.setInheritance("JOINED");
@@ -216,8 +353,6 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         String parentPkColumnName = findPrimaryKeyColumnName(parentEntity);
         ColumnModel parentPkColumn = parentEntity.getColumns().get(parentPkColumnName);
         if (parentPkColumn == null) {
-            processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                    "Primary key not found for parent entity: " + parentEntity.getEntityName());
             return;
         }
 
@@ -234,16 +369,15 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                     ColumnModel idColumnAsFk = ColumnModel.builder()
                             .columnName(parentPkColumnName)
                             .javaType(parentPkColumn.getJavaType())
-                            .sqlType(parentPkColumn.getSqlType())
                             .isPrimaryKey(true)
                             .isNullable(false)
                             .build();
                     if (childEntity.getColumns().containsKey(idColumnAsFk.getColumnName())) {
                         processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                                "Duplicate column name: " + idColumnAsFk.getColumnName() + " in child entity " + childEntity.getEntityName());
+                                "Duplicate column name '" + idColumnAsFk.getColumnName() + "' in child entity " + childEntity.getEntityName(), childType);
                         return;
                     }
-                    childEntity.getColumns().put(idColumnAsFk.getColumnName(), idColumnAsFk);
+                    childEntity.getColumns().putIfAbsent(idColumnAsFk.getColumnName(), idColumnAsFk);
 
                     RelationshipModel relationship = RelationshipModel.builder()
                             .type("JoinedInheritance")
@@ -260,27 +394,15 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         if (joinColumn == null) return;
 
         TypeElement referencedTypeElement = getReferencedTypeElement(field.asType());
-        if (referencedTypeElement == null) {
-            processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                    "Cannot resolve referenced type for field: " + field.getSimpleName() + " in entity " + ownerEntity.getEntityName());
-            return;
-        }
+        if (referencedTypeElement == null) return;
         EntityModel referencedEntity = schemaModel.getEntities().get(referencedTypeElement.getQualifiedName().toString());
-        if (referencedEntity == null) {
-            processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                    "Referenced entity not found: " + referencedTypeElement.getQualifiedName() + " for field " + field.getSimpleName());
-            return;
-        }
+        if (referencedEntity == null) return;
 
         String referencedPkColumnName = joinColumn.referencedColumnName().isEmpty()
                 ? findPrimaryKeyColumnName(referencedEntity)
                 : joinColumn.referencedColumnName();
         ColumnModel referencedPkColumn = referencedEntity.getColumns().get(referencedPkColumnName);
-        if (referencedPkColumn == null) {
-            processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                    "Referenced primary key column not found: " + referencedPkColumnName + " in entity " + referencedEntity.getEntityName());
-            return;
-        }
+        if (referencedPkColumn == null) return;
 
         String fkColumnName = joinColumn.name().isEmpty() ? field.getSimpleName().toString() + "_" + referencedPkColumnName : joinColumn.name();
         MapsId mapsId = field.getAnnotation(MapsId.class);
@@ -288,17 +410,17 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         ColumnModel fkColumn = ColumnModel.builder()
                 .columnName(fkColumnName)
                 .javaType(referencedPkColumn.getJavaType())
-                .sqlType(referencedPkColumn.getSqlType())
                 .isPrimaryKey(mapsId != null)
                 .isNullable(mapsId == null)
                 .isUnique(field.getAnnotation(OneToOne.class) != null && mapsId == null)
+                .generationStrategy(GenerationStrategy.NONE)
                 .build();
         if (ownerEntity.getColumns().containsKey(fkColumnName)) {
             processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                    "Duplicate column name: " + fkColumnName + " in entity " + ownerEntity.getEntityName());
+                    "Duplicate column name '" + fkColumnName + "' in entity " + ownerEntity.getEntityName(), field);
             return;
         }
-        ownerEntity.getColumns().put(fkColumnName, fkColumn);
+        ownerEntity.getColumns().putIfAbsent(fkColumnName, fkColumn);
 
         RelationshipModel relationship = RelationshipModel.builder()
                 .type(field.getAnnotation(ManyToOne.class) != null ? "ManyToOne" : "OneToOne")
@@ -306,7 +428,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 .referencedTable(referencedEntity.getTableName())
                 .referencedColumn(referencedPkColumnName)
                 .mapsId(mapsId != null)
-                .constraintName(joinColumn.name()) // FK 이름 포함
+                .constraintName(joinColumn.name())
                 .build();
         ownerEntity.getRelationships().add(relationship);
     }
@@ -314,17 +436,9 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
     private void processManyToMany(VariableElement field, EntityModel ownerEntity) {
         JoinTable joinTable = field.getAnnotation(JoinTable.class);
         TypeElement referencedTypeElement = getReferencedTypeElement(field.asType());
-        if (referencedTypeElement == null) {
-            processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                    "Cannot resolve referenced type for field: " + field.getSimpleName() + " in entity " + ownerEntity.getEntityName());
-            return;
-        }
+        if (referencedTypeElement == null) return;
         EntityModel referencedEntity = schemaModel.getEntities().get(referencedTypeElement.getQualifiedName().toString());
-        if (referencedEntity == null) {
-            processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                    "Referenced entity not found: " + referencedTypeElement.getQualifiedName() + " for field " + field.getSimpleName());
-            return;
-        }
+        if (referencedEntity == null) return;
 
         String ownerTable = ownerEntity.getTableName();
         String referencedTable = referencedEntity.getTableName();
@@ -332,11 +446,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         String inversePkColumnName = findPrimaryKeyColumnName(referencedEntity);
         ColumnModel ownerPkColumn = ownerEntity.getColumns().get(ownerPkColumnName);
         ColumnModel inversePkColumn = referencedEntity.getColumns().get(inversePkColumnName);
-        if (ownerPkColumn == null || inversePkColumn == null) {
-            processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                    "Primary key column not found for owner or referenced entity: " + ownerEntity.getEntityName() + "/" + referencedEntity.getEntityName());
-            return;
-        }
+        if (ownerPkColumn == null || inversePkColumn == null) return;
 
         String joinTableName;
         String ownerFkColumn;
@@ -355,6 +465,8 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         }
 
         if (schemaModel.getEntities().containsKey(joinTableName)) {
+            processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
+                    "Duplicate join table entity '" + joinTableName + "'", field);
             return;
         }
 
@@ -367,20 +479,20 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         ColumnModel ownerFkColumnModel = ColumnModel.builder()
                 .columnName(ownerFkColumn)
                 .javaType(ownerPkColumn.getJavaType())
-                .sqlType(ownerPkColumn.getSqlType())
                 .isPrimaryKey(true)
+                .generationStrategy(GenerationStrategy.NONE)
                 .isNullable(false)
                 .build();
-        joinTableEntity.getColumns().put(ownerFkColumn, ownerFkColumnModel);
+        joinTableEntity.getColumns().putIfAbsent(ownerFkColumn, ownerFkColumnModel);
 
         ColumnModel inverseFkColumnModel = ColumnModel.builder()
                 .columnName(inverseFkColumn)
                 .javaType(inversePkColumn.getJavaType())
-                .sqlType(inversePkColumn.getSqlType())
                 .isPrimaryKey(true)
+                .generationStrategy(GenerationStrategy.NONE)
                 .isNullable(false)
                 .build();
-        joinTableEntity.getColumns().put(inverseFkColumn, inverseFkColumnModel);
+        joinTableEntity.getColumns().putIfAbsent(inverseFkColumn, inverseFkColumnModel);
 
         RelationshipModel ownerRelationship = RelationshipModel.builder()
                 .type("ManyToMany")
@@ -401,7 +513,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         joinTableEntity.getRelationships().add(inverseRelationship);
 
         processConstraints(field, null, joinTableEntity.getConstraints());
-        schemaModel.getEntities().put(joinTableEntity.getEntityName(), joinTableEntity);
+        schemaModel.getEntities().putIfAbsent(joinTableEntity.getEntityName(), joinTableEntity);
     }
 
     private void processEmbedded(VariableElement field, Map<String, ColumnModel> columns, List<ConstraintModel> constraints, Set<String> processedTypes) {
@@ -411,11 +523,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         if (embeddableType.getAnnotation(Embeddable.class) == null) return;
 
         String typeName = embeddableType.getQualifiedName().toString();
-        if (processedTypes.contains(typeName)) {
-            processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                    "Cyclic embedded type detected: " + typeName);
-            return;
-        }
+        if (processedTypes.contains(typeName)) return;
         processedTypes.add(typeName);
 
         AttributeOverrides overrides = field.getAnnotation(AttributeOverrides.class);
@@ -431,6 +539,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
             VariableElement embeddedField = (VariableElement) enclosed;
             Column column = embeddedField.getAnnotation(Column.class);
             Embedded nestedEmbedded = embeddedField.getAnnotation(Embedded.class);
+            Identity identity = embeddedField.getAnnotation(Identity.class);
 
             if (nestedEmbedded != null) {
                 processEmbedded(embeddedField, columns, constraints, processedTypes);
@@ -440,25 +549,89 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
             if (column != null) {
                 String columnName = columnOverrides.getOrDefault(embeddedField.getSimpleName().toString(),
                         column.name().isEmpty() ? embeddedField.getSimpleName().toString() : column.name());
-                ColumnModel columnModel = ColumnModel.builder()
+                ColumnModel.ColumnModelBuilder columnBuilder = ColumnModel.builder()
                         .columnName(columnName)
                         .javaType(embeddedField.asType().toString())
-                        .sqlType(MySQLDialect.mapJavaTypeToSqlType(embeddedField.asType().toString(), column))
-                        .isPrimaryKey(false)
+                        .isPrimaryKey(embeddedField.getAnnotation(Id.class) != null)
                         .isNullable(column.nullable())
                         .isUnique(column.unique())
                         .length(column.length())
                         .precision(column.precision())
                         .scale(column.scale())
+                        .generationStrategy(GenerationStrategy.NONE)
                         .defaultValue(column.columnDefinition().isEmpty() ? null : column.columnDefinition())
-                        .build();
+                        .identityStartValue(1)
+                        .identityIncrement(1)
+                        .identityCache(0)
+                        .identityMinValue(Long.MIN_VALUE)
+                        .identityMaxValue(Long.MAX_VALUE)
+                        .identityOptions(new String[]{});
+
+                if (identity != null) {
+                    columnBuilder.generationStrategy(GenerationStrategy.IDENTITY)
+                            .identityStartValue(identity.start())
+                            .identityIncrement(identity.increment())
+                            .identityCache(identity.cache())
+                            .identityMinValue(identity.min())
+                            .identityMaxValue(identity.max())
+                            .identityOptions(identity.options());
+                } else if (embeddedField.getAnnotation(GeneratedValue.class) != null) {
+                    GeneratedValue gv = embeddedField.getAnnotation(GeneratedValue.class);
+                    switch (gv.strategy()) {
+                        case IDENTITY, AUTO:
+                            columnBuilder.generationStrategy(GenerationStrategy.IDENTITY);
+                            break;
+                        case SEQUENCE:
+                            columnBuilder.generationStrategy(GenerationStrategy.SEQUENCE);
+                            String generatorName = gv.generator();
+                            if (generatorName.isBlank()) {
+                                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
+                                        "@GeneratedValue(strategy=SEQUENCE) must specify a 'generator' in embedded field", embeddedField);
+                                continue;
+                            }
+                            // Sequence handling for embedded fields (simplified)
+                            SequenceGenerator sg = embeddedField.getAnnotation(SequenceGenerator.class);
+                            if (sg != null && sg.name().equals(generatorName)) {
+                                schemaModel.getSequences().computeIfAbsent(sg.name(), key ->
+                                        SequenceModel.builder()
+                                                .name(sg.sequenceName().isBlank() ? key : sg.sequenceName())
+                                                .initialValue(sg.initialValue())
+                                                .allocationSize(sg.allocationSize())
+                                                .build()
+                                );
+                                columnBuilder.sequenceName(generatorName);
+                            }
+                            break;
+                        case TABLE:
+                            columnBuilder.generationStrategy(GenerationStrategy.TABLE);
+                            TableGenerator tg = embeddedField.getAnnotation(TableGenerator.class);
+                            if (tg != null) {
+                                schemaModel.getTableGenerators().computeIfAbsent(tg.name(), key ->
+                                        TableGeneratorModel.builder()
+                                                .name(tg.name())
+                                                .table(tg.table().isEmpty() ? "sequence_table" : tg.table())
+                                                .pkColumnName(tg.pkColumnName().isEmpty() ? "pk_column" : tg.pkColumnName())
+                                                .valueColumnName(tg.valueColumnName().isEmpty() ? "value_column" : tg.valueColumnName())
+                                                .pkColumnValue(tg.pkColumnValue())
+                                                .initialValue(tg.initialValue())
+                                                .allocationSize(tg.allocationSize())
+                                                .build()
+                                );
+                                columnBuilder.tableGeneratorName(tg.name());
+                            }
+                            break;
+                    }
+                } else if (columnBuilder.build().isPrimaryKey()) {
+                    columnBuilder.isManualPrimaryKey(true);
+                }
+
+                ColumnModel columnModel = columnBuilder.build();
                 if (columns.containsKey(columnModel.getColumnName())) {
                     processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                            "Duplicate column name in embedded type: " + columnModel.getColumnName());
-                    return;
+                            "Duplicate embedded column name '" + columnModel.getColumnName() + "'", embeddedField);
+                    continue;
                 }
-                columns.put(columnModel.getColumnName(), columnModel);
-
+                columns.putIfAbsent(columnModel.getColumnName(), columnModel);
                 processConstraints(embeddedField, columnModel.getColumnName(), constraints);
             }
         }
@@ -484,22 +657,20 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
             ConstraintType type = c.type();
             if (type == ConstraintType.AUTO) {
                 type = inferConstraintType(element, fieldName);
-                if (type == null) {
-                    processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                            "Cannot infer constraint type for " + element.getSimpleName() + ". Please specify explicit type.");
-                    continue;
-                }
+                if (type == null) continue;
             }
 
+            String checkExpr = null;
             if (type == ConstraintType.CHECK) {
-                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.WARNING,
-                        "CHECK constraints may not be enforced in MySQL versions prior to 8.0.16 for constraint: " + c.value());
+                checkExpr = c.expression();
+                if (checkExpr.isBlank()) continue;
             }
 
             ConstraintModel constraintModel = ConstraintModel.builder()
                     .name(c.value())
                     .type(type)
                     .column(fieldName)
+                    .checkClause(checkExpr)
                     .build();
 
             if (type == ConstraintType.FOREIGN_KEY && element.getKind() == ElementKind.FIELD) {
@@ -513,13 +684,9 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                         constraintModel.setReferencedColumn(referencedPkColumnName);
                         constraintModel.setName(c.value().isEmpty() ? "fk_" + fieldName : c.value());
                     } else {
-                        processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                                "Referenced entity not found for FOREIGN_KEY constraint: " + c.value());
                         continue;
                     }
                 } else {
-                    processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                            "Cannot resolve referenced type for FOREIGN_KEY constraint: " + c.value());
                     continue;
                 }
             }
@@ -563,8 +730,6 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 return (TypeElement) element;
             }
         }
-        processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                "Cannot resolve type element for type: " + typeMirror);
         return null;
     }
 
@@ -572,9 +737,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         try {
             String fileName = "jinx/schema-" + schemaModel.getVersion() + ".json";
             FileObject file = processingEnv.getFiler()
-                    .createResource(StandardLocation.CLASS_OUTPUT,
-                            /* pkg */ "",
-                            fileName);
+                    .createResource(StandardLocation.CLASS_OUTPUT, "", fileName);
 
             try (Writer writer = file.openWriter()) {
                 OBJECT_MAPPER.writeValue(writer, schemaModel);
@@ -586,33 +749,10 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
     }
 
     private boolean isSubType(TypeElement child, TypeElement parent) {
-        if (child == null || parent == null) {
-            processingEnv.getMessager().printMessage(
-                    javax.tools.Diagnostic.Kind.ERROR,
-                    "Invalid TypeElement: child or parent is null"
-            );
-            return false;
-        }
-
+        if (child == null || parent == null) return false;
         TypeMirror childType = child.asType();
         TypeMirror parentType = parent.asType();
-
-        if (childType == null || parentType == null) {
-            processingEnv.getMessager().printMessage(
-                    javax.tools.Diagnostic.Kind.ERROR,
-                    "Invalid TypeMirror for child: " + child.getSimpleName() +
-                            " or parent: " + parent.getSimpleName()
-            );
-            return false;
-        }
-
-        boolean isSubtype = processingEnv.getTypeUtils().isSubtype(childType, parentType);
-        if (isSubtype) {
-            processingEnv.getMessager().printMessage(
-                    javax.tools.Diagnostic.Kind.NOTE,
-                    child.getSimpleName() + " is a subtype of " + parent.getSimpleName()
-            );
-        }
-        return isSubtype;
+        if (childType == null || parentType == null) return false;
+        return processingEnv.getTypeUtils().isSubtype(childType, parentType);
     }
 }

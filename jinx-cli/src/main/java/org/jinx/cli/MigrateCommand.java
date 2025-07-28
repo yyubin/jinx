@@ -5,17 +5,17 @@ import org.jinx.migration.Dialect;
 import org.jinx.migration.DiffResult;
 import org.jinx.migration.MigrationGenerator;
 import org.jinx.migration.SchemaDiffer;
-import org.jinx.migration.internal.MySQLDialect;
+import org.jinx.migration.dialect.mysql.MySqlDialect;
 import org.jinx.model.SchemaModel;
 import picocli.CommandLine;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
+
 @CommandLine.Command(
         name = "migrate",
         mixinStandardHelpOptions = true,
@@ -45,6 +45,12 @@ public class MigrateCommand implements Callable<Integer> {
     )
     private Path outputDir;
 
+    @CommandLine.Option(
+            names = "--force",
+            description = "데이터 손실 위험이 있는 변경 사항(예: Enum 타입 변경)을 강제로 실행합니다."
+    )
+    private boolean force;
+
     @Override public Integer call() {
         try {
             if (!Files.exists(schemaDir)) {
@@ -54,8 +60,7 @@ public class MigrateCommand implements Callable<Integer> {
 
             List<Path> schemas = Files.list(schemaDir)
                     .filter(p -> p.getFileName().toString().matches("schema-\\d{14}\\.json"))
-                    .sorted((a, b) -> b.getFileName().toString()
-                            .compareTo(a.getFileName().toString()))
+                    .sorted((a, b) -> b.getFileName().toString().compareTo(a.getFileName().toString()))
                     .toList();
 
             if (schemas.size() < 2) {
@@ -72,13 +77,21 @@ public class MigrateCommand implements Callable<Integer> {
                 return 0;
             }
 
+            // --- 위험한 변경 감지 로직 추가 ---
+            List<String> dangerousChanges = findDangerousChanges(diff);
+            if (!dangerousChanges.isEmpty() && !force) {
+                System.err.println("⚠️  데이터 손실 위험이 있는 변경이 감지되어 중단합니다.");
+                dangerousChanges.forEach(change -> System.err.println("   - " + change));
+                System.err.println("\n   계속하려면 --force 옵션을 지정하세요.");
+                return 1;
+            }
+
             Dialect dialect = switch (dialectName.toLowerCase()) {
-                case "mysql" -> new MySQLDialect();
-                // case "postgres" -> new PostgresDialect();
+                case "mysql" -> new MySqlDialect();
                 default -> throw new IllegalArgumentException("Unsupported dialect: " + dialectName);
             };
 
-            String sql = new MigrationGenerator(dialect).generateSql(diff);
+            String sql = new MigrationGenerator(dialect, newSchema).generateSql(diff);
 
             Files.createDirectories(outputDir);
             Path outFile = outputDir.resolve("migration-" + newSchema.getVersion() + ".sql");
@@ -92,6 +105,18 @@ public class MigrateCommand implements Callable<Integer> {
             e.printStackTrace();
             return 1;
         }
+    }
+
+    private List<String> findDangerousChanges(DiffResult diff) {
+        return diff.getModifiedTables().stream()
+                .flatMap(m -> m.getColumnDiffs().stream()
+                        .filter(cd -> cd.getChangeDetail() != null && cd.getChangeDetail().contains("Enum mapping changed"))
+                        .map(cd -> String.format("테이블 '%s'의 컬럼 '%s': %s",
+                                m.getNewEntity().getTableName(),
+                                cd.getColumn().getColumnName(),
+                                cd.getChangeDetail()))
+                )
+                .collect(Collectors.toList());
     }
 
     private SchemaModel loadSchema(Path path) throws IOException {

@@ -8,13 +8,23 @@ import lombok.Data;
 public class ColumnModel {
     private String columnName;
     private String javaType;
-    private String sqlType;
     private boolean isPrimaryKey;
     private boolean isNullable;
     private boolean isUnique;
     private int length;
-
-    private int precision; // DECIMAL 타입용
-    private int scale;    // DECIMAL 타입용
-    private String defaultValue; // 기본값
+    private int precision;
+    private int scale;
+    private String defaultValue;
+    private GenerationStrategy generationStrategy;
+    private String sequenceName;
+    private String tableGeneratorName;
+    private long identityStartValue;
+    private int identityIncrement;
+    private int identityCache;
+    private long identityMinValue;
+    private long identityMaxValue;
+    private String[] identityOptions;
+    private boolean isManualPrimaryKey;
+    private boolean enumStringMapping;
+    private String[] enumValues;
 }
