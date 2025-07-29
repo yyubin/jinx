@@ -15,16 +15,18 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class EntityModel {
     private String entityName;
     private String tableName;
-    private String inheritance;
+    private InheritanceType inheritance;
     private String parentEntity;
     @Builder.Default
     private boolean isJoinTable = false;
     @Builder.Default
-    private Map<String, ColumnModel> columns = new ConcurrentHashMap<>();
+    private Map<String, ColumnModel> columns = new HashMap<>();
     @Builder.Default
-    private Map<String, IndexModel> indexes = new ConcurrentHashMap<>();
+    private Map<String, IndexModel> indexes = new HashMap<>();
     @Builder.Default
-    private List<ConstraintModel> constraints = new CopyOnWriteArrayList<>();
+    private List<ConstraintModel> constraints = new ArrayList<>();
     @Builder.Default
-    private List<RelationshipModel> relationships = new CopyOnWriteArrayList<>();
+    private List<RelationshipModel> relationships = new ArrayList<>();
+
+    private boolean isValid = true;
 }

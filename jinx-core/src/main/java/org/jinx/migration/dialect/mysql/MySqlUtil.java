@@ -74,9 +74,4 @@ public final class MySqlUtil {
         return MYSQL_KEYWORDS.contains(name.toUpperCase());
     }
 
-    public static String unescapeKeyword(String name) {
-        if (name != null && name.endsWith("_")) {
-            return name.substring(0, name.length() - 1);
-        }
-    }
 }
