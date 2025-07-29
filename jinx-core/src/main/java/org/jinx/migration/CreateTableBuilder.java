@@ -1,16 +1,21 @@
 package org.jinx.migration;
 
+import lombok.Setter;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
 public class CreateTableBuilder {
+    @Setter
+    private String table;
     private final Dialect dialect;
-    private final List<TableBodyContributor> body = new ArrayList<>();
-    private final List<PostCreateContributor> post = new ArrayList<>();
+    private final List<SqlContributor> body = new ArrayList<>();
+    private final List<SqlContributor> post = new ArrayList<>();
 
-    public CreateTableBuilder(Dialect dialect) {
-        this.dialect = dialect;
+    public CreateTableBuilder(String table, Dialect d) {
+        this.table = table;
+        this.dialect = d;
     }
 
     public CreateTableBuilder add(TableBodyContributor c) {
@@ -23,8 +28,8 @@ public class CreateTableBuilder {
         return this;
     }
 
-    public String build(String tableName) {
-        StringBuilder sb = new StringBuilder(dialect.openCreateTable(tableName));
+    public String build() {
+        StringBuilder sb = new StringBuilder(dialect.openCreateTable(table));
         body.stream()
                 .sorted(Comparator.comparingInt(SqlContributor::priority))
                 .forEach(c -> c.contribute(sb, dialect));

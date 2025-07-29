@@ -5,6 +5,8 @@ import jakarta.persistence.TemporalType;
 import lombok.Builder;
 import lombok.Data;
 
+import java.util.Objects;
+
 @Data
 @Builder
 public class ColumnModel {
@@ -41,4 +43,8 @@ public class ColumnModel {
     @Builder.Default private String mapKeyType = null; // e.g., "entity:fieldName" or null
     @Builder.Default private String[] mapKeyEnumValues = new String[]{}; // For @MapKeyEnumerated
     @Builder.Default private TemporalType mapKeyTemporalType = null; // For @MapKeyTemporal
+
+    public long getAttributeHash() {
+        return Objects.hash(columnName, javaType, length, precision, scale, isNullable, isUnique, defaultValue);
+    }
 }

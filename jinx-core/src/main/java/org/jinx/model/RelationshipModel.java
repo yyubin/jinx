@@ -16,6 +16,8 @@ public class RelationshipModel {
     private String referencedTable;
     private String referencedColumn;
     private String constraintName;
+    private OnDeleteAction onDelete;
+    private OnUpdateAction onUpdate;
     @Builder.Default private boolean mapsId = false;
     @Builder.Default private List<CascadeType> cascadeTypes = new ArrayList<>(); // Added for cascade
     @Builder.Default private boolean orphanRemoval = false; // Added for orphanRemoval

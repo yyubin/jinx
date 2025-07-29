@@ -3,10 +3,11 @@ package org.jinx.migration;
 import org.jinx.model.ColumnModel;
 import org.jinx.model.GenerationStrategy;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 
-public abstract class AbstractDialect implements Dialect{
+public abstract class AbstractDialect implements Dialect {
     protected JavaTypeMapper javaTypeMapper;
     protected ValueTransformer valueTransformer;
 
@@ -20,6 +21,12 @@ public abstract class AbstractDialect implements Dialect{
     public abstract String quoteIdentifier(String identifier);
     protected abstract String getIdentityClause(ColumnModel c);
 
+    @Override
+    public ValueTransformer getValueTransformer() {
+        return this.valueTransformer;
+    }
+
+    @Override
     public String getColumnDefinitionSql(ColumnModel c) {
         JavaTypeMapper.JavaType javaType = javaTypeMapper.map(c.getJavaType());
         ValueTransformer vt = valueTransformer;
@@ -47,10 +54,19 @@ public abstract class AbstractDialect implements Dialect{
         return sb.toString();
     }
 
-    public String getPrimaryKeyDefinitionSql(List<String> pk) {
-        if (pk == null || pk.isEmpty()) {
+    @Override
+    public String getPrimaryKeyDefinitionSql(List<String> pkColumns) {
+        if (pkColumns == null || pkColumns.isEmpty()) {
             return "";
         }
-        return "PRIMARY KEY (" + pk.stream().map(this::quoteIdentifier).collect(Collectors.joining(", ")) + ")";
+        return "PRIMARY KEY (" + pkColumns.stream().map(this::quoteIdentifier).collect(Collectors.joining(", ")) + ")";
     }
+
+    protected boolean columnIsIdentity(String colName, Collection<ColumnModel> allColumns) {
+        return allColumns.stream()
+                .filter(c -> c.getColumnName().equals(colName))
+                .anyMatch(c -> c.getGenerationStrategy() == GenerationStrategy.IDENTITY);
+    }
+
+    public abstract String getDropPrimaryKeySql(String table, Collection<ColumnModel> currentColumns);
 }

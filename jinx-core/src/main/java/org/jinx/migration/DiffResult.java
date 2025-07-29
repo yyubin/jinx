@@ -14,14 +14,13 @@ public class DiffResult {
     @Builder.Default private List<EntityModel> addedTables = new ArrayList<>();
     @Builder.Default private List<EntityModel> droppedTables = new ArrayList<>();
     @Builder.Default private List<ModifiedEntity> modifiedTables = new ArrayList<>();
+    @Builder.Default private List<RenamedTable> renamedTables = new ArrayList<>();
     @Builder.Default private List<SequenceDiff> sequenceDiffs = new ArrayList<>();
     @Builder.Default private List<TableGeneratorDiff> tableGeneratorDiffs = new ArrayList<>();
     @Builder.Default private List<String> warnings = new ArrayList<>();
 
     public List<String> getAllWarnings() {
-        List<String> all = new ArrayList<>(warnings);                            // 스키마 레벨
-        modifiedTables.forEach(m -> all.addAll(m.getWarnings())); // 엔티티 레벨
-        return all;
+        return warnings;
     }
 
     @Builder
@@ -66,6 +65,14 @@ public class DiffResult {
                 }
             }
         }
+    }
+
+    @Builder
+    @Getter
+    public static class RenamedTable {
+        private EntityModel oldEntity;
+        private EntityModel newEntity;
+        private String changeDetail;
     }
 
     @Builder
@@ -150,6 +157,12 @@ public class DiffResult {
             }
             if (oldSeq.getMaxValue() != newSeq.getMaxValue()) {
                 detail.append("maxValue changed from ").append(oldSeq.getMaxValue()).append(" to ").append(newSeq.getMaxValue()).append("; ");
+            }
+            if (!Objects.equals(oldSeq.getSchema(), newSeq.getSchema())) {
+                detail.append("schema changed from ").append(oldSeq.getSchema()).append(" to ").append(newSeq.getSchema()).append("; ");
+            }
+            if (!Objects.equals(oldSeq.getCatalog(), newSeq.getCatalog())) {
+                detail.append("catalog changed from ").append(oldSeq.getCatalog()).append(" to ").append(newSeq.getCatalog()).append("; ");
             }
             if (detail.length() > 2) {
                 detail.setLength(detail.length() - 2);

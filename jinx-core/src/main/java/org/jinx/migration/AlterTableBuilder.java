@@ -13,6 +13,7 @@ import java.util.List;
 public class AlterTableBuilder {
     @Getter
     private final String tableName;
+    @Getter
     private final Dialect dialect;
     private final List<SqlContributor> units = new ArrayList<>();
 

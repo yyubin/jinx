@@ -1,4 +1,4 @@
-package org.jinx.migration.internal.alter;
+package org.jinx.migration.internal.create;
 
 import org.jinx.migration.Dialect;
 import org.jinx.migration.SqlContributor;

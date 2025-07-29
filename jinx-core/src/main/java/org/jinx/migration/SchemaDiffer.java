@@ -1,49 +1,126 @@
 package org.jinx.migration;
 
 import lombok.Builder;
+import lombok.Getter;
 import org.jinx.model.*;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.FetchType;
+
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class SchemaDiffer {
 
     public DiffResult diff(SchemaModel oldSchema, SchemaModel newSchema) {
         DiffResult result = DiffResult.builder().build();
 
-        // 1. Added Tables
+        // 1. Detect Renamed Tables
+        detectRenamedTables(oldSchema, newSchema, result);
+
+        // 2. Added Tables
         newSchema.getEntities().forEach((name, newEntity) -> {
-            if (!oldSchema.getEntities().containsKey(name)) {
+            if (!oldSchema.getEntities().containsKey(name) &&
+                    !result.getRenamedTables().stream().anyMatch(rt -> rt.getNewEntity().getEntityName().equals(name))) {
                 result.getAddedTables().add(newEntity);
             }
         });
 
-        // 2. Dropped Tables
+        // 3. Dropped Tables
         oldSchema.getEntities().forEach((name, oldEntity) -> {
-            if (!newSchema.getEntities().containsKey(name)) {
+            if (!newSchema.getEntities().containsKey(name) &&
+                    !result.getRenamedTables().stream().anyMatch(rt -> rt.getOldEntity().getEntityName().equals(name))) {
                 result.getDroppedTables().add(oldEntity);
             }
         });
 
-        // 3. Modified Tables
+        // 4. Modified Tables
         newSchema.getEntities().forEach((name, newEntity) -> {
             if (oldSchema.getEntities().containsKey(name)) {
                 EntityModel oldEntity = oldSchema.getEntities().get(name);
                 DiffResult.ModifiedEntity modified = compareEntities(oldEntity, newEntity);
                 if (!modified.getColumnDiffs().isEmpty() || !modified.getIndexDiffs().isEmpty() ||
-                        !modified.getConstraintDiffs().isEmpty() || !modified.getRelationshipDiffs().isEmpty()) {
+                        !modified.getConstraintDiffs().isEmpty() || !modified.getRelationshipDiffs().isEmpty() ||
+                        !modified.getWarnings().isEmpty()) {
                     result.getModifiedTables().add(modified);
                 }
-                // Propagate entity-level warnings to schema-level
                 result.getWarnings().addAll(modified.getWarnings());
             }
         });
 
-        // 4. Compare Sequences
+        // 5. Compare Sequences
         compareSequences(oldSchema, newSchema, result);
 
-        // 5. Compare Table Generators
+        // 6. Compare Table Generators
         compareTableGenerators(oldSchema, newSchema, result);
 
         return result;
+    }
+
+    private void detectRenamedTables(SchemaModel oldSchema, SchemaModel newSchema, DiffResult result) {
+        // Precompute PK column names and column hashes
+        Map<String, Set<String>> oldPkColumnNames = oldSchema.getEntities().values().stream()
+                .collect(Collectors.toMap(
+                        EntityModel::getEntityName,
+                        e -> e.getColumns().values().stream()
+                                .filter(ColumnModel::isPrimaryKey)
+                                .map(ColumnModel::getColumnName)
+                                .collect(Collectors.toSet())
+                ));
+
+        Map<String, Set<Long>> oldColumnHashes = oldSchema.getEntities().values().stream()
+                .collect(Collectors.toMap(
+                        EntityModel::getEntityName,
+                        e -> e.getColumns().values().stream()
+                                .map(ColumnModel::getAttributeHash)
+                                .collect(Collectors.toSet())
+                ));
+
+        Map<String, Set<String>> newPkColumnNames = newSchema.getEntities().values().stream()
+                .collect(Collectors.toMap(
+                        EntityModel::getEntityName,
+                        e -> e.getColumns().values().stream()
+                                .filter(ColumnModel::isPrimaryKey)
+                                .map(ColumnModel::getColumnName)
+                                .collect(Collectors.toSet())
+                ));
+
+        Map<String, Set<Long>> newColumnHashes = newSchema.getEntities().values().stream()
+                .collect(Collectors.toMap(
+                        EntityModel::getEntityName,
+                        e -> e.getColumns().values().stream()
+                                .map(ColumnModel::getAttributeHash)
+                                .collect(Collectors.toSet())
+                ));
+
+        // Iterate over dropped tables
+        for (String oldEntityName : oldSchema.getEntities().keySet()) {
+            if (!newSchema.getEntities().containsKey(oldEntityName)) {
+                EntityModel oldEntity = oldSchema.getEntities().get(oldEntityName);
+                Set<String> oldPkNames = oldPkColumnNames.get(oldEntityName);
+                Set<Long> oldHashes = oldColumnHashes.get(oldEntityName);
+
+                // Find matching added tables by PK column names
+                for (String newEntityName : newSchema.getEntities().keySet()) {
+                    if (!oldSchema.getEntities().containsKey(newEntityName)) {
+                        EntityModel newEntity = newSchema.getEntities().get(newEntityName);
+                        Set<String> newPkNames = newPkColumnNames.get(newEntityName);
+                        Set<Long> newHashes = newColumnHashes.get(newEntityName);
+
+                        // 1st filter: PK column names must match exactly
+                        if (oldPkNames.equals(newPkNames)) {
+                            // 2nd filter: All column hashes must match 100%
+                            if (oldHashes.equals(newHashes)) {
+                                result.getRenamedTables().add(DiffResult.RenamedTable.builder()
+                                        .oldEntity(oldEntity)
+                                        .newEntity(newEntity)
+                                        .changeDetail("Table renamed from " + oldEntity.getTableName() + " to " + newEntity.getTableName())
+                                        .build());
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private void compareSequences(SchemaModel oldSchema, SchemaModel newSchema, DiffResult result) {
@@ -84,12 +161,21 @@ public class SchemaDiffer {
                 .newEntity(newEntity)
                 .build();
 
+        // Check for schema/catalog changes
+        if (!Objects.equals(oldEntity.getSchema(), newEntity.getSchema())) {
+            modified.getWarnings().add("Schema changed from " + oldEntity.getSchema() + " to " + newEntity.getSchema() +
+                    " for entity " + newEntity.getEntityName());
+        }
+        if (!Objects.equals(oldEntity.getCatalog(), newEntity.getCatalog())) {
+            modified.getWarnings().add("Catalog changed from " + oldEntity.getCatalog() + " to " + newEntity.getCatalog() +
+                    " for entity " + newEntity.getEntityName());
+        }
+
         // Check for inheritance strategy changes
         if (!Objects.equals(oldEntity.getInheritance(), newEntity.getInheritance())) {
-            String warning = "Inheritance strategy changed from " + oldEntity.getInheritance() +
+            modified.getWarnings().add("Inheritance strategy changed from " + oldEntity.getInheritance() +
                     " to " + newEntity.getInheritance() + " for entity " + newEntity.getEntityName() +
-                    "; manual migration required as this cannot be automatically handled.";
-            modified.getWarnings().add(warning);
+                    "; manual migration required.");
         }
 
         // Compare Columns
@@ -110,9 +196,8 @@ public class SchemaDiffer {
                         .type(DiffResult.ColumnDiff.Type.RENAMED)
                         .column(newColumn)
                         .oldColumn(oldColumn)
-                        .changeDetail("columnName changed from " + oldName + " to " + newEntry.getKey())
+                        .changeDetail("Column renamed from " + oldName + " to " + newEntry.getKey())
                         .build());
-                // Check for additional modifications (e.g., length, precision, scale)
                 if (!isColumnEqualExceptName(oldColumn, newColumn)) {
                     modified.getColumnDiffs().add(DiffResult.ColumnDiff.builder()
                             .type(DiffResult.ColumnDiff.Type.MODIFIED)
@@ -143,12 +228,14 @@ public class SchemaDiffer {
                             .column(newColumn).oldColumn(oldColumn)
                             .changeDetail("Enum mapping changed " + (oldColumn.isEnumStringMapping() ? "STRING -> ORDINAL" : "ORDINAL -> STRING"))
                             .build());
+                    analyzeEnumChanges(oldColumn, newColumn, modified);
                 } else if (!isColumnEqual(oldColumn, newColumn)) {
                     modified.getColumnDiffs().add(DiffResult.ColumnDiff.builder()
                             .type(DiffResult.ColumnDiff.Type.MODIFIED)
                             .column(newColumn).oldColumn(oldColumn)
                             .changeDetail(getColumnChangeDetail(oldColumn, newColumn))
                             .build());
+                    analyzeColumnChanges(oldColumn, newColumn, modified);
                 }
                 oldColumns.remove(newName);
             }
@@ -160,30 +247,27 @@ public class SchemaDiffer {
         // Compare Indexes
         newEntity.getIndexes().forEach((name, newIndex) -> {
             if (!oldEntity.getIndexes().containsKey(name)) {
-                DiffResult.IndexDiff diff = DiffResult.IndexDiff.builder()
+                modified.getIndexDiffs().add(DiffResult.IndexDiff.builder()
                         .type(DiffResult.IndexDiff.Type.ADDED)
                         .index(newIndex)
-                        .build();
-                modified.getIndexDiffs().add(diff);
+                        .build());
             } else {
                 IndexModel oldIndex = oldEntity.getIndexes().get(name);
                 if (!isIndexEqual(oldIndex, newIndex)) {
-                    DiffResult.IndexDiff diff = DiffResult.IndexDiff.builder()
+                    modified.getIndexDiffs().add(DiffResult.IndexDiff.builder()
                             .type(DiffResult.IndexDiff.Type.MODIFIED)
                             .index(newIndex)
                             .changeDetail(getIndexChangeDetail(oldIndex, newIndex))
-                            .build();
-                    modified.getIndexDiffs().add(diff);
+                            .build());
                 }
             }
         });
         oldEntity.getIndexes().forEach((name, oldIndex) -> {
             if (!newEntity.getIndexes().containsKey(name)) {
-                DiffResult.IndexDiff diff = DiffResult.IndexDiff.builder()
+                modified.getIndexDiffs().add(DiffResult.IndexDiff.builder()
                         .type(DiffResult.IndexDiff.Type.DROPPED)
                         .index(oldIndex)
-                        .build();
-                modified.getIndexDiffs().add(diff);
+                        .build());
             }
         });
 
@@ -193,27 +277,24 @@ public class SchemaDiffer {
                     .filter(c -> c.getName().equals(newConstraint.getName()))
                     .findFirst().orElse(null);
             if (oldConstraint == null) {
-                DiffResult.ConstraintDiff diff = DiffResult.ConstraintDiff.builder()
+                modified.getConstraintDiffs().add(DiffResult.ConstraintDiff.builder()
                         .type(DiffResult.ConstraintDiff.Type.ADDED)
                         .constraint(newConstraint)
-                        .build();
-                modified.getConstraintDiffs().add(diff);
+                        .build());
             } else if (!isConstraintEqual(oldConstraint, newConstraint)) {
-                DiffResult.ConstraintDiff diff = DiffResult.ConstraintDiff.builder()
+                modified.getConstraintDiffs().add(DiffResult.ConstraintDiff.builder()
                         .type(DiffResult.ConstraintDiff.Type.MODIFIED)
                         .constraint(newConstraint)
                         .changeDetail(getConstraintChangeDetail(oldConstraint, newConstraint))
-                        .build();
-                modified.getConstraintDiffs().add(diff);
+                        .build());
             }
         });
         oldEntity.getConstraints().forEach(oldConstraint -> {
             if (newEntity.getConstraints().stream().noneMatch(c -> c.getName().equals(oldConstraint.getName()))) {
-                DiffResult.ConstraintDiff diff = DiffResult.ConstraintDiff.builder()
+                modified.getConstraintDiffs().add(DiffResult.ConstraintDiff.builder()
                         .type(DiffResult.ConstraintDiff.Type.DROPPED)
                         .constraint(oldConstraint)
-                        .build();
-                modified.getConstraintDiffs().add(diff);
+                        .build());
             }
         });
 
@@ -223,27 +304,25 @@ public class SchemaDiffer {
                     .filter(r -> r.getType().equals(newRel.getType()) && r.getColumn().equals(newRel.getColumn()))
                     .findFirst().orElse(null);
             if (oldRel == null) {
-                DiffResult.RelationshipDiff diff = DiffResult.RelationshipDiff.builder()
+                modified.getRelationshipDiffs().add(DiffResult.RelationshipDiff.builder()
                         .type(DiffResult.RelationshipDiff.Type.ADDED)
                         .relationship(newRel)
-                        .build();
-                modified.getRelationshipDiffs().add(diff);
+                        .build());
             } else if (!isRelationshipEqual(oldRel, newRel)) {
-                DiffResult.RelationshipDiff diff = DiffResult.RelationshipDiff.builder()
+                modified.getRelationshipDiffs().add(DiffResult.RelationshipDiff.builder()
                         .type(DiffResult.RelationshipDiff.Type.MODIFIED)
                         .relationship(newRel)
                         .changeDetail(getRelationshipChangeDetail(oldRel, newRel))
-                        .build();
-                modified.getRelationshipDiffs().add(diff);
+                        .build());
+                analyzeRelationshipChanges(oldRel, newRel, modified);
             }
         });
         oldEntity.getRelationships().forEach(oldRel -> {
             if (newEntity.getRelationships().stream().noneMatch(r -> r.getType().equals(oldRel.getType()) && r.getColumn().equals(oldRel.getColumn()))) {
-                DiffResult.RelationshipDiff diff = DiffResult.RelationshipDiff.builder()
+                modified.getRelationshipDiffs().add(DiffResult.RelationshipDiff.builder()
                         .type(DiffResult.RelationshipDiff.Type.DROPPED)
                         .relationship(oldRel)
-                        .build();
-                modified.getRelationshipDiffs().add(diff);
+                        .build());
             }
         });
 
@@ -259,7 +338,8 @@ public class SchemaDiffer {
     }
 
     private boolean isColumnEqual(ColumnModel oldCol, ColumnModel newCol) {
-        return Objects.equals(oldCol.getColumnName(), newCol.getColumnName()) &&
+        return Objects.equals(oldCol.getTableName(), newCol.getTableName()) &&
+                Objects.equals(oldCol.getColumnName(), newCol.getColumnName()) &&
                 Objects.equals(oldCol.getJavaType(), newCol.getJavaType()) &&
                 oldCol.isPrimaryKey() == newCol.isPrimaryKey() &&
                 oldCol.isNullable() == newCol.isNullable() &&
@@ -279,11 +359,19 @@ public class SchemaDiffer {
                 Arrays.equals(oldCol.getIdentityOptions(), newCol.getIdentityOptions()) &&
                 oldCol.isManualPrimaryKey() == newCol.isManualPrimaryKey() &&
                 oldCol.isEnumStringMapping() == newCol.isEnumStringMapping() &&
-                Arrays.equals(oldCol.getEnumValues(), newCol.getEnumValues());
+                Arrays.equals(oldCol.getEnumValues(), newCol.getEnumValues()) &&
+                oldCol.isLob() == newCol.isLob() &&
+                oldCol.getJdbcType() == newCol.getJdbcType() &&
+                oldCol.getFetchType() == newCol.getFetchType() &&
+                oldCol.isOptional() == newCol.isOptional() &&
+                oldCol.isVersion() == newCol.isVersion() &&
+                Objects.equals(oldCol.getConversionClass(), newCol.getConversionClass()) &&
+                oldCol.getTemporalType() == newCol.getTemporalType();
     }
 
     private boolean isColumnEqualExceptName(ColumnModel oldCol, ColumnModel newCol) {
-        return Objects.equals(oldCol.getJavaType(), newCol.getJavaType()) &&
+        return Objects.equals(oldCol.getTableName(), newCol.getTableName()) &&
+                Objects.equals(oldCol.getJavaType(), newCol.getJavaType()) &&
                 oldCol.isPrimaryKey() == newCol.isPrimaryKey() &&
                 oldCol.isNullable() == newCol.isNullable() &&
                 oldCol.isUnique() == newCol.isUnique() &&
@@ -302,7 +390,14 @@ public class SchemaDiffer {
                 Arrays.equals(oldCol.getIdentityOptions(), newCol.getIdentityOptions()) &&
                 oldCol.isManualPrimaryKey() == newCol.isManualPrimaryKey() &&
                 oldCol.isEnumStringMapping() == newCol.isEnumStringMapping() &&
-                Arrays.equals(oldCol.getEnumValues(), newCol.getEnumValues());
+                Arrays.equals(oldCol.getEnumValues(), newCol.getEnumValues()) &&
+                oldCol.isLob() == newCol.isLob() &&
+                oldCol.getJdbcType() == newCol.getJdbcType() &&
+                oldCol.getFetchType() == newCol.getFetchType() &&
+                oldCol.isOptional() == newCol.isOptional() &&
+                oldCol.isVersion() == newCol.isVersion() &&
+                Objects.equals(oldCol.getConversionClass(), newCol.getConversionClass()) &&
+                oldCol.getTemporalType() == newCol.getTemporalType();
     }
 
     private boolean isColumnAttributesEqual(ColumnModel oldCol, ColumnModel newCol) {
@@ -317,11 +412,18 @@ public class SchemaDiffer {
                 Objects.equals(oldCol.getSequenceName(), newCol.getSequenceName()) &&
                 Objects.equals(oldCol.getTableGeneratorName(), newCol.getTableGeneratorName()) &&
                 oldCol.isEnumStringMapping() == newCol.isEnumStringMapping() &&
-                Arrays.equals(oldCol.getEnumValues(), newCol.getEnumValues());
+                Arrays.equals(oldCol.getEnumValues(), newCol.getEnumValues()) &&
+                oldCol.isLob() == newCol.isLob() &&
+                oldCol.getJdbcType() == newCol.getJdbcType() &&
+                Objects.equals(oldCol.getConversionClass(), newCol.getConversionClass()) &&
+                oldCol.getTemporalType() == newCol.getTemporalType();
     }
 
     private String getColumnChangeDetail(ColumnModel oldCol, ColumnModel newCol) {
         StringBuilder detail = new StringBuilder();
+        if (!Objects.equals(oldCol.getTableName(), newCol.getTableName())) {
+            detail.append("tableName changed from ").append(oldCol.getTableName()).append(" to ").append(newCol.getTableName()).append("; ");
+        }
         if (!Objects.equals(oldCol.getJavaType(), newCol.getJavaType())) {
             detail.append("javaType changed from ").append(oldCol.getJavaType()).append(" to ").append(newCol.getJavaType()).append("; ");
         }
@@ -373,11 +475,32 @@ public class SchemaDiffer {
         if (!Arrays.equals(oldCol.getIdentityOptions(), newCol.getIdentityOptions())) {
             detail.append("identityOptions changed from ").append(Arrays.toString(oldCol.getIdentityOptions())).append(" to ").append(Arrays.toString(newCol.getIdentityOptions())).append("; ");
         }
+        if (oldCol.isLob() != newCol.isLob()) {
+            detail.append("isLob changed from ").append(oldCol.isLob()).append(" to ").append(newCol.isLob()).append("; ");
+        }
+        if (oldCol.getJdbcType() != newCol.getJdbcType()) {
+            detail.append("jdbcType changed from ").append(oldCol.getJdbcType()).append(" to ").append(newCol.getJdbcType()).append("; ");
+        }
+        if (oldCol.getFetchType() != newCol.getFetchType()) {
+            detail.append("fetchType changed from ").append(oldCol.getFetchType()).append(" to ").append(newCol.getFetchType()).append("; ");
+        }
+        if (oldCol.isOptional() != newCol.isOptional()) {
+            detail.append("isOptional changed from ").append(oldCol.isOptional()).append(" to ").append(newCol.isOptional()).append("; ");
+        }
+        if (oldCol.isVersion() != newCol.isVersion()) {
+            detail.append("isVersion changed from ").append(oldCol.isVersion()).append(" to ").append(newCol.isVersion()).append("; ");
+        }
+        if (!Objects.equals(oldCol.getConversionClass(), newCol.getConversionClass())) {
+            detail.append("conversionClass changed from ").append(oldCol.getConversionClass()).append(" to ").append(newCol.getConversionClass()).append("; ");
+        }
+        if (oldCol.getTemporalType() != newCol.getTemporalType()) {
+            detail.append("temporalType changed from ").append(oldCol.getTemporalType()).append(" to ").append(newCol.getTemporalType()).append("; ");
+        }
         if (!Arrays.equals(oldCol.getEnumValues(), newCol.getEnumValues())) {
             detail.append("enumValues changed; ");
         }
         if (detail.length() > 2) {
-            detail.setLength(detail.length() - 2); // Remove trailing "; "
+            detail.setLength(detail.length() - 2);
         }
         return detail.toString();
     }
@@ -387,7 +510,38 @@ public class SchemaDiffer {
                 oldSeq.getAllocationSize() == newSeq.getAllocationSize() &&
                 oldSeq.getCache() == newSeq.getCache() &&
                 oldSeq.getMinValue() == newSeq.getMinValue() &&
-                oldSeq.getMaxValue() == newSeq.getMaxValue();
+                oldSeq.getMaxValue() == newSeq.getMaxValue() &&
+                Objects.equals(oldSeq.getSchema(), newSeq.getSchema()) &&
+                Objects.equals(oldSeq.getCatalog(), newSeq.getCatalog());
+    }
+
+    private String getSequenceChangeDetail(SequenceModel oldSeq, SequenceModel newSeq) {
+        StringBuilder detail = new StringBuilder();
+        if (oldSeq.getInitialValue() != newSeq.getInitialValue()) {
+            detail.append("initialValue changed from ").append(oldSeq.getInitialValue()).append(" to ").append(newSeq.getInitialValue()).append("; ");
+        }
+        if (oldSeq.getAllocationSize() != newSeq.getAllocationSize()) {
+            detail.append("allocationSize changed from ").append(oldSeq.getAllocationSize()).append(" to ").append(newSeq.getAllocationSize()).append("; ");
+        }
+        if (oldSeq.getCache() != newSeq.getCache()) {
+            detail.append("cache changed from ").append(oldSeq.getCache()).append(" to ").append(newSeq.getCache()).append("; ");
+        }
+        if (oldSeq.getMinValue() != newSeq.getMinValue()) {
+            detail.append("minValue changed from ").append(oldSeq.getMinValue()).append(" to ").append(newSeq.getMinValue()).append("; ");
+        }
+        if (oldSeq.getMaxValue() != newSeq.getMaxValue()) {
+            detail.append("maxValue changed from ").append(oldSeq.getMaxValue()).append(" to ").append(newSeq.getMaxValue()).append("; ");
+        }
+        if (!Objects.equals(oldSeq.getSchema(), newSeq.getSchema())) {
+            detail.append("schema changed from ").append(oldSeq.getSchema()).append(" to ").append(newSeq.getSchema()).append("; ");
+        }
+        if (!Objects.equals(oldSeq.getCatalog(), newSeq.getCatalog())) {
+            detail.append("catalog changed from ").append(oldSeq.getCatalog()).append(" to ").append(newSeq.getCatalog()).append("; ");
+        }
+        if (detail.length() > 2) {
+            detail.setLength(detail.length() - 2);
+        }
+        return detail.toString();
     }
 
     private boolean isTableGeneratorEqual(TableGeneratorModel oldTg, TableGeneratorModel newTg) {
@@ -422,9 +576,9 @@ public class SchemaDiffer {
 
     private boolean isConstraintEqual(ConstraintModel oldCons, ConstraintModel newCons) {
         return Objects.equals(oldCons.getType(), newCons.getType()) &&
-                Objects.equals(oldCons.getColumn(), newCons.getColumn()) &&
+                oldCons.getColumns().equals(newCons.getColumns()) &&
                 Objects.equals(oldCons.getReferencedTable(), newCons.getReferencedTable()) &&
-                Objects.equals(oldCons.getReferencedColumn(), newCons.getReferencedColumn()) &&
+                oldCons.getReferencedColumns().equals(newCons.getReferencedColumns()) &&
                 oldCons.getOnDelete() == newCons.getOnDelete() &&
                 oldCons.getOnUpdate() == newCons.getOnUpdate();
     }
@@ -434,14 +588,14 @@ public class SchemaDiffer {
         if (!Objects.equals(oldCons.getType(), newCons.getType())) {
             detail.append("type changed from ").append(oldCons.getType()).append(" to ").append(newCons.getType()).append("; ");
         }
-        if (!Objects.equals(oldCons.getColumn(), newCons.getColumn())) {
-            detail.append("column changed from ").append(oldCons.getColumn()).append(" to ").append(newCons.getColumn()).append("; ");
+        if (!oldCons.getColumns().equals(newCons.getColumns())) {
+            detail.append("columns changed from ").append(oldCons.getColumns()).append(" to ").append(newCons.getColumns()).append("; ");
         }
         if (!Objects.equals(oldCons.getReferencedTable(), newCons.getReferencedTable())) {
             detail.append("referencedTable changed from ").append(oldCons.getReferencedTable()).append(" to ").append(newCons.getReferencedTable()).append("; ");
         }
-        if (!Objects.equals(oldCons.getReferencedColumn(), newCons.getReferencedColumn())) {
-            detail.append("referencedColumn changed from ").append(oldCons.getReferencedColumn()).append(" to ").append(newCons.getReferencedColumn()).append("; ");
+        if (!oldCons.getReferencedColumns().equals(newCons.getReferencedColumns())) {
+            detail.append("referencedColumns changed from ").append(oldCons.getReferencedColumns()).append(" to ").append(newCons.getReferencedColumns()).append("; ");
         }
         if (oldCons.getOnDelete() != newCons.getOnDelete()) {
             detail.append("onDelete changed from ").append(oldCons.getOnDelete()).append(" to ").append(newCons.getOnDelete()).append("; ");
@@ -460,7 +614,10 @@ public class SchemaDiffer {
                 Objects.equals(oldRel.getColumn(), newRel.getColumn()) &&
                 Objects.equals(oldRel.getReferencedTable(), newRel.getReferencedTable()) &&
                 Objects.equals(oldRel.getReferencedColumn(), newRel.getReferencedColumn()) &&
-                oldRel.isMapsId() == newRel.isMapsId();
+                oldRel.isMapsId() == newRel.isMapsId() &&
+                oldRel.getCascadeTypes().equals(newRel.getCascadeTypes()) &&
+                oldRel.isOrphanRemoval() == newRel.isOrphanRemoval() &&
+                oldRel.getFetchType() == newRel.getFetchType();
     }
 
     private String getRelationshipChangeDetail(RelationshipModel oldRel, RelationshipModel newRel) {
@@ -480,9 +637,143 @@ public class SchemaDiffer {
         if (oldRel.isMapsId() != newRel.isMapsId()) {
             detail.append("mapsId changed from ").append(oldRel.isMapsId()).append(" to ").append(newRel.isMapsId()).append("; ");
         }
+        if (!oldRel.getCascadeTypes().equals(newRel.getCascadeTypes())) {
+            detail.append("cascadeTypes changed from ").append(oldRel.getCascadeTypes()).append(" to ").append(newRel.getCascadeTypes()).append("; ");
+        }
+        if (oldRel.isOrphanRemoval() != newRel.isOrphanRemoval()) {
+            detail.append("orphanRemoval changed from ").append(oldRel.isOrphanRemoval()).append(" to ").append(newRel.isOrphanRemoval()).append("; ");
+        }
+        if (oldRel.getFetchType() != newRel.getFetchType()) {
+            detail.append("fetchType changed from ").append(oldRel.getFetchType()).append(" to ").append(newRel.getFetchType()).append("; ");
+        }
         if (detail.length() > 2) {
             detail.setLength(detail.length() - 2);
         }
         return detail.toString();
+    }
+
+    private void analyzeColumnChanges(ColumnModel oldCol, ColumnModel newCol, DiffResult.ModifiedEntity modified) {
+        // Narrowing Conversion Check
+        if (!Objects.equals(oldCol.getJavaType(), newCol.getJavaType())) {
+            String change = analyzeTypeConversion(oldCol.getJavaType(), newCol.getJavaType());
+            if (change.startsWith("Narrowing")) {
+                modified.getWarnings().add("Dangerous type conversion in column " + newCol.getColumnName() + ": " + change);
+            } else if (change.startsWith("Widening")) {
+                modified.getWarnings().add("Safe type conversion in column " + newCol.getColumnName() + ": " + change);
+            }
+        }
+        if (oldCol.getLength() > newCol.getLength() && newCol.getLength() > 0) {
+            modified.getWarnings().add("Dangerous length reduction in column " + newCol.getColumnName() +
+                    " from " + oldCol.getLength() + " to " + newCol.getLength() + "; may cause data truncation.");
+        }
+        if (oldCol.getFetchType() != newCol.getFetchType()) {
+            modified.getWarnings().add("Fetch strategy changed in column " + newCol.getColumnName() +
+                    " from " + oldCol.getFetchType() + " to " + newCol.getFetchType() +
+                    "; may impact data retrieval performance.");
+        }
+        if (!Objects.equals(oldCol.getConversionClass(), newCol.getConversionClass())) {
+            modified.getWarnings().add("Converter changed in column " + newCol.getColumnName() +
+                    " from " + oldCol.getConversionClass() + " to " + newCol.getConversionClass() +
+                    "; verify data compatibility.");
+        }
+    }
+
+    private void analyzeEnumChanges(ColumnModel oldCol, ColumnModel newCol, DiffResult.ModifiedEntity modified) {
+        if (!Arrays.equals(oldCol.getEnumValues(), newCol.getEnumValues())) {
+            List<String> oldEnums = Arrays.asList(oldCol.getEnumValues());
+            List<String> newEnums = Arrays.asList(newCol.getEnumValues());
+            List<String> added = new ArrayList<>(newEnums);
+            added.removeAll(oldEnums);
+            List<String> removed = new ArrayList<>(oldEnums);
+            removed.removeAll(newEnums);
+
+            // Check order change for ORDINAL mapping
+            if (!oldCol.isEnumStringMapping() && !newCol.isEnumStringMapping()) {
+                boolean orderChanged = false;
+                for (int i = 0; i < Math.min(oldEnums.size(), newEnums.size()); i++) {
+                    if (!oldEnums.get(i).equals(newEnums.get(i))) {
+                        orderChanged = true;
+                        break;
+                    }
+                }
+                if (orderChanged) {
+                    modified.getWarnings().add("Dangerous enum order change in column " + newCol.getColumnName() +
+                            "; ORDINAL mapping may cause incorrect data mapping!");
+                }
+            }
+
+            // Check removed constants
+            if (!removed.isEmpty()) {
+                modified.getWarnings().add("Enum constants removed in column " + newCol.getColumnName() + ": " + removed +
+                        "; existing data may become invalid.");
+            }
+
+            // Check added constants
+            if (!added.isEmpty()) {
+                modified.getWarnings().add("Enum constants added in column " + newCol.getColumnName() + ": " + added +
+                        "; generally safe but verify application logic.");
+            }
+        }
+    }
+
+    private void analyzeRelationshipChanges(RelationshipModel oldRel, RelationshipModel newRel, DiffResult.ModifiedEntity modified) {
+        if (!oldRel.getCascadeTypes().equals(newRel.getCascadeTypes())) {
+            List<CascadeType> added = new ArrayList<>(newRel.getCascadeTypes());
+            added.removeAll(oldRel.getCascadeTypes());
+            List<CascadeType> removed = new ArrayList<>(oldRel.getCascadeTypes());
+            removed.removeAll(newRel.getCascadeTypes());
+            StringBuilder warning = new StringBuilder("Persistence cascade options changed for relationship on column " + newRel.getColumn());
+            if (!added.isEmpty()) {
+                warning.append("; added: ").append(added);
+            }
+            if (!removed.isEmpty()) {
+                warning.append("; removed: ").append(removed);
+            }
+            warning.append("; may affect data consistency.");
+            modified.getWarnings().add(warning.toString());
+        }
+        if (oldRel.isOrphanRemoval() != newRel.isOrphanRemoval()) {
+            if (newRel.isOrphanRemoval()) {
+                modified.getWarnings().add("Orphan removal enabled for relationship on column " + newRel.getColumn() +
+                        "; may cause automatic deletion of related entities.");
+            } else {
+                modified.getWarnings().add("Orphan removal disabled for relationship on column " + newRel.getColumn() +
+                        "; may affect data cleanup logic.");
+            }
+        }
+        if (oldRel.getFetchType() != newRel.getFetchType()) {
+            modified.getWarnings().add("Fetch strategy changed for relationship on column " + newRel.getColumn() +
+                    " from " + oldRel.getFetchType() + " to " + newRel.getFetchType() +
+                    "; may impact data retrieval performance.");
+        }
+    }
+
+    private String analyzeTypeConversion(String oldType, String newType) {
+        // Simple type conversion analysis
+        Map<String, Integer> typeSizes = new HashMap<>();
+        typeSizes.put("byte", 1);
+        typeSizes.put("short", 2);
+        typeSizes.put("int", 4);
+        typeSizes.put("long", 8);
+        typeSizes.put("float", 4);
+        typeSizes.put("double", 8);
+        typeSizes.put("java.lang.Byte", 1);
+        typeSizes.put("java.lang.Short", 2);
+        typeSizes.put("java.lang.Integer", 4);
+        typeSizes.put("java.lang.Long", 8);
+        typeSizes.put("java.lang.Float", 4);
+        typeSizes.put("java.lang.Double", 8);
+
+        Integer oldSize = typeSizes.get(oldType);
+        Integer newSize = typeSizes.get(newType);
+
+        if (oldSize != null && newSize != null) {
+            if (oldSize > newSize) {
+                return "Narrowing conversion from " + oldType + " to " + newType + "; may cause data loss.";
+            } else if (oldSize < newSize) {
+                return "Widening conversion from " + oldType + " to " + newType + "; generally safe.";
+            }
+        }
+        return "Type changed from " + oldType + " to " + newType + "; verify compatibility.";
     }
 }

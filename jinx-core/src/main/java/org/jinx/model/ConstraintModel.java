@@ -9,6 +9,7 @@ import java.util.List;
 @Builder
 public class ConstraintModel {
     private String name;
+    private String tableName;
     private ConstraintType type;
     private List<String> columns;
     private String referencedTable;

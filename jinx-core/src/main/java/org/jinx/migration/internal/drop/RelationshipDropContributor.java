@@ -1,5 +1,5 @@
-// package org.jinx.migration.internal.alter.RelationshipDropContributor;
-package org.jinx.migration.internal.alter;
+// package org.jinx.migration.internal.drop.RelationshipDropContributor;
+package org.jinx.migration.internal.drop;
 
 import org.jinx.migration.Dialect;
 import org.jinx.migration.SqlContributor;

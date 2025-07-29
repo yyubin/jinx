@@ -1,9 +1,7 @@
-package org.jinx.migration.internal.alter;
+package org.jinx.migration.internal.drop;
 
 import org.jinx.migration.Dialect;
-import org.jinx.migration.JavaTypeMapper;
 import org.jinx.migration.SqlContributor;
-import org.jinx.migration.ValueTransformer;
 import org.jinx.model.IndexModel;
 
 public record IndexDropContributor(String table, IndexModel index) implements SqlContributor {

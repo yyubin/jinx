@@ -19,7 +19,7 @@ public class EmbeddedHandler {
         this.columnHandler = columnHandler;
     }
 
-    public void processEmbedded(VariableElement field, Map<String, ColumnModel> columns, List<ConstraintModel> constraints, Set<String> processedTypes) {
+    public void processEmbedded(VariableElement field, Map<String, ColumnModel> columns, List<RelationshipModel> constraints, Set<String> processedTypes) {
         TypeMirror typeMirror = field.asType();
         if (!(typeMirror instanceof DeclaredType)) return;
         TypeElement embeddableType = (TypeElement) ((DeclaredType) typeMirror).asElement();
@@ -76,7 +76,7 @@ public class EmbeddedHandler {
         processedTypes.remove(typeName);
     }
 
-    private void processEmbeddedRelationship(VariableElement field, Map<String, ColumnModel> columns, List<ConstraintModel> constraints, Map<String, JoinColumn> associationOverrides, String prefix) {
+    private void processEmbeddedRelationship(VariableElement field, Map<String, ColumnModel> columns, List<RelationshipModel> relationshipModels, Map<String, JoinColumn> associationOverrides, String prefix) {
         ManyToOne manyToOne = field.getAnnotation(ManyToOne.class);
         OneToOne oneToOne = field.getAnnotation(OneToOne.class);
         JoinColumn joinColumn = associationOverrides.getOrDefault(field.getSimpleName().toString(), field.getAnnotation(JoinColumn.class));
@@ -114,12 +114,6 @@ public class EmbeddedHandler {
                 .orphanRemoval(oneToOne != null && oneToOne.orphanRemoval())
                 .fetchType(manyToOne != null ? FetchType.valueOf(manyToOne.fetch().name()) : FetchType.valueOf(oneToOne.fetch().name()))
                 .build();
-        constraints.add(ConstraintModel.builder()
-                .name(relationship.getConstraintName())
-                .type(ConstraintType.FOREIGN_KEY)
-                .columns(List.of(fkColumnName))
-                .referencedTable(referencedEntity.getTableName())
-                .referencedColumns(List.of(referencedPkColumnName.get()))
-                .build());
+        relationshipModels.add(relationship);
     }
 }

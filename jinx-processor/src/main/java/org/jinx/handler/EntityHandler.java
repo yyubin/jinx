@@ -51,7 +51,7 @@ public class EntityHandler {
                 .build();
 
         sequenceHandler.processSequenceGenerators(typeElement);
-        processConstraints(typeElement, null, entity.getConstraints());
+        processConstraints(typeElement, null, entity.getConstraints(), entity.getTableName());
 
         // Handle @SecondaryTable(s)
         SecondaryTable secondaryTable = typeElement.getAnnotation(SecondaryTable.class);
@@ -121,7 +121,7 @@ public class EntityHandler {
             if (field.getAnnotation(ElementCollection.class) != null) {
                 processElementCollection(field, entity);
             } else if (field.getAnnotation(Embedded.class) != null) {
-                embeddedHandler.processEmbedded(field, entity.getColumns(), entity.getConstraints(), new HashSet<>());
+                embeddedHandler.processEmbedded(field, entity.getColumns(), entity.getRelationships(), new HashSet<>());
             } else if (field.getAnnotation(EmbeddedId.class) == null) {
                 ColumnModel columnModel = columnHandler.createFrom(field, Collections.emptyMap());
                 if (columnModel != null) {
@@ -152,8 +152,8 @@ public class EntityHandler {
         context.getSchemaModel().getEntities().putIfAbsent(entity.getEntityName(), entity);
     }
 
-    private void processConstraints(Element element, String fieldName, List<ConstraintModel> constraints) {
-        constraintHandler.processConstraints(element, fieldName, constraints);
+    private void processConstraints(Element element, String fieldName, List<ConstraintModel> constraints, String tableName) {
+        constraintHandler.processConstraints(element, fieldName, constraints, tableName);
     }
 
     private List<VariableElement> getIdFields(TypeElement typeElement) {
@@ -171,7 +171,7 @@ public class EntityHandler {
     }
 
     private void processEmbeddedId(VariableElement embeddedIdField, EntityModel entity) {
-        embeddedHandler.processEmbedded(embeddedIdField, entity.getColumns(), entity.getConstraints(), new HashSet<>());
+        embeddedHandler.processEmbedded(embeddedIdField, entity.getColumns(), entity.getRelationships(), new HashSet<>());
         // Mark embedded columns as primary keys
         TypeElement embeddableType = (TypeElement) ((DeclaredType) embeddedIdField.asType()).asElement();
         for (Element enclosed : embeddableType.getEnclosedElements()) {
@@ -261,7 +261,7 @@ public class EntityHandler {
         // Element column
         String elementColumnName = field.getSimpleName().toString();
         if (valueType instanceof DeclaredType && ((DeclaredType) valueType).asElement().getAnnotation(Embeddable.class) != null) {
-            embeddedHandler.processEmbedded(field, collectionEntity.getColumns(), collectionEntity.getConstraints(), new HashSet<>());
+            embeddedHandler.processEmbedded(field, collectionEntity.getColumns(), collectionEntity.getRelationships(), new HashSet<>());
         } else {
             ColumnModel elementColumn = ColumnModel.builder()
                     .columnName(elementColumnName)
