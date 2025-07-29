@@ -1,5 +1,6 @@
 package org.jinx.context;
 
+import lombok.Getter;
 import org.jinx.model.ColumnModel;
 import org.jinx.model.EntityModel;
 import org.jinx.model.SchemaModel;
@@ -13,24 +14,21 @@ import javax.tools.FileObject;
 import javax.tools.StandardLocation;
 import java.io.IOException;
 import java.io.Writer;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
+@Getter
 public class ProcessingContext {
     private final ProcessingEnvironment processingEnv;
     private final SchemaModel schemaModel;
+    private final Map<String, String> autoApplyConverters = new HashMap<>();
 
     public ProcessingContext(ProcessingEnvironment processingEnv, SchemaModel schemaModel) {
         this.processingEnv = processingEnv;
         this.schemaModel = schemaModel;
     }
 
-    public ProcessingEnvironment getProcessingEnv() {
-        return processingEnv;
-    }
-
-    public SchemaModel getSchemaModel() {
-        return schemaModel;
-    }
 
     public Messager getMessager() {
         return processingEnv.getMessager();

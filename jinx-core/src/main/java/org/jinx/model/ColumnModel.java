@@ -1,30 +1,44 @@
 package org.jinx.model;
 
+import jakarta.persistence.FetchType;
+import jakarta.persistence.TemporalType;
 import lombok.Builder;
 import lombok.Data;
 
 @Data
 @Builder
 public class ColumnModel {
+    @Builder.Default private String tableName = "";
     private String columnName;
     private String javaType;
-    private boolean isPrimaryKey;
-    private boolean isNullable;
-    private boolean isUnique;
-    private int length;
-    private int precision;
-    private int scale;
-    private String defaultValue;
-    private GenerationStrategy generationStrategy;
-    private String sequenceName;
-    private String tableGeneratorName;
-    private long identityStartValue;
-    private int identityIncrement;
-    private int identityCache;
-    private long identityMinValue;
-    private long identityMaxValue;
-    private String[] identityOptions;
-    private boolean isManualPrimaryKey;
-    private boolean enumStringMapping;
-    private String[] enumValues;
+    @Builder.Default private boolean isPrimaryKey = false;
+    @Builder.Default private boolean isNullable = true;
+    @Builder.Default private boolean isUnique = false;
+    @Builder.Default private int length = 255;
+    @Builder.Default private int precision = 0;
+    @Builder.Default private int scale = 0;
+    @Builder.Default private String defaultValue = null;
+    @Builder.Default private GenerationStrategy generationStrategy = GenerationStrategy.NONE;
+    @Builder.Default private String sequenceName = null;
+    @Builder.Default private String tableGeneratorName = null;
+    @Builder.Default private long identityStartValue = 1;
+    @Builder.Default private int identityIncrement = 1;
+    @Builder.Default private int identityCache = 0;
+    @Builder.Default private long identityMinValue = Long.MIN_VALUE;
+    @Builder.Default private long identityMaxValue = Long.MAX_VALUE;
+    @Builder.Default private String[] identityOptions = new String[]{};
+    @Builder.Default private boolean isManualPrimaryKey = false;
+    @Builder.Default private boolean enumStringMapping = false;
+    @Builder.Default private String[] enumValues = new String[]{};
+    @Builder.Default private boolean isLob = false;
+    @Builder.Default private JdbcType jdbcType = null;
+    @Builder.Default private FetchType fetchType = FetchType.EAGER;
+    @Builder.Default private boolean isOptional = true;
+    @Builder.Default private boolean isVersion = false;
+    @Builder.Default private String conversionClass = null;
+    @Builder.Default private TemporalType temporalType = null;
+    @Builder.Default private boolean isMapKey = false; // Added for @MapKey*
+    @Builder.Default private String mapKeyType = null; // e.g., "entity:fieldName" or null
+    @Builder.Default private String[] mapKeyEnumValues = new String[]{}; // For @MapKeyEnumerated
+    @Builder.Default private TemporalType mapKeyTemporalType = null; // For @MapKeyTemporal
 }

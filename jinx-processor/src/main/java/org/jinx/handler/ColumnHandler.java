@@ -3,8 +3,7 @@ package org.jinx.handler;
 import jakarta.persistence.*;
 import org.jinx.annotation.Identity;
 import org.jinx.context.ProcessingContext;
-import org.jinx.model.ColumnModel;
-import org.jinx.model.GenerationStrategy;
+import org.jinx.model.*;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -24,21 +23,19 @@ public class ColumnHandler {
 
     public ColumnModel createFrom(VariableElement field, Map<String, String> overrides) {
         Column column = field.getAnnotation(Column.class);
-        if (column == null) return null;
-
         String columnName = overrides.getOrDefault(field.getSimpleName().toString(),
-                column.name().isEmpty() ? field.getSimpleName().toString() : column.name());
+                column != null && !column.name().isEmpty() ? column.name() : field.getSimpleName().toString());
 
         ColumnModel.ColumnModelBuilder builder = ColumnModel.builder()
                 .columnName(columnName)
                 .javaType(field.asType().toString())
-                .isPrimaryKey(field.getAnnotation(Id.class) != null)
-                .isNullable(column.nullable())
-                .isUnique(column.unique())
-                .length(column.length())
-                .precision(column.precision())
-                .scale(column.scale())
-                .defaultValue(column.columnDefinition().isEmpty() ? null : column.columnDefinition())
+                .isPrimaryKey(field.getAnnotation(Id.class) != null || field.getAnnotation(EmbeddedId.class) != null)
+                .isNullable(column != null ? column.nullable() : true)
+                .isUnique(column != null && column.unique())
+                .length(column != null ? column.length() : 255)
+                .precision(column != null ? column.precision() : 0)
+                .scale(column != null ? column.scale() : 0)
+                .defaultValue(column != null && !column.columnDefinition().isEmpty() ? column.columnDefinition() : null)
                 .generationStrategy(GenerationStrategy.NONE)
                 .identityStartValue(1)
                 .identityIncrement(1)
@@ -47,12 +44,61 @@ public class ColumnHandler {
                 .identityMaxValue(Long.MAX_VALUE)
                 .identityOptions(new String[]{})
                 .enumStringMapping(false)
-                .enumValues(new String[]{});
+                .enumValues(new String[]{})
+                .isLob(false)
+                .isOptional(column != null ? column.nullable() : true)
+                .isVersion(false)
+                .isManualPrimaryKey(field.getAnnotation(Id.class) != null || field.getAnnotation(EmbeddedId.class) != null);
 
+        // Handle @Lob
+        Lob lob = field.getAnnotation(Lob.class);
+        if (lob != null) {
+            builder.isLob(true);
+            String javaType = field.asType().toString();
+            if (javaType.equals("java.lang.String") || javaType.equals("java.sql.Clob") || javaType.equals("java.sql.NClob")) {
+                builder.jdbcType(JdbcType.CLOB);
+            } else if (javaType.equals("[B") || javaType.equals("java.sql.Blob") || javaType.equals("[Ljava.lang.Byte;")) {
+                builder.jdbcType(JdbcType.BLOB);
+            }
+        }
+
+        // Handle @Basic
+        Basic basic = field.getAnnotation(Basic.class);
+        if (basic != null) {
+            builder.fetchType(basic.fetch());
+            builder.isOptional(basic.optional());
+        }
+
+        // Handle @Version
+        Version version = field.getAnnotation(Version.class);
+        if (version != null) {
+            builder.isVersion(true);
+        }
+
+        // Handle @Convert (field-level or autoApply)
+        Convert convert = field.getAnnotation(Convert.class);
+        if (convert != null) {
+            builder.conversionClass(convert.converter().getName());
+        } else {
+            String autoApplyConverter = context.getAutoApplyConverters().get(field.asType().toString());
+            if (autoApplyConverter != null) {
+                builder.conversionClass(autoApplyConverter);
+            }
+        }
+
+        // Handle @Enumerated
         Enumerated enumerated = field.getAnnotation(Enumerated.class);
         if (enumerated != null) {
             builder.enumStringMapping(enumerated.value() == EnumType.STRING);
-            builder.enumValues(getEnumConstants(field.asType()));
+            if (builder.build().isEnumStringMapping()) {
+                builder.enumValues(getEnumConstants(field.asType()));
+            }
+        }
+
+        // Handle @Temporal
+        Temporal temporal = field.getAnnotation(Temporal.class);
+        if (temporal != null) {
+            builder.temporalType(temporal.value());
         }
 
         Identity identity = field.getAnnotation(Identity.class);
@@ -79,8 +125,6 @@ public class ColumnHandler {
                         return null;
                     }
                     builder.sequenceName(generatorName);
-
-                    // 필드 레벨 @SequenceGenerator 확인 및 처리
                     SequenceGenerator sg = field.getAnnotation(SequenceGenerator.class);
                     if (sg != null) {
                         sequenceHandler.processSingleGenerator(sg, field);
@@ -91,8 +135,6 @@ public class ColumnHandler {
                     builder.tableGeneratorName(gv.generator());
                     break;
             }
-        } else if (builder.build().isPrimaryKey()) {
-            builder.isManualPrimaryKey(true);
         }
 
         return builder.build();
@@ -109,4 +151,3 @@ public class ColumnHandler {
                 .toArray(String[]::new);
     }
 }
-

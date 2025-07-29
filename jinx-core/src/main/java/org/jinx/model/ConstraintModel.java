@@ -3,14 +3,16 @@ package org.jinx.model;
 import lombok.Builder;
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 @Builder
 public class ConstraintModel {
     private String name;
     private ConstraintType type;
-    private String column;
+    private List<String> columns;
     private String referencedTable;
-    private String referencedColumn;
+    private List<String> referencedColumns;
     private OnDeleteAction onDelete;
     private OnUpdateAction onUpdate;
 

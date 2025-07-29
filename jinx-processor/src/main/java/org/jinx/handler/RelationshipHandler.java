@@ -8,10 +8,8 @@ import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class RelationshipHandler {
     private final ProcessingContext context;
@@ -36,18 +34,24 @@ public class RelationshipHandler {
         ManyToOne manyToOne = field.getAnnotation(ManyToOne.class);
         OneToOne oneToOne = field.getAnnotation(OneToOne.class);
         ManyToMany manyToMany = field.getAnnotation(ManyToMany.class);
+        OneToMany oneToMany = field.getAnnotation(OneToMany.class);
 
         if (manyToOne != null || oneToOne != null) {
-            processToOneRelationship(field, ownerEntity);
+            processToOneRelationship(field, ownerEntity, manyToOne, oneToOne);
+        } else if (oneToMany != null) {
+            if (!oneToMany.mappedBy().isEmpty()) {
+                return; // Skip if mappedBy is set (inverse side)
+            }
+            processOneToMany(field, ownerEntity, oneToMany);
         } else if (manyToMany != null) {
             if (!manyToMany.mappedBy().isEmpty()) {
-                return;
+                return; // Skip if mappedBy is set (inverse side)
             }
-            processManyToMany(field, ownerEntity);
+            processManyToMany(field, ownerEntity, manyToMany);
         }
     }
 
-    private void processToOneRelationship(VariableElement field, EntityModel ownerEntity) {
+    private void processToOneRelationship(VariableElement field, EntityModel ownerEntity, ManyToOne manyToOne, OneToOne oneToOne) {
         JoinColumn joinColumn = field.getAnnotation(JoinColumn.class);
         if (joinColumn == null) return;
 
@@ -57,7 +61,7 @@ public class RelationshipHandler {
         if (referencedEntity == null) return;
         Optional<String> referencedPkColumnName = context.findPrimaryKeyColumnName(referencedEntity);
         if (referencedPkColumnName.isEmpty()) {
-            context.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Entity " + referencedEntity.getEntityName() + " must have a primary key (@Id).", field);
             referencedEntity.setValid(false);
             return;
@@ -74,47 +78,74 @@ public class RelationshipHandler {
                 .columnName(fkColumnName)
                 .javaType(referencedPkColumn.getJavaType())
                 .isPrimaryKey(mapsId != null)
-                .isNullable(mapsId == null)
-                .isUnique(field.getAnnotation(OneToOne.class) != null && mapsId == null)
+                .isNullable(mapsId == null && (manyToOne != null ? manyToOne.optional() : oneToOne != null && oneToOne.optional()))
+                .isUnique(oneToOne != null && mapsId == null)
                 .generationStrategy(GenerationStrategy.NONE)
                 .build();
         if (ownerEntity.getColumns().containsKey(fkColumnName)) {
-            context.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Duplicate column name '" + fkColumnName + "' in entity " + ownerEntity.getEntityName(), field);
             return;
         }
         ownerEntity.getColumns().putIfAbsent(fkColumnName, fkColumn);
 
         RelationshipModel relationship = RelationshipModel.builder()
-                .type(field.getAnnotation(ManyToOne.class) != null ? RelationshipType.MANY_TO_ONE : RelationshipType.ONE_TO_ONE)
+                .type(manyToOne != null ? RelationshipType.MANY_TO_ONE : RelationshipType.ONE_TO_ONE)
                 .column(fkColumnName)
                 .referencedTable(referencedEntity.getTableName())
                 .referencedColumn(referencedPkColumnName.get())
                 .mapsId(mapsId != null)
-                .constraintName(joinColumn.name())
+                .constraintName(joinColumn.name().isEmpty() ? "fk_" + fkColumnName : joinColumn.name())
+                .cascadeTypes(manyToOne != null ? Arrays.stream(manyToOne.cascade()).map(c -> CascadeType.valueOf(c.name())).collect(Collectors.toList())
+                        : Arrays.stream(oneToOne.cascade()).map(c -> CascadeType.valueOf(c.name())).collect(Collectors.toList()))
+                .orphanRemoval(oneToOne != null && oneToOne.orphanRemoval())
+                .fetchType(manyToOne != null ? FetchType.valueOf(manyToOne.fetch().name()) : FetchType.valueOf(oneToOne.fetch().name()))
                 .build();
         ownerEntity.getRelationships().add(relationship);
     }
 
-    private void processManyToMany(VariableElement field, EntityModel ownerEntity) {
+    private void processOneToMany(VariableElement field, EntityModel ownerEntity, OneToMany oneToMany) {
+        TypeMirror targetType = ((DeclaredType) field.asType()).getTypeArguments().get(0);
+        TypeElement targetEntity = (TypeElement) ((DeclaredType) targetType).asElement();
+        EntityModel targetEntityModel = context.getSchemaModel().getEntities().get(targetEntity.getQualifiedName().toString());
+        if (targetEntityModel == null) return;
+
+        JoinColumn joinColumn = field.getAnnotation(JoinColumn.class);
+        String columnName = joinColumn != null && !joinColumn.name().isEmpty() ? joinColumn.name() : ownerEntity.getTableName() + "_id";
+
+        RelationshipModel relationship = RelationshipModel.builder()
+                .type(RelationshipType.ONE_TO_MANY)
+                .column(columnName)
+                .referencedTable(targetEntityModel.getTableName())
+                .referencedColumn(columnName)
+                .constraintName("fk_" + targetEntityModel.getTableName() + "_" + columnName)
+                .cascadeTypes(Arrays.stream(oneToMany.cascade()).map(c -> CascadeType.valueOf(c.name())).collect(Collectors.toList()))
+                .orphanRemoval(oneToMany.orphanRemoval())
+                .fetchType(FetchType.valueOf(oneToMany.fetch().name()))
+                .build();
+        ownerEntity.getRelationships().add(relationship);
+    }
+
+    private void processManyToMany(VariableElement field, EntityModel ownerEntity, ManyToMany manyToMany) {
         JoinTableDetails details = getJoinTableDetails(field, ownerEntity);
         if (details == null) return;
 
         if (context.getSchemaModel().getEntities().containsKey(details.joinTableName)) {
-            context.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Duplicate join table entity '" + details.joinTableName + "'", field);
             return;
         }
 
         EntityModel joinTableEntity = createJoinTableEntity(details);
-        addRelationshipsToJoinTable(joinTableEntity, details);
+        addRelationshipsToJoinTable(joinTableEntity, details, manyToMany);
 
         context.getSchemaModel().getEntities().putIfAbsent(joinTableEntity.getEntityName(), joinTableEntity);
     }
 
     private JoinTableDetails getJoinTableDetails(VariableElement field, EntityModel ownerEntity) {
         JoinTable joinTable = field.getAnnotation(JoinTable.class);
-        TypeElement referencedTypeElement = getReferencedTypeElement(field.asType());
+        TypeMirror targetType = ((DeclaredType) field.asType()).getTypeArguments().get(0);
+        TypeElement referencedTypeElement = (TypeElement) ((DeclaredType) targetType).asElement();
         if (referencedTypeElement == null) return null;
         EntityModel referencedEntity = context.getSchemaModel().getEntities().get(referencedTypeElement.getQualifiedName().toString());
         if (referencedEntity == null) return null;
@@ -139,14 +170,13 @@ public class RelationshipHandler {
         String ownerPkColumnName = ownerPkOpt.get();
         String inversePkColumnName = inversePkOpt.get();
 
-        // 조인 테이블 이름 결정
         String joinTableName;
         if (joinTable != null && !joinTable.name().isEmpty()) {
             joinTableName = joinTable.name();
         } else {
             List<String> tableNames = Arrays.asList(ownerTable.toLowerCase(), referencedTable.toLowerCase());
-            Collections.sort(tableNames); // 알파벳순 정렬
-            joinTableName = String.join("_", tableNames); // 정렬된 이름으로 조합
+            Collections.sort(tableNames);
+            joinTableName = String.join("_", tableNames);
         }
 
         String ownerFkColumn = joinTable != null && joinTable.joinColumns().length > 0 && !joinTable.joinColumns()[0].name().isEmpty()
@@ -161,7 +191,7 @@ public class RelationshipHandler {
         EntityModel joinTableEntity = EntityModel.builder()
                 .entityName(details.joinTableName)
                 .tableName(details.joinTableName)
-                .isJoinTable(true)
+                .tableType(EntityModel.TableType.JOIN_TABLE)
                 .build();
 
         ColumnModel ownerFkColumnModel = ColumnModel.builder()
@@ -181,13 +211,16 @@ public class RelationshipHandler {
         return joinTableEntity;
     }
 
-    private void addRelationshipsToJoinTable(EntityModel joinTableEntity, JoinTableDetails details) {
+    private void addRelationshipsToJoinTable(EntityModel joinTableEntity, JoinTableDetails details, ManyToMany manyToMany) {
         RelationshipModel ownerRelationship = RelationshipModel.builder()
                 .type(RelationshipType.MANY_TO_MANY)
                 .column(details.ownerFkColumn)
                 .referencedTable(details.ownerEntity.getTableName())
                 .referencedColumn(details.ownerPkColumnName)
-                .constraintName(details.ownerFkColumn)
+                .constraintName("fk_" + details.ownerFkColumn)
+                .cascadeTypes(Arrays.stream(manyToMany.cascade()).map(c -> CascadeType.valueOf(c.name())).collect(Collectors.toList()))
+                .orphanRemoval(false)
+                .fetchType(FetchType.valueOf(manyToMany.fetch().name()))
                 .build();
         joinTableEntity.getRelationships().add(ownerRelationship);
 
@@ -196,14 +229,17 @@ public class RelationshipHandler {
                 .column(details.inverseFkColumn)
                 .referencedTable(details.referencedEntity.getTableName())
                 .referencedColumn(details.inversePkColumnName)
-                .constraintName(details.inverseFkColumn)
+                .constraintName("fk_" + details.inverseFkColumn)
+                .cascadeTypes(Arrays.stream(manyToMany.cascade()).map(c -> CascadeType.valueOf(c.name())).collect(Collectors.toList()))
+                .orphanRemoval(false)
+                .fetchType(FetchType.valueOf(manyToMany.fetch().name()))
                 .build();
         joinTableEntity.getRelationships().add(inverseRelationship);
     }
 
     private TypeElement getReferencedTypeElement(TypeMirror typeMirror) {
-        if (typeMirror instanceof DeclaredType) {
-            Element element = ((DeclaredType) typeMirror).asElement();
+        if (typeMirror instanceof DeclaredType declaredType) {
+            Element element = declaredType.asElement();
             if (element instanceof TypeElement) return (TypeElement) element;
         }
         return null;

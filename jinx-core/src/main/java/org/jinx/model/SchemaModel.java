@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Builder;
 import lombok.Data;
 
+import javax.lang.model.element.TypeElement;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -20,6 +21,10 @@ public class SchemaModel {
     private Map<String, SequenceModel> sequences = new LinkedHashMap<>();
     @Builder.Default
     private Map<String, TableGeneratorModel> tableGenerators = new LinkedHashMap<>();
+    @Builder.Default
+    private Map<String, TypeElement> mappedSuperclasses = new HashMap<>();
+    @Builder.Default
+    private Map<String, TypeElement> embeddables = new HashMap<>();
 
     @JsonCreator
     public SchemaModel(@JsonProperty("version") String version,

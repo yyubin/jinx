@@ -1,5 +1,6 @@
 package org.jinx.model;
 
+import jakarta.persistence.InheritanceType;
 import lombok.Builder;
 import lombok.Data;
 
@@ -15,18 +16,19 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class EntityModel {
     private String entityName;
     private String tableName;
+    @Builder.Default private String schema = null; // Added for @Table(schema)
+    @Builder.Default private String catalog = null; // Added for @Table(catalog)
     private InheritanceType inheritance;
     private String parentEntity;
-    @Builder.Default
-    private boolean isJoinTable = false;
-    @Builder.Default
-    private Map<String, ColumnModel> columns = new HashMap<>();
-    @Builder.Default
-    private Map<String, IndexModel> indexes = new HashMap<>();
-    @Builder.Default
-    private List<ConstraintModel> constraints = new ArrayList<>();
-    @Builder.Default
-    private List<RelationshipModel> relationships = new ArrayList<>();
+    @Builder.Default private TableType tableType = TableType.ENTITY;
+    @Builder.Default private Map<String, ColumnModel> columns = new HashMap<>();
+    @Builder.Default private Map<String, IndexModel> indexes = new HashMap<>();
+    @Builder.Default private List<ConstraintModel> constraints = new ArrayList<>();
+    @Builder.Default private List<RelationshipModel> relationships = new ArrayList<>();
+    @Builder.Default private boolean isValid = true;
+    @Builder.Default private String discriminatorValue = null;
 
-    private boolean isValid = true;
+    public enum TableType {
+        ENTITY, JOIN_TABLE, COLLECTION_TABLE
+    }
 }

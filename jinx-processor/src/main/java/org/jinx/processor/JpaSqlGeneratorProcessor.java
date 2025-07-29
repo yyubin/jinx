@@ -11,32 +11,15 @@ import org.jinx.model.*;
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeMirror;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @AutoService(Processor.class)
 @SupportedAnnotationTypes({
-        "jakarta.persistence.Entity",
-        "jakarta.persistence.Table",
-        "jakarta.persistence.Column",
-        "jakarta.persistence.Id",
-        "jakarta.persistence.Index",
-        "jakarta.persistence.ManyToOne",
-        "jakarta.persistence.JoinColumn",
-        "jakarta.persistence.JoinTable",
-        "jakarta.persistence.ManyToMany",
-        "jakarta.persistence.OneToOne",
-        "jakarta.persistence.MapsId",
-        "jakarta.persistence.Embedded",
-        "jakarta.persistence.Embeddable",
-        "jakarta.persistence.Inheritance",
-        "jakarta.persistence.DiscriminatorColumn",
-        "jakarta.persistence.SequenceGenerator",
-        "jakarta.persistence.SequenceGenerators",
-        "jakarta.persistence.TableGenerator",
-        "jakarta.persistence.Transient",
-        "jakarta.persistence.Enumerated",
+        "jakarta.persistence.*",
         "org.jinx.annotation.Constraint",
         "org.jinx.annotation.Constraints",
         "org.jinx.annotation.Identity"
@@ -74,6 +57,36 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+        // Process @Converter with autoApply=true
+        for (Element element : roundEnv.getElementsAnnotatedWith(Converter.class)) {
+            if (element.getKind() == ElementKind.CLASS) {
+                Converter converter = element.getAnnotation(Converter.class);
+                if (converter.autoApply()) {
+                    TypeElement converterType = (TypeElement) element;
+                    // Extract target Java type from AttributeConverter interface
+                    TypeMirror superType = converterType.getInterfaces().stream()
+                            .filter(i -> i.toString().startsWith("jakarta.persistence.AttributeConverter"))
+                            .findFirst().orElse(null);
+                    if (superType instanceof DeclaredType declaredType) {
+                        TypeMirror targetType = declaredType.getTypeArguments().get(0);
+                        context.getAutoApplyConverters().put(targetType.toString(), converterType.getQualifiedName().toString());
+                    }
+                }
+            }
+        }
+        // Process @MappedSuperclass and @Embeddable first
+        for (Element element : roundEnv.getElementsAnnotatedWith(MappedSuperclass.class)) {
+            if (element.getKind() == ElementKind.CLASS) {
+                context.getSchemaModel().getMappedSuperclasses().put(element.getSimpleName().toString(), (TypeElement) element);
+            }
+        }
+        for (Element element : roundEnv.getElementsAnnotatedWith(Embeddable.class)) {
+            if (element.getKind() == ElementKind.CLASS) {
+                context.getSchemaModel().getEmbeddables().put(element.getSimpleName().toString(), (TypeElement) element);
+            }
+        }
+
+        // Process @Entity
         for (Element element : roundEnv.getElementsAnnotatedWith(Entity.class)) {
             if (element.getKind() == ElementKind.CLASS) {
                 entityHandler.handle((TypeElement) element);
@@ -81,15 +94,15 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         }
 
         if (roundEnv.processingOver()) {
-            // 1. 상속 해석 먼저 수행
+            // 1. 상속 해석
             for (EntityModel entityModel : context.getSchemaModel().getEntities().values()) {
-                if (!entityModel.isValid()) continue; // 유효하지 않은 엔티티 건너뛰기
+                if (!entityModel.isValid()) continue;
                 TypeElement typeElement = context.getElementUtils().getTypeElement(entityModel.getEntityName());
                 inheritanceHandler.resolveInheritance(typeElement, entityModel);
             }
-            // 2. 관계 해석 수행
+            // 2. 관계 해석
             for (EntityModel entityModel : context.getSchemaModel().getEntities().values()) {
-                if (!entityModel.isValid()) continue; // 유효하지 않은 엔티티 건너뛰기
+                if (!entityModel.isValid()) continue;
                 TypeElement typeElement = context.getElementUtils().getTypeElement(entityModel.getEntityName());
                 relationshipHandler.resolveRelationships(typeElement, entityModel);
             }

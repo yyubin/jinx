@@ -46,6 +46,8 @@ public class SequenceHandler {
                 SequenceModel.builder()
                         .name(sg.sequenceName().isBlank() ? key : sg.sequenceName())
                         .initialValue(sg.initialValue())
+                        .schema(sg.schema().isEmpty() ? null : sg.schema())
+                        .catalog(sg.catalog().isEmpty() ? null : sg.catalog())
                         .allocationSize(sg.allocationSize())
                         .build()
         );

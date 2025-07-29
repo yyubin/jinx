@@ -1,23 +1,14 @@
 package org.jinx.handler;
 
-import jakarta.persistence.AttributeOverride;
-import jakarta.persistence.AttributeOverrides;
-import jakarta.persistence.Embeddable;
-import jakarta.persistence.Embedded;
+import jakarta.persistence.*;
 import org.jinx.context.ProcessingContext;
-import org.jinx.model.ColumnModel;
-import org.jinx.model.ConstraintModel;
+import org.jinx.model.*;
 
-import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.element.VariableElement;
+import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class EmbeddedHandler {
     private final ProcessingContext context;
@@ -38,27 +29,97 @@ public class EmbeddedHandler {
         if (processedTypes.contains(typeName)) return;
         processedTypes.add(typeName);
 
-        AttributeOverrides overrides = field.getAnnotation(AttributeOverrides.class);
         Map<String, String> columnOverrides = new HashMap<>();
-        if (overrides != null) {
-            for (AttributeOverride override : overrides.value()) {
+        Map<String, JoinColumn> associationOverrides = new HashMap<>();
+        AttributeOverrides attrOverrides = field.getAnnotation(AttributeOverrides.class);
+        AttributeOverride singleAttrOverride = field.getAnnotation(AttributeOverride.class);
+        AssociationOverrides assocOverrides = field.getAnnotation(AssociationOverrides.class);
+        AssociationOverride singleAssocOverride = field.getAnnotation(AssociationOverride.class);
+
+        if (attrOverrides != null) {
+            for (AttributeOverride override : attrOverrides.value()) {
                 columnOverrides.put(override.name(), override.column().name());
             }
         }
+        if (singleAttrOverride != null) {
+            columnOverrides.put(singleAttrOverride.name(), singleAttrOverride.column().name());
+        }
+        if (assocOverrides != null) {
+            for (AssociationOverride override : assocOverrides.value()) {
+                associationOverrides.put(override.name(), override.joinColumns()[0]);
+            }
+        }
+        if (singleAssocOverride != null) {
+            associationOverrides.put(singleAssocOverride.name(), singleAssocOverride.joinColumns()[0]);
+        }
+
+        boolean isElementCollection = field.getAnnotation(ElementCollection.class) != null;
+        String prefix = isElementCollection ? field.getSimpleName().toString() + "_" : "";
 
         for (Element enclosed : embeddableType.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.FIELD) continue;
             VariableElement embeddedField = (VariableElement) enclosed;
             if (embeddedField.getAnnotation(Embedded.class) != null) {
                 processEmbedded(embeddedField, columns, constraints, processedTypes);
+            } else if (embeddedField.getAnnotation(ManyToOne.class) != null || embeddedField.getAnnotation(OneToOne.class) != null) {
+                processEmbeddedRelationship(embeddedField, columns, constraints, associationOverrides, prefix);
             } else {
                 ColumnModel column = columnHandler.createFrom(embeddedField, columnOverrides);
                 if (column != null) {
-                    columns.putIfAbsent(column.getColumnName(), column);
+                    String columnName = prefix + column.getColumnName();
+                    column.setColumnName(columnName);
+                    columns.putIfAbsent(columnName, column);
                 }
             }
         }
 
         processedTypes.remove(typeName);
+    }
+
+    private void processEmbeddedRelationship(VariableElement field, Map<String, ColumnModel> columns, List<ConstraintModel> constraints, Map<String, JoinColumn> associationOverrides, String prefix) {
+        ManyToOne manyToOne = field.getAnnotation(ManyToOne.class);
+        OneToOne oneToOne = field.getAnnotation(OneToOne.class);
+        JoinColumn joinColumn = associationOverrides.getOrDefault(field.getSimpleName().toString(), field.getAnnotation(JoinColumn.class));
+        if (joinColumn == null) return;
+
+        TypeElement referencedTypeElement = (TypeElement) ((DeclaredType) field.asType()).asElement();
+        EntityModel referencedEntity = context.getSchemaModel().getEntities().get(referencedTypeElement.getQualifiedName().toString());
+        if (referencedEntity == null) return;
+        Optional<String> referencedPkColumnName = context.findPrimaryKeyColumnName(referencedEntity);
+        if (referencedPkColumnName.isEmpty()) return;
+
+        ColumnModel referencedPkColumn = referencedEntity.getColumns().get(referencedPkColumnName.get());
+        String fkColumnName = joinColumn.name().isEmpty() ? prefix + field.getSimpleName().toString() + "_" + referencedPkColumnName.get() : prefix + joinColumn.name();
+        MapsId mapsId = field.getAnnotation(MapsId.class);
+
+        ColumnModel fkColumn = ColumnModel.builder()
+                .columnName(fkColumnName)
+                .javaType(referencedPkColumn.getJavaType())
+                .isPrimaryKey(mapsId != null)
+                .isNullable(mapsId == null && (manyToOne != null ? manyToOne.optional() : oneToOne != null && oneToOne.optional()))
+                .isUnique(oneToOne != null && mapsId == null)
+                .generationStrategy(GenerationStrategy.NONE)
+                .build();
+        columns.putIfAbsent(fkColumnName, fkColumn);
+
+        RelationshipModel relationship = RelationshipModel.builder()
+                .type(manyToOne != null ? RelationshipType.MANY_TO_ONE : RelationshipType.ONE_TO_ONE)
+                .column(fkColumnName)
+                .referencedTable(referencedEntity.getTableName())
+                .referencedColumn(referencedPkColumnName.get())
+                .mapsId(mapsId != null)
+                .constraintName(joinColumn.name().isEmpty() ? "fk_" + fkColumnName : joinColumn.name())
+                .cascadeTypes(manyToOne != null ? Arrays.stream(manyToOne.cascade()).map(c -> CascadeType.valueOf(c.name())).collect(Collectors.toList())
+                        : Arrays.stream(oneToOne.cascade()).map(c -> CascadeType.valueOf(c.name())).collect(Collectors.toList()))
+                .orphanRemoval(oneToOne != null && oneToOne.orphanRemoval())
+                .fetchType(manyToOne != null ? FetchType.valueOf(manyToOne.fetch().name()) : FetchType.valueOf(oneToOne.fetch().name()))
+                .build();
+        constraints.add(ConstraintModel.builder()
+                .name(relationship.getConstraintName())
+                .type(ConstraintType.FOREIGN_KEY)
+                .columns(List.of(fkColumnName))
+                .referencedTable(referencedEntity.getTableName())
+                .referencedColumns(List.of(referencedPkColumnName.get()))
+                .build());
     }
 }

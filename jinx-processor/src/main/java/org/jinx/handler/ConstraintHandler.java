@@ -49,7 +49,7 @@ public class ConstraintHandler {
             ConstraintModel constraintModel = ConstraintModel.builder()
                     .name(c.value())
                     .type(type)
-                    .column(fieldName)
+                    .columns(List.of(fieldName))
                     .checkClause(checkExpr)
                     .build();
 
@@ -61,7 +61,7 @@ public class ConstraintHandler {
                     if (referencedEntity != null) {
                         String referencedPkColumnName = findPrimaryKeyColumnName(referencedEntity);
                         constraintModel.setReferencedTable(referencedEntity.getTableName());
-                        constraintModel.setReferencedColumn(referencedPkColumnName);
+                        constraintModel.setReferencedColumns(List.of(referencedPkColumnName));
                         constraintModel.setName(c.value().isEmpty() ? "fk_" + fieldName : c.value());
                     } else {
                         continue;
