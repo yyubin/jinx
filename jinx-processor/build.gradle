@@ -9,4 +9,10 @@ dependencies {
     annotationProcessor "com.google.auto.service:auto-service:${versions.autoService}"
 
     implementation "com.fasterxml.jackson.core:jackson-databind:${versions.jackson}"
+
+    testImplementation 'com.google.testing.compile:compile-testing:0.21.0'
+    testImplementation 'com.google.truth:truth:1.4.2'
+
+    testImplementation 'jakarta.persistence:jakarta.persistence-api:3.1.0'
+
 }

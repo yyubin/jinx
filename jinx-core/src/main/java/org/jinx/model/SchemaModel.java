@@ -27,13 +27,19 @@ public class SchemaModel {
     private Map<String, TypeElement> embeddables = new HashMap<>();
 
     @JsonCreator
-    public SchemaModel(@JsonProperty("version") String version,
-                       @JsonProperty("entities") Map<String, EntityModel> entities,
-                       @JsonProperty("sequences") Map<String, SequenceModel> sequences,
-                       @JsonProperty("tableGenerators") Map<String, TableGeneratorModel> tableGenerators) {
-        this.version = version;
-        this.entities = entities != null ? entities : new ConcurrentHashMap<>();
-        this.sequences = sequences != null ? sequences : new LinkedHashMap<>();
-        this.tableGenerators = tableGenerators != null ? tableGenerators : new LinkedHashMap<>();
+    public SchemaModel(
+            @JsonProperty("version")             String version,
+            @JsonProperty("entities")            Map<String, EntityModel> entities,
+            @JsonProperty("sequences")           Map<String, SequenceModel> sequences,
+            @JsonProperty("tableGenerators")     Map<String, TableGeneratorModel> tableGenerators,
+            @JsonProperty("mappedSuperclasses")  Map<String, TypeElement> mappedSuperclasses,
+            @JsonProperty("embeddables")         Map<String, TypeElement> embeddables) {
+
+        this.version            = version;
+        this.entities           = entities != null ? entities : new ConcurrentHashMap<>();
+        this.sequences          = sequences != null ? sequences : new LinkedHashMap<>();
+        this.tableGenerators    = tableGenerators != null ? tableGenerators : new LinkedHashMap<>();
+        this.mappedSuperclasses = mappedSuperclasses != null ? mappedSuperclasses : new HashMap<>();
+        this.embeddables        = embeddables != null ? embeddables : new HashMap<>();
     }
 }

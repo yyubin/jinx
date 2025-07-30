@@ -21,16 +21,21 @@ public class ColumnHandler {
         this.sequenceHandler = sequenceHandler;
     }
 
+    private static boolean notBlank(String s) {
+        return s != null && !s.isEmpty();
+    }
+
     public ColumnModel createFrom(VariableElement field, Map<String, String> overrides) {
         Column column = field.getAnnotation(Column.class);
-        String columnName = overrides.getOrDefault(field.getSimpleName().toString(),
-                column != null && !column.name().isEmpty() ? column.name() : field.getSimpleName().toString());
+        String columnName = overrides.getOrDefault(
+                field.getSimpleName().toString(),
+                column != null && notBlank(column.name()) ? column.name() : field.getSimpleName().toString());
 
         ColumnModel.ColumnModelBuilder builder = ColumnModel.builder()
                 .columnName(columnName)
                 .javaType(field.asType().toString())
                 .isPrimaryKey(field.getAnnotation(Id.class) != null || field.getAnnotation(EmbeddedId.class) != null)
-                .isNullable(column != null ? column.nullable() : true)
+                .isNullable(column == null || column.nullable())
                 .isUnique(column != null && column.unique())
                 .length(column != null ? column.length() : 255)
                 .precision(column != null ? column.precision() : 0)

@@ -211,6 +211,14 @@ public class RelationshipHandler {
         return joinTableEntity;
     }
 
+    private List<CascadeType> toCascadeList(CascadeType[] arr) {
+        return arr == null ? List.of() : Arrays.stream(arr).toList();
+    }
+
+    private FetchType safeFetch(FetchType ft, FetchType defaultFt) {
+        return ft == null ? defaultFt : ft;
+    }
+
     private void addRelationshipsToJoinTable(EntityModel joinTableEntity, JoinTableDetails details, ManyToMany manyToMany) {
         RelationshipModel ownerRelationship = RelationshipModel.builder()
                 .type(RelationshipType.MANY_TO_MANY)
@@ -218,9 +226,9 @@ public class RelationshipHandler {
                 .referencedTable(details.ownerEntity.getTableName())
                 .referencedColumn(details.ownerPkColumnName)
                 .constraintName("fk_" + details.ownerFkColumn)
-                .cascadeTypes(Arrays.stream(manyToMany.cascade()).map(c -> CascadeType.valueOf(c.name())).collect(Collectors.toList()))
+                .cascadeTypes(toCascadeList(manyToMany.cascade()))
                 .orphanRemoval(false)
-                .fetchType(FetchType.valueOf(manyToMany.fetch().name()))
+                .fetchType(safeFetch(manyToMany.fetch(), FetchType.LAZY))
                 .build();
         joinTableEntity.getRelationships().add(ownerRelationship);
 
@@ -230,9 +238,9 @@ public class RelationshipHandler {
                 .referencedTable(details.referencedEntity.getTableName())
                 .referencedColumn(details.inversePkColumnName)
                 .constraintName("fk_" + details.inverseFkColumn)
-                .cascadeTypes(Arrays.stream(manyToMany.cascade()).map(c -> CascadeType.valueOf(c.name())).collect(Collectors.toList()))
+                .cascadeTypes(toCascadeList(manyToMany.cascade()))
                 .orphanRemoval(false)
-                .fetchType(FetchType.valueOf(manyToMany.fetch().name()))
+                .fetchType(safeFetch(manyToMany.fetch(), FetchType.LAZY))
                 .build();
         joinTableEntity.getRelationships().add(inverseRelationship);
     }

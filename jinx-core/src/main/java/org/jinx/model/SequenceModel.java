@@ -20,12 +20,16 @@ public class SequenceModel {
     @JsonCreator
     public SequenceModel(
             @JsonProperty("name") String name,
+            @JsonProperty("schema") String schema,
+            @JsonProperty("catalog") String catalog,
             @JsonProperty("initialValue") long initialValue,
             @JsonProperty("allocationSize") int allocationSize,
             @JsonProperty("cache") int cache,
             @JsonProperty("minValue") long minValue,
             @JsonProperty("maxValue") long maxValue) {
         this.name = name;
+        this.schema = schema;
+        this.catalog = catalog;
         this.initialValue = initialValue;
         this.allocationSize = allocationSize;
         this.cache = cache;
