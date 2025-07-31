@@ -1,4 +1,9 @@
 package org.jinx.migration.dialect.mysql;
+import org.jinx.model.ColumnModel;
+import org.jinx.model.GenerationStrategy;
+
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -72,6 +77,23 @@ public final class MySqlUtil {
 
     public static boolean isKeyword(String name) {
         return MYSQL_KEYWORDS.contains(name.toUpperCase());
+    }
+
+    // Mysql pk 정렬 전용 유틸 메서드
+    public static List<String> reorderForIdentity(List<String> pk,
+                                                   List<ColumnModel> cols) {
+        String identity = cols.stream()
+                .filter(c -> c.getGenerationStrategy() == GenerationStrategy.IDENTITY)
+                .map(ColumnModel::getColumnName)
+                .filter(pk::contains)
+                .findFirst()
+                .orElse(null);
+
+        if (identity == null) return pk;
+        List<String> reordered = new ArrayList<>(pk);
+        reordered.remove(identity);
+        reordered.add(0, identity);
+        return reordered;
     }
 
 }

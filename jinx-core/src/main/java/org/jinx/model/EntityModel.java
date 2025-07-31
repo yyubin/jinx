@@ -1,8 +1,10 @@
 package org.jinx.model;
 
 import jakarta.persistence.InheritanceType;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,6 +15,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class EntityModel {
     private String entityName;
     private String tableName;

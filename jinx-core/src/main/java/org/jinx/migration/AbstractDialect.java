@@ -54,14 +54,6 @@ public abstract class AbstractDialect implements Dialect {
         return sb.toString();
     }
 
-    @Override
-    public String getPrimaryKeyDefinitionSql(List<String> pkColumns) {
-        if (pkColumns == null || pkColumns.isEmpty()) {
-            return "";
-        }
-        return "PRIMARY KEY (" + pkColumns.stream().map(this::quoteIdentifier).collect(Collectors.joining(", ")) + ")";
-    }
-
     protected boolean columnIsIdentity(String colName, Collection<ColumnModel> allColumns) {
         return allColumns.stream()
                 .filter(c -> c.getColumnName().equals(colName))

@@ -31,7 +31,10 @@ public interface Dialect {
     String indexStatement(IndexModel idx, String table);
     String quoteIdentifier(String raw);
     String getColumnDefinitionSql(ColumnModel column);
+
     String getPrimaryKeyDefinitionSql(List<String> pkColumns);
+    String getAddPrimaryKeySql(String table, List<String> pkColumns);
+
     String getConstraintDefinitionSql(ConstraintModel constraint);
     String getAddColumnSql(String table, ColumnModel column);
     String getDropColumnSql(String table, ColumnModel column);
@@ -42,7 +45,7 @@ public interface Dialect {
     String getModifyConstraintSql(String table, ConstraintModel newConstraint, ConstraintModel oldConstraint);
     String getDropIndexSql(String table, IndexModel index);
     String getModifyIndexSql(String table, IndexModel newIndex, IndexModel oldIndex);
-    String getAddPrimaryKeySql(String table, List<String> pkColumns);
+
     String getDropPrimaryKeySql(String table);
     String getDropPrimaryKeySql(String table, Collection<ColumnModel> currentColumns);
     String getAddRelationshipSql(String table, RelationshipModel rel);

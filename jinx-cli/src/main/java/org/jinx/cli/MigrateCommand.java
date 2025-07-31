@@ -2,9 +2,9 @@ package org.jinx.cli;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jinx.migration.Dialect;
-import org.jinx.migration.DiffResult;
+import org.jinx.model.DiffResult;
 import org.jinx.migration.MigrationGenerator;
-import org.jinx.migration.SchemaDiffer;
+import org.jinx.migration.differs.SchemaDiffer;
 import org.jinx.migration.dialect.mysql.MySqlDialect;
 import org.jinx.model.SchemaModel;
 import picocli.CommandLine;

@@ -3,8 +3,9 @@ package org.jinx.migration.internal.create;
 import org.jinx.migration.*;
 import org.jinx.model.ColumnModel;
 import java.util.List;
+import java.util.Map;
 
-public record ColumnContributor(List<ColumnModel> columns, List<String> pkColumns) implements TableBodyContributor {
+public record ColumnContributor(List<String> pkColumns, List<ColumnModel> columns) implements TableBodyContributor {
     @Override
     public int priority() {
         return 40; // Column 정의

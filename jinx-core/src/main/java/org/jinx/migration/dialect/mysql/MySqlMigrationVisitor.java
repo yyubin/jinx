@@ -7,9 +7,7 @@ import org.jinx.migration.internal.create.*;
 import org.jinx.migration.internal.drop.*;
 import org.jinx.model.*;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.StringJoiner;
+import java.util.*;
 
 public class MySqlMigrationVisitor implements MigrationVisitor {
     @Getter
@@ -17,6 +15,7 @@ public class MySqlMigrationVisitor implements MigrationVisitor {
     private final List<String> pkColumns;
     @Getter
     private final Collection<ColumnModel> currentColumns;
+    private final List<String> reOrderedPkColumns;
     private final StringJoiner sql;
     private final Dialect dialect;
 
@@ -30,9 +29,11 @@ public class MySqlMigrationVisitor implements MigrationVisitor {
                     .map(ColumnModel::getColumnName)
                     .toList();
             this.currentColumns = diff.getNewEntity().getColumns().values();
+            this.reOrderedPkColumns = MySqlUtil.reorderForIdentity(pkColumns, currentColumns.stream().toList());
         } else {
             this.pkColumns = List.of();
             this.currentColumns = List.of();
+            this.reOrderedPkColumns = List.of();
         }
     }
 
@@ -94,7 +95,7 @@ public class MySqlMigrationVisitor implements MigrationVisitor {
     public void visitModifiedColumn(ColumnModel newColumn, ColumnModel oldColumn) {
         if (oldColumn.isPrimaryKey() || newColumn.isPrimaryKey()) {
             alterBuilder.add(new PrimaryKeyComplexDropContributor(alterBuilder.getTableName(), currentColumns));
-            alterBuilder.add(new PrimaryKeyAddContributor(alterBuilder.getTableName(), pkColumns));
+            alterBuilder.add(new PrimaryKeyAddContributor(alterBuilder.getTableName(), reOrderedPkColumns));
         }
         alterBuilder.add(new ColumnModifyContributor(alterBuilder.getTableName(), newColumn, oldColumn));
     }
@@ -104,7 +105,7 @@ public class MySqlMigrationVisitor implements MigrationVisitor {
         if (oldColumn.isPrimaryKey()) {
             alterBuilder.add(new PrimaryKeyComplexDropContributor(alterBuilder.getTableName(), currentColumns));
             alterBuilder.add(new ColumnRenameContributor(alterBuilder.getTableName(), newColumn, oldColumn));
-            alterBuilder.add(new PrimaryKeyAddContributor(alterBuilder.getTableName(), pkColumns));
+            alterBuilder.add(new PrimaryKeyAddContributor(alterBuilder.getTableName(), reOrderedPkColumns));
             return;
         }
         alterBuilder.add(new ColumnRenameContributor(alterBuilder.getTableName(), newColumn, oldColumn));
@@ -159,7 +160,7 @@ public class MySqlMigrationVisitor implements MigrationVisitor {
 
     @Override
     public void visitAddedPrimaryKey(List<String> pkColumns) {
-        alterBuilder.add(new PrimaryKeyAddContributor(alterBuilder.getTableName(), pkColumns));
+        alterBuilder.add(new PrimaryKeyAddContributor(alterBuilder.getTableName(), reOrderedPkColumns));
     }
 
     @Override
@@ -170,6 +171,6 @@ public class MySqlMigrationVisitor implements MigrationVisitor {
     @Override
     public void visitModifiedPrimaryKey(List<String> newPkColumns, List<String> oldPkColumns) {
         visitDroppedPrimaryKey();
-        alterBuilder.add(new PrimaryKeyAddContributor(alterBuilder.getTableName(), newPkColumns));
+        alterBuilder.add(new PrimaryKeyAddContributor(alterBuilder.getTableName(), reOrderedPkColumns));
     }
 }

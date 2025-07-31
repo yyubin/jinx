@@ -3,8 +3,6 @@ package org.jinx.migration;
 import org.jinx.model.*;
 import java.util.StringJoiner;
 
-import static org.jinx.migration.DiffResult.TableGeneratorDiff.Type.ADDED;
-
 public class MigrationGenerator {
     private final Dialect dialect;
     private final SchemaModel newSchema;

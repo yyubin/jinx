@@ -9,6 +9,7 @@ repositories {
     mavenCentral()
 }
 
+
 ext {
     versions = [
             junit        : '5.10.0',
@@ -22,14 +23,20 @@ ext {
     ]
 }
 
+
 subprojects {
     apply plugin: 'java'
+    apply plugin: 'jacoco'
 
     group = 'org.jinx'
     version = '1.0-SNAPSHOT'
 
     repositories {
         mavenCentral()
+    }
+
+    jacoco {
+        toolVersion = "0.8.12"
     }
 
     dependencies {
@@ -44,5 +51,26 @@ subprojects {
 
     test {
         useJUnitPlatform()
+        finalizedBy jacocoTestReport
+    }
+
+    jacocoTestReport {
+        executionData fileTree(dir: "$buildDir", includes: [
+                "jacoco/test.exec", "jacoco/test*.exec"
+        ])
+        reports {
+            xml.required = true
+            html.required = true
+        }
+
+        afterEvaluate {
+            classDirectories.setFrom(files(classDirectories.files.collect {
+                fileTree(dir: it, exclude: [
+                        '**/*$MockitoMock$*.*',
+                        '**/model/**',
+                        '**/*Builder*.*' // Lombok 빌더 클래스 제외
+                ])
+            }))
+        }
     }
 }

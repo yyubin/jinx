@@ -1,8 +1,8 @@
-package org.jinx.migration;
+package org.jinx.model;
 
 import lombok.Builder;
 import lombok.Getter;
-import org.jinx.model.*;
+import org.jinx.migration.MigrationVisitor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -131,44 +131,6 @@ public class DiffResult {
         public static SequenceDiff dropped(SequenceModel sequence) {
             return SequenceDiff.builder().type(Type.DROPPED).sequence(sequence).build();
         }
-
-        public static SequenceDiff modified(SequenceModel oldSequence, SequenceModel newSequence) {
-            return SequenceDiff.builder()
-                    .type(Type.MODIFIED)
-                    .sequence(newSequence)
-                    .oldSequence(oldSequence)
-                    .changeDetail(getChangeDetail(oldSequence, newSequence))
-                    .build();
-        }
-
-        private static String getChangeDetail(SequenceModel oldSeq, SequenceModel newSeq) {
-            StringBuilder detail = new StringBuilder();
-            if (oldSeq.getInitialValue() != newSeq.getInitialValue()) {
-                detail.append("initialValue changed from ").append(oldSeq.getInitialValue()).append(" to ").append(newSeq.getInitialValue()).append("; ");
-            }
-            if (oldSeq.getAllocationSize() != newSeq.getAllocationSize()) {
-                detail.append("allocationSize changed from ").append(oldSeq.getAllocationSize()).append(" to ").append(newSeq.getAllocationSize()).append("; ");
-            }
-            if (oldSeq.getCache() != newSeq.getCache()) {
-                detail.append("cache changed from ").append(oldSeq.getCache()).append(" to ").append(newSeq.getCache()).append("; ");
-            }
-            if (oldSeq.getMinValue() != newSeq.getMinValue()) {
-                detail.append("minValue changed from ").append(oldSeq.getMinValue()).append(" to ").append(newSeq.getMinValue()).append("; ");
-            }
-            if (oldSeq.getMaxValue() != newSeq.getMaxValue()) {
-                detail.append("maxValue changed from ").append(oldSeq.getMaxValue()).append(" to ").append(newSeq.getMaxValue()).append("; ");
-            }
-            if (!Objects.equals(oldSeq.getSchema(), newSeq.getSchema())) {
-                detail.append("schema changed from ").append(oldSeq.getSchema()).append(" to ").append(newSeq.getSchema()).append("; ");
-            }
-            if (!Objects.equals(oldSeq.getCatalog(), newSeq.getCatalog())) {
-                detail.append("catalog changed from ").append(oldSeq.getCatalog()).append(" to ").append(newSeq.getCatalog()).append("; ");
-            }
-            if (detail.length() > 2) {
-                detail.setLength(detail.length() - 2);
-            }
-            return detail.toString();
-        }
     }
 
     @Builder
@@ -188,45 +150,5 @@ public class DiffResult {
             return TableGeneratorDiff.builder().type(Type.DROPPED).tableGenerator(tableGenerator).build();
         }
 
-        public static TableGeneratorDiff modified(TableGeneratorModel oldTableGenerator, TableGeneratorModel newTableGenerator) {
-            return TableGeneratorDiff.builder()
-                    .type(Type.MODIFIED)
-                    .tableGenerator(newTableGenerator)
-                    .oldTableGenerator(oldTableGenerator)
-                    .changeDetail(getChangeDetail(oldTableGenerator, newTableGenerator))
-                    .build();
-        }
-
-        private static String getChangeDetail(TableGeneratorModel oldTg, TableGeneratorModel newTg) {
-            StringBuilder detail = new StringBuilder();
-            if (!Objects.equals(oldTg.getTable(), newTg.getTable())) {
-                detail.append("table changed from ").append(oldTg.getTable()).append(" to ").append(newTg.getTable()).append("; ");
-            }
-            if (!Objects.equals(oldTg.getSchema(), newTg.getSchema())) {
-                detail.append("schema changed from ").append(oldTg.getSchema()).append(" to ").append(newTg.getSchema()).append("; ");
-            }
-            if (!Objects.equals(oldTg.getCatalog(), newTg.getCatalog())) {
-                detail.append("catalog changed from ").append(oldTg.getCatalog()).append(" to ").append(newTg.getCatalog()).append("; ");
-            }
-            if (!Objects.equals(oldTg.getPkColumnName(), newTg.getPkColumnName())) {
-                detail.append("pkColumnName changed from ").append(oldTg.getPkColumnName()).append(" to ").append(newTg.getPkColumnName()).append("; ");
-            }
-            if (!Objects.equals(oldTg.getValueColumnName(), newTg.getValueColumnName())) {
-                detail.append("valueColumnName changed from ").append(oldTg.getValueColumnName()).append(" to ").append(newTg.getValueColumnName()).append("; ");
-            }
-            if (!Objects.equals(oldTg.getPkColumnValue(), newTg.getPkColumnValue())) {
-                detail.append("pkColumnValue changed from ").append(oldTg.getPkColumnValue()).append(" to ").append(newTg.getPkColumnValue()).append("; ");
-            }
-            if (oldTg.getInitialValue() != newTg.getInitialValue()) {
-                detail.append("initialValue changed from ").append(oldTg.getInitialValue()).append(" to ").append(newTg.getInitialValue()).append("; ");
-            }
-            if (oldTg.getAllocationSize() != newTg.getAllocationSize()) {
-                detail.append("allocationSize changed from ").append(oldTg.getAllocationSize()).append(" to ").append(newTg.getAllocationSize()).append("; ");
-            }
-            if (detail.length() > 2) {
-                detail.setLength(detail.length() - 2);
-            }
-            return detail.toString();
-        }
     }
 }

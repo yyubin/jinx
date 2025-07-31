@@ -1,10 +1,6 @@
 package org.jinx.migration;
 
 import lombok.Getter;
-import org.jinx.migration.DiffResult;
-import org.jinx.migration.JavaTypeMapper;
-import org.jinx.migration.SqlContributor;
-import org.jinx.migration.ValueTransformer;
 
 import java.util.ArrayList;
 import java.util.Comparator;

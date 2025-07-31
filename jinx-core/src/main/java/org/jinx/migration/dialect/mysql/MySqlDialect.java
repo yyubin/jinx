@@ -51,8 +51,8 @@ public class MySqlDialect extends AbstractDialect {
                 .filter(ColumnModel::isPrimaryKey)
                 .map(ColumnModel::getColumnName)
                 .toList();
-
-        builder.add(new ColumnContributor(cols, pkCols));
+        List<String> reorderedPk = MySqlUtil.reorderForIdentity(pkCols, cols);
+        builder.add(new ColumnContributor(reorderedPk, cols));
         builder.add(new ConstraintContributor(entity.getConstraints().stream().toList()));
         builder.add(new IndexContributor(
                 entity.getTableName(),
@@ -100,13 +100,13 @@ public class MySqlDialect extends AbstractDialect {
                     .append(quoteIdentifier(tg.getTable()))
                     .append(" (").append(quoteIdentifier(tg.getPkColumnName()))
                     .append(", ").append(quoteIdentifier(tg.getValueColumnName())).append(")")
-                    .append(" VALUES ('").append(valueTransformer.quote(tg.getPkColumnValue(), new MySqlJavaTypeMapper().map("java.lang.String")))
-                    .append("', ").append(tg.getInitialValue()).append(");\n");
+                    // FIX: VALUES 뒤의 따옴표를 제거하고, 쉼표 뒤의 따옴표도 제거
+                    .append(" VALUES (").append(valueTransformer.quote(tg.getPkColumnValue(), new MySqlJavaTypeMapper().map("java.lang.String")))
+                    .append(", ").append(tg.getInitialValue()).append(");\n");
         }
         return ddl.toString();
     }
 
-    // --- CREATE/DROP TABLE 기본 구문 ---
 
     @Override
     public String openCreateTable(String table) {
@@ -128,35 +128,21 @@ public class MySqlDialect extends AbstractDialect {
         return " AUTO_INCREMENT";
     }
 
-    // --- CREATE TABLE 내부 절(clause) 생성 메서드 ---
 
     @Override
-    public String getPrimaryKeyDefinitionSql(List<String> pkColumns) {
-        if (pkColumns == null || pkColumns.isEmpty()) return "";
-        // AUTO_INCREMENT 컬럼이 첫 번째로 오도록 재배치
-        List<String> reorderedPkColumns = reorderPkColumnsForAutoIncrement(pkColumns);
-        return "PRIMARY KEY (" + reorderedPkColumns.stream().map(this::quoteIdentifier).collect(Collectors.joining(", ")) + ")";
-    }
-
-    private List<String> reorderPkColumnsForAutoIncrement(List<String> pkColumns) {
-        List<String> reordered = new java.util.ArrayList<>(pkColumns);
-        // MySQL에서는 AUTO_INCREMENT 컬럼이 복합 PK의 첫 번째 컬럼이어야 함
-        for (int i = 0; i < reordered.size(); i++) {
-            if (columnIsIdentity(reordered.get(i))) {
-                String autoIncrementCol = reordered.remove(i);
-                reordered.add(0, autoIncrementCol);
-                break;
-            }
+    public String getAddPrimaryKeySql(String table, List<String> pkColumns) {
+        if (pkColumns == null || pkColumns.isEmpty()) {
+            return "";
         }
-        return reordered;
+
+        String columns = pkColumns.stream()
+                .map(this::quoteIdentifier)
+                .collect(Collectors.joining(", "));
+
+        return "ALTER TABLE " + quoteIdentifier(table) +
+                " ADD PRIMARY KEY (" + columns + ");\n";
     }
 
-    // MySqlMigrationVisitor에서 제공된 pkColumns 사용
-    protected boolean columnIsIdentity(String colName) {
-        // MySqlMigrationVisitor에서 pkColumns를 통해 확인
-        // 실제 구현에서는 visitor가 제공한 컬럼 목록 사용
-        return false; // Placeholder, visitor에서 컬럼 정보 제공
-    }
 
     @Override
     public String getColumnDefinitionSql(ColumnModel c) {
@@ -216,7 +202,10 @@ public class MySqlDialect extends AbstractDialect {
                     sb.append(" CHECK (").append(cons.getCheckClause()).append(")");
                 }
             }
-            case PRIMARY_KEY -> sb.append(getPrimaryKeyDefinitionSql(cons.getColumns()));
+            case PRIMARY_KEY -> {
+                List<String> pkCols = cons.getColumns();
+                sb.append(getPrimaryKeyDefinitionSql(cons.getColumns()));
+            }
             case INDEX -> sb.append(indexStatement(IndexModel.builder()
                     .indexName(cons.getName())
                     .columnNames(cons.getColumns())
@@ -228,7 +217,15 @@ public class MySqlDialect extends AbstractDialect {
 
     @Override
     public String getDropPrimaryKeySql(String table) {
-        throw new UnsupportedOperationException("MySQL does not support dropping primary keys with currentColumns, use getDropPrimaryKeySql(String table, Collection<ColumnModel> currentColumns)");
+        return "ALTER TABLE " + quoteIdentifier(table) + " DROP PRIMARY KEY;\n";
+    }
+
+    @Override
+    public String getPrimaryKeyDefinitionSql(List<String> pkColumns) {
+        String cols = pkColumns.stream()
+                .map(this::quoteIdentifier)
+                .collect(Collectors.joining(", "));
+        return "PRIMARY KEY (" + cols + ")";
     }
 
     @Override
@@ -270,16 +267,20 @@ public class MySqlDialect extends AbstractDialect {
     @Override
     public String getDropColumnSql(String table, ColumnModel col) {
         StringBuilder sb = new StringBuilder();
+
         if (col.isUnique()) {
-            String uniqueIndexName = "uk_" + table + "_" + col.getColumnName();
+            String uk = "uk_" + table + "_" + col.getColumnName();
             sb.append("ALTER TABLE ").append(quoteIdentifier(table))
-                    .append(" DROP INDEX ").append(quoteIdentifier(uniqueIndexName)).append(";\n");
+                    .append(" DROP INDEX ").append(quoteIdentifier(uk)).append(";\n");
         }
+
         if (col.isPrimaryKey()) {
             sb.append(getDropPrimaryKeySql(table));
         }
+
         sb.append("ALTER TABLE ").append(quoteIdentifier(table))
-                .append(" DROP COLUMN ").append(quoteIdentifier(col.getColumnName())).append(";\n");
+                .append(" DROP COLUMN ").append(quoteIdentifier(col.getColumnName()))
+                .append(";\n");
         return sb.toString();
     }
 
@@ -359,15 +360,6 @@ public class MySqlDialect extends AbstractDialect {
         String dropSql = getDropIndexSql(table, oldIndex);
         String addSql = indexStatement(newIndex, table);
         return dropSql + addSql;
-    }
-
-    @Override
-    public String getAddPrimaryKeySql(String table, List<String> pkColumns) {
-        if (pkColumns == null || pkColumns.isEmpty()) return "";
-        // AUTO_INCREMENT 컬럼이 첫 번째로 오도록 재배치
-        List<String> reorderedPkColumns = reorderPkColumnsForAutoIncrement(pkColumns);
-        String columns = reorderedPkColumns.stream().map(this::quoteIdentifier).collect(Collectors.joining(", "));
-        return "ALTER TABLE " + quoteIdentifier(table) + " ADD PRIMARY KEY (" + columns + ");\n";
     }
 
     @Override
