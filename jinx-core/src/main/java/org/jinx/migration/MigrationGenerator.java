@@ -1,6 +1,8 @@
 package org.jinx.migration;
 
 import org.jinx.model.*;
+
+import java.util.Optional;
 import java.util.StringJoiner;
 
 public class MigrationGenerator {
@@ -20,20 +22,24 @@ public class MigrationGenerator {
 
         // 2. Handle sequence diffs (for dialects like PostgreSQL)
         for (DiffResult.SequenceDiff seqDiff : diff.getSequenceDiffs()) {
-            switch (seqDiff.getType()) {
-                case ADDED -> sql.add(dialect.getCreateSequenceSql(seqDiff.getSequence()));
-                case DROPPED -> sql.add(dialect.getDropSequenceSql(seqDiff.getSequence()));
-                case MODIFIED -> sql.add(dialect.getAlterSequenceSql(seqDiff.getSequence(), seqDiff.getOldSequence()));
-            }
+            Optional.ofNullable(seqDiff.getType()).ifPresent(type -> {
+                switch (type) {
+                    case ADDED -> sql.add(dialect.getCreateSequenceSql(seqDiff.getSequence()));
+                    case DROPPED -> sql.add(dialect.getDropSequenceSql(seqDiff.getSequence()));
+                    case MODIFIED -> sql.add(dialect.getAlterSequenceSql(seqDiff.getSequence(), seqDiff.getOldSequence()));
+                }
+            });
         }
 
         // 3. Handle table generator diffs (for MySQL, only ADDED is relevant)
         for (DiffResult.TableGeneratorDiff tgDiff : diff.getTableGeneratorDiffs()) {
-            switch (tgDiff.getType()) {
-                case DROPPED -> sql.add(dialect.getDropTableGeneratorSql(tgDiff.getTableGenerator()));
-                case MODIFIED -> sql.add(dialect.getAlterTableGeneratorSql(tgDiff.getTableGenerator(), tgDiff.getOldTableGenerator()));
-                default -> {}
-            }
+            Optional.ofNullable(tgDiff.getType()).ifPresent(type -> {
+                switch (type) {
+                    case DROPPED -> sql.add(dialect.getDropTableGeneratorSql(tgDiff.getTableGenerator()));
+                    case MODIFIED -> sql.add(dialect.getAlterTableGeneratorSql(tgDiff.getTableGenerator(), tgDiff.getOldTableGenerator()));
+                    default -> { /* ADDED type is handled by preSchemaObjects and is intentionally ignored here */ }
+                }
+            });
         }
 
         // 4. Handle table drops

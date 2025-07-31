@@ -18,20 +18,22 @@ public class EntityHandler {
     private final EmbeddedHandler embeddedHandler;
     private final ConstraintHandler constraintHandler;
     private final SequenceHandler sequenceHandler;
+    private final ElementCollectionHandler elementCollectionHandler;
 
-    public EntityHandler(ProcessingContext context, ColumnHandler columnHandler, EmbeddedHandler embeddedHandler, ConstraintHandler constraintHandler, SequenceHandler sequenceHandler) {
+    public EntityHandler(ProcessingContext context, ColumnHandler columnHandler, EmbeddedHandler embeddedHandler, ConstraintHandler constraintHandler, SequenceHandler sequenceHandler, ElementCollectionHandler elementCollectionHandler) {
         this.context = context;
         this.columnHandler = columnHandler;
         this.embeddedHandler = embeddedHandler;
         this.constraintHandler = constraintHandler;
         this.sequenceHandler = sequenceHandler;
+        this.elementCollectionHandler = elementCollectionHandler;
     }
 
     public void handle(TypeElement typeElement) {
-        Table table = typeElement.getAnnotation(Table.class);
-        String tableName = table != null && !table.name().isEmpty() ? table.name() : typeElement.getSimpleName().toString();
-        String schema = table != null && !table.schema().isEmpty() ? table.schema() : null;
-        String catalog = table != null && !table.catalog().isEmpty() ? table.catalog() : null;
+        Optional<Table> tableOpt = Optional.ofNullable(typeElement.getAnnotation(Table.class));
+        String tableName = tableOpt.map(Table::name).filter(n -> !n.isEmpty()).orElse(typeElement.getSimpleName().toString());
+        String schema = tableOpt.map(Table::schema).filter(s -> !s.isEmpty()).orElse(null);
+        String catalog = tableOpt.map(Table::catalog).filter(c -> !c.isEmpty()).orElse(null);
         String entityName = typeElement.getQualifiedName().toString();
 
         if (context.getSchemaModel().getEntities().containsKey(entityName)) {
@@ -63,7 +65,6 @@ public class EntityHandler {
         if (secondaryTables != null) secondaryTableList.addAll(Arrays.asList(secondaryTables.value()));
         for (SecondaryTable st : secondaryTableList) {
             tableMappings.put(st.name(), st);
-            // Add FK relationship for secondary table
             Optional<String> pkColumnName = context.findPrimaryKeyColumnName(entity);
             if (pkColumnName.isPresent() && st.pkJoinColumns().length > 0) {
                 String fkColumnName = st.pkJoinColumns()[0].name();
@@ -78,13 +79,11 @@ public class EntityHandler {
             }
         }
 
-        // Process mapped superclasses
         List<TypeElement> superclasses = getMappedSuperclasses(typeElement);
         for (TypeElement superclass : superclasses) {
             processMappedSuperclass(superclass, entity);
         }
 
-        // Handle composite keys
         IdClass idClass = typeElement.getAnnotation(IdClass.class);
         EmbeddedId embeddedId = typeElement.getAnnotation(EmbeddedId.class);
         if (idClass != null) {
@@ -103,7 +102,6 @@ public class EntityHandler {
             }
         }
 
-        // Process fields (single loop)
         for (Element enclosed : typeElement.getEnclosedElements()) {
             if (enclosed.getAnnotation(Transient.class) != null ||
                     enclosed.getModifiers().contains(Modifier.TRANSIENT) ||
@@ -112,11 +110,10 @@ public class EntityHandler {
             }
             VariableElement field = (VariableElement) enclosed;
             Column column = field.getAnnotation(Column.class);
-            String targetTable = entity.getTableName();
-            if (column != null && !column.table().isEmpty()) {
-                SecondaryTable tmpSecondaryTable = tableMappings.get(column.table());
-                targetTable = tmpSecondaryTable != null ? tmpSecondaryTable.name() : entity.getTableName();
-            }
+            String targetTable = Optional.ofNullable(column).map(Column::table).filter(t -> !t.isEmpty())
+                    .map(tableMappings::get)
+                    .map(SecondaryTable::name)
+                    .orElse(entity.getTableName());
 
             if (field.getAnnotation(ElementCollection.class) != null) {
                 processElementCollection(field, entity);
@@ -131,14 +128,13 @@ public class EntityHandler {
             }
         }
 
-        // Process indexes
-        if (table != null) {
+        tableOpt.ifPresent(table -> {
             for (Index index : table.indexes()) {
                 String indexName = index.name();
                 if (entity.getIndexes().containsKey(indexName)) {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                             "Duplicate index name '" + indexName + "' in entity " + entityName, typeElement);
-                    continue;
+                    return;
                 }
                 IndexModel indexModel = IndexModel.builder()
                         .indexName(indexName)
@@ -147,9 +143,13 @@ public class EntityHandler {
                         .build();
                 entity.getIndexes().put(indexModel.getIndexName(), indexModel);
             }
-        }
+        });
 
         context.getSchemaModel().getEntities().putIfAbsent(entity.getEntityName(), entity);
+    }
+
+    private void processElementCollection(VariableElement field, EntityModel ownerEntity) {
+        elementCollectionHandler.processElementCollection(field, ownerEntity);
     }
 
     private void processConstraints(Element element, String fieldName, List<ConstraintModel> constraints, String tableName) {
@@ -172,7 +172,6 @@ public class EntityHandler {
 
     private void processEmbeddedId(VariableElement embeddedIdField, EntityModel entity) {
         embeddedHandler.processEmbedded(embeddedIdField, entity.getColumns(), entity.getRelationships(), new HashSet<>());
-        // Mark embedded columns as primary keys
         TypeElement embeddableType = (TypeElement) ((DeclaredType) embeddedIdField.asType()).asElement();
         for (Element enclosed : embeddableType.getEnclosedElements()) {
             if (enclosed.getKind() == ElementKind.FIELD) {
@@ -186,134 +185,6 @@ public class EntityHandler {
         }
     }
 
-    private void processElementCollection(VariableElement field, EntityModel ownerEntity) {
-        CollectionTable collectionTable = field.getAnnotation(CollectionTable.class);
-        String tableName = collectionTable != null && !collectionTable.name().isEmpty()
-                ? collectionTable.name()
-                : ownerEntity.getTableName() + "_" + field.getSimpleName().toString();
-
-        EntityModel collectionEntity = EntityModel.builder()
-                .entityName(tableName)
-                .tableName(tableName)
-                .tableType(EntityModel.TableType.COLLECTION_TABLE)
-                .build();
-
-        // Foreign key to owner entity
-        Optional<String> ownerPkOpt = context.findPrimaryKeyColumnName(ownerEntity);
-        if (ownerPkOpt.isEmpty()) {
-            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "Owner entity " + ownerEntity.getEntityName() + " must have a primary key for ElementCollection", field);
-            return;
-        }
-        String fkColumnName = ownerEntity.getTableName() + "_id";
-        String ownerPkType = ownerEntity.getColumns().get(ownerPkOpt.get()).getJavaType();
-        ColumnModel fkColumn = ColumnModel.builder()
-                .columnName(fkColumnName)
-                .javaType(ownerPkType)
-                .isPrimaryKey(true)
-                .build();
-        collectionEntity.getColumns().put(fkColumnName, fkColumn);
-
-        // Check if it's a Map
-        TypeMirror fieldType = field.asType();
-        boolean isMap = fieldType instanceof DeclaredType &&
-                context.getTypeUtils().isSubtype(fieldType, context.getElementUtils().getTypeElement("java.util.Map").asType());
-        TypeMirror keyType = null, valueType = null;
-        if (isMap) {
-            DeclaredType mapType = (DeclaredType) fieldType;
-            keyType = mapType.getTypeArguments().get(0);
-            valueType = mapType.getTypeArguments().get(1);
-        } else {
-            valueType = ((DeclaredType) fieldType).getTypeArguments().get(0);
-        }
-
-        // Handle Map key column
-        if (isMap) {
-            MapKey mapKey = field.getAnnotation(MapKey.class);
-            MapKeyColumn mapKeyColumn = field.getAnnotation(MapKeyColumn.class);
-            MapKeyEnumerated mapKeyEnumerated = field.getAnnotation(MapKeyEnumerated.class);
-            MapKeyTemporal mapKeyTemporal = field.getAnnotation(MapKeyTemporal.class);
-
-            String mapKeyColumnName = mapKeyColumn != null && !mapKeyColumn.name().isEmpty() ? mapKeyColumn.name() : "map_key";
-            ColumnModel keyColumn = ColumnModel.builder()
-                    .columnName(mapKeyColumnName)
-                    .javaType(keyType.toString())
-                    .isPrimaryKey(true)
-                    .isMapKey(true)
-                    .build();
-
-            if (mapKey != null) {
-                keyColumn.setMapKeyType("entity:" + mapKey.name());
-            }
-            if (mapKeyEnumerated != null) {
-                keyColumn.setEnumStringMapping(mapKeyEnumerated.value() == EnumType.STRING);
-                if (keyColumn.isEnumStringMapping()) {
-                    keyColumn.setMapKeyEnumValues(getEnumConstants(keyType));
-                }
-            }
-            if (mapKeyTemporal != null) {
-                keyColumn.setMapKeyTemporalType(mapKeyTemporal.value());
-            }
-
-            collectionEntity.getColumns().put(mapKeyColumnName, keyColumn);
-        }
-
-        // Element column
-        String elementColumnName = field.getSimpleName().toString();
-        if (valueType instanceof DeclaredType && ((DeclaredType) valueType).asElement().getAnnotation(Embeddable.class) != null) {
-            embeddedHandler.processEmbedded(field, collectionEntity.getColumns(), collectionEntity.getRelationships(), new HashSet<>());
-        } else {
-            ColumnModel elementColumn = ColumnModel.builder()
-                    .columnName(elementColumnName)
-                    .javaType(valueType.toString())
-                    .isPrimaryKey(true)
-                    .build();
-            if (((DeclaredType) valueType).asElement().getKind() == ElementKind.ENUM) {
-                elementColumn.setEnumStringMapping(field.getAnnotation(Enumerated.class) != null &&
-                        field.getAnnotation(Enumerated.class).value() == EnumType.STRING);
-                if (elementColumn.isEnumStringMapping()) {
-                    elementColumn.setEnumValues(getEnumConstants(valueType));
-                }
-            }
-            collectionEntity.getColumns().put(elementColumnName, elementColumn);
-        }
-
-        // Handle @OrderColumn
-        OrderColumn orderColumn = field.getAnnotation(OrderColumn.class);
-        if (orderColumn != null && !isMap) {
-            String orderColumnName = orderColumn.name().isEmpty() ? "order_idx" : orderColumn.name();
-            ColumnModel orderCol = ColumnModel.builder()
-                    .columnName(orderColumnName)
-                    .javaType("int")
-                    .isPrimaryKey(true)
-                    .build();
-            collectionEntity.getColumns().put(orderColumnName, orderCol);
-        }
-
-        // Add FK constraint
-        RelationshipModel fkRelationship = RelationshipModel.builder()
-                .type(RelationshipType.ELEMENT_COLLECTION)
-                .column(fkColumnName)
-                .referencedTable(ownerEntity.getTableName())
-                .referencedColumn(ownerPkOpt.get())
-                .constraintName("fk_" + tableName + "_" + fkColumnName)
-                .build();
-        collectionEntity.getRelationships().add(fkRelationship);
-
-        context.getSchemaModel().getEntities().putIfAbsent(collectionEntity.getEntityName(), collectionEntity);
-    }
-
-    private String[] getEnumConstants(TypeMirror tm) {
-        if (!(tm instanceof DeclaredType dt)) return new String[]{};
-        Element e = dt.asElement();
-        if (e.getKind() != ElementKind.ENUM) return new String[]{};
-        return e.getEnclosedElements().stream()
-                .filter(el -> el.getKind() == ElementKind.ENUM_CONSTANT)
-                .map(Element::getSimpleName)
-                .map(Object::toString)
-                .toArray(String[]::new);
-    }
-
     private List<TypeElement> getMappedSuperclasses(TypeElement typeElement) {
         List<TypeElement> superclasses = new ArrayList<>();
         TypeMirror superclass = typeElement.getSuperclass();
@@ -324,6 +195,7 @@ public class EntityHandler {
             }
             superclass = superElement.getSuperclass();
         }
+        Collections.reverse(superclasses);
         return superclasses;
     }
 

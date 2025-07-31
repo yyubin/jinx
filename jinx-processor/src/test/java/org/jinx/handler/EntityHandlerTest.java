@@ -7,21 +7,19 @@ import org.jinx.model.EntityModel;
 import org.jinx.model.SchemaModel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import javax.annotation.processing.Messager;
-import javax.lang.model.element.Element;
-import javax.lang.model.element.Modifier;
-import javax.lang.model.element.Name;
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.element.VariableElement;
+import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
+import javax.tools.Diagnostic;
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,6 +43,8 @@ class EntityHandlerTest {
     private SchemaModel schemaModel;
     @Mock
     private Messager messager;
+    @Mock
+    private ElementCollectionHandler elementCollectionHandler;
 
     // Main @Entity class element
     @Mock
@@ -75,7 +75,7 @@ class EntityHandlerTest {
         entitiesMap = spy(new HashMap<>());
 
         // Setup main handler and its dependencies
-        entityHandler = new EntityHandler(context, columnHandler, embeddedHandler, constraintHandler, sequenceHandler);
+        entityHandler = new EntityHandler(context, columnHandler, embeddedHandler, constraintHandler, sequenceHandler, elementCollectionHandler);
 
         // Common context setup
         Types typeUtils   = mock(Types.class);
@@ -206,57 +206,31 @@ class EntityHandlerTest {
     }
 
     @Test
-    @DisplayName("Should process @ElementCollection and create a collection table")
-    void handle_WithElementCollection_CreatesCollectionTableEntity() {
-        // Given
+    @DisplayName("@ElementCollection 필드가 있으면 ElementCollectionHandler에게 처리를 위임해야 한다")
+    void handle_shouldDelegateToElementCollectionHandler_whenFieldIsElementCollection() {
+        // Arrange
+        Name entityName = mock(Name.class);
+        when(entityName.toString()).thenReturn("com.example.User");
+        when(entityTypeElement.getQualifiedName()).thenReturn(entityName);
+        when(entityTypeElement.getSimpleName()).thenReturn(mock(Name.class));
+        when(entityTypeElement.getSimpleName().toString()).thenReturn("User");
+
         VariableElement collectionField = mock(VariableElement.class);
-        Name collectionFieldName = mock(Name.class);
-        when(collectionFieldName.toString()).thenReturn("phoneNumbers");
-        when(collectionField.getSimpleName()).thenReturn(collectionFieldName);
-
-        Name entityQualifiedName = mock(Name.class);
-        when(entityQualifiedName.toString()).thenReturn("com.example.User");
-        when(entityTypeElement.getQualifiedName()).thenReturn(entityQualifiedName);
-
-        Name entitySimpleName = mock(Name.class);
-        when(entitySimpleName.toString()).thenReturn("User");
-        when(entityTypeElement.getSimpleName()).thenReturn(entitySimpleName);
-
-        DeclaredType collectionType = mock(DeclaredType.class);
-        DeclaredType genericType = mock(DeclaredType.class);
-        TypeElement genericElement = mock(TypeElement.class);
-
-        when(collectionField.getKind()).thenReturn(javax.lang.model.element.ElementKind.FIELD);
+        when(collectionField.getKind()).thenReturn(ElementKind.FIELD);
         when(collectionField.getAnnotation(ElementCollection.class)).thenReturn(mock(ElementCollection.class));
-        when(collectionField.asType()).thenReturn(collectionType);
-        doReturn(List.of(genericType)).when(collectionType).getTypeArguments();
-        when(genericType.asElement()).thenReturn(genericElement);
-        when(genericElement.getKind()).thenReturn(javax.lang.model.element.ElementKind.CLASS);
+        doReturn(List.of(collectionField)).when(entityTypeElement).getEnclosedElements();
 
-        doReturn(List.of(idField, collectionField)).when(entityTypeElement).getEnclosedElements();
-
-        // Mock owner entity's PK
-        when(context.findPrimaryKeyColumnName(any(EntityModel.class))).thenReturn(Optional.of("id"));
-        ColumnModel ownerPkColumn = ColumnModel.builder().columnName("id").javaType("java.lang.Long").build();
-        when(columnHandler.createFrom(eq(idField), any())).thenReturn(ownerPkColumn);
-
-        // When
+        // Act
         entityHandler.handle(entityTypeElement);
 
         // Then
-        // Verify that two entities were created: the main one and the collection table
-        ArgumentCaptor<String> entityNameCaptor = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<EntityModel> entityModelCaptor = ArgumentCaptor.forClass(EntityModel.class);
-        verify(schemaModel.getEntities(), times(2)).putIfAbsent(entityNameCaptor.capture(), entityModelCaptor.capture());
+        // ElementCollectionHandler의 processElementCollection 메서드가 호출되었는지 검증
+        ArgumentCaptor<EntityModel> ownerEntityCaptor = ArgumentCaptor.forClass(EntityModel.class);
+        verify(elementCollectionHandler).processElementCollection(eq(collectionField), ownerEntityCaptor.capture());
 
-        EntityModel collectionEntity = entityModelCaptor.getAllValues().stream()
-                .filter(e -> e.getTableType() == EntityModel.TableType.COLLECTION_TABLE)
-                .findFirst().orElse(null);
-
-        assertThat(collectionEntity).isNotNull();
-        assertThat(collectionEntity.getTableName()).isEqualTo("User_phoneNumbers");
-        assertThat(collectionEntity.getColumns()).containsKey("User_id"); // FK to owner
-        assertThat(collectionEntity.getColumns().get("User_id").isPrimaryKey()).isTrue();
+        // 캡처된 엔티티가 예상하는 "User" 엔티티인지 확인
+        EntityModel capturedOwner = ownerEntityCaptor.getValue();
+        assertThat(capturedOwner.getTableName()).isEqualTo("User");
     }
 
     @Test
@@ -294,4 +268,90 @@ class EntityHandlerTest {
         assertThat(createdEntity.getColumns()).hasSize(1);
         assertThat(createdEntity.getColumns()).containsKey("createdDate");
     }
+
+    @Test
+    @DisplayName("Should skip duplicate entity and log an error")
+    void handle_WithDuplicateEntity_LogsErrorAndSkips() {
+        // Given
+        EntityModel existing = EntityModel.builder().entityName("com.example.User").isValid(true).build();
+        entitiesMap.put("com.example.User", existing);
+
+        // When
+        entityHandler.handle(entityTypeElement);
+
+        // Then
+        verify(messager).printMessage(eq(Diagnostic.Kind.ERROR), contains("Duplicate entity found"), eq(entityTypeElement));
+        EntityModel stored = entitiesMap.get("com.example.User");
+        assertThat(stored.isValid()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should skip fields with modifier transient")
+    void handle_WithModifierTransientField_SkipsField() {
+        // Given
+        Set<Modifier> modifiers = new HashSet<>();
+        modifiers.add(Modifier.TRANSIENT);
+        when(nameField.getModifiers()).thenReturn(modifiers);
+
+        doReturn(List.of(nameField)).when(entityTypeElement).getEnclosedElements();
+
+        // When
+        entityHandler.handle(entityTypeElement);
+
+        // Then
+        verify(columnHandler, never()).createFrom(eq(nameField), any());
+    }
+
+    @Test
+    @DisplayName("Should skip field if @Column's table is invalid")
+    void handle_WithInvalidSecondaryTable_FallbacksToPrimaryTable() {
+        // Given
+        Column columnAnnotation = mock(Column.class);
+        when(columnAnnotation.table()).thenReturn("non_existent_table");
+        when(nameField.getAnnotation(Column.class)).thenReturn(columnAnnotation);
+        when(nameField.getKind()).thenReturn(javax.lang.model.element.ElementKind.FIELD);
+        when(nameField.getSimpleName()).thenReturn(mock(Name.class));
+        when(nameField.getAnnotation(Transient.class)).thenReturn(null);
+
+        ColumnModel model = ColumnModel.builder().columnName("name").build();
+        when(columnHandler.createFrom(eq(nameField), any())).thenReturn(model);
+        doReturn(List.of(nameField)).when(entityTypeElement).getEnclosedElements();
+
+        // When
+        entityHandler.handle(entityTypeElement);
+
+        // Then
+        EntityModel created = entitiesMap.get("com.example.User");
+        assertThat(created.getColumns()).containsKey("name");
+    }
+
+    @Test
+    @DisplayName("Should process Index annotations on table")
+    void handle_WithIndexes_AddsIndexModels() {
+        // Given
+        Index index1 = mock(Index.class);
+        when(index1.name()).thenReturn("idx_username");
+        when(index1.columnList()).thenReturn("username");
+        when(index1.unique()).thenReturn(true);
+
+        Table table = mock(Table.class);
+        when(table.name()).thenReturn("users");
+        when(table.indexes()).thenReturn(new Index[]{index1});
+        when(table.schema()).thenReturn("public");
+        when(table.catalog()).thenReturn("main_db");
+        when(entityTypeElement.getAnnotation(Table.class)).thenReturn(table);
+        Name name = mock(Name.class);
+        when(name.toString()).thenReturn("User");
+        when(entityTypeElement.getSimpleName()).thenReturn(name);
+        when(entityTypeElement.getEnclosedElements()).thenReturn(Collections.emptyList());
+
+        // When
+        entityHandler.handle(entityTypeElement);
+
+        // Then
+        EntityModel model = entitiesMap.get("com.example.User");
+        assertThat(model.getIndexes()).containsKey("idx_username");
+        assertThat(model.getIndexes().get("idx_username").isUnique()).isTrue();
+    }
+
 }

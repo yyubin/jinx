@@ -91,19 +91,4 @@ public class ConstraintHandler {
         return null;
     }
 
-    private TypeElement getReferencedTypeElement(TypeMirror typeMirror) {
-        if (typeMirror instanceof DeclaredType) {
-            Element element = ((DeclaredType) typeMirror).asElement();
-            if (element instanceof TypeElement) return (TypeElement) element;
-        }
-        return null;
-    }
-
-    private String findPrimaryKeyColumnName(EntityModel entityModel) {
-        return entityModel.getColumns().values().stream()
-                .filter(ColumnModel::isPrimaryKey)
-                .map(ColumnModel::getColumnName)
-                .findFirst()
-                .orElse("id");
-    }
 }

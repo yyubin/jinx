@@ -228,6 +228,10 @@ public class ColumnDiffer implements EntityComponentDiffer {
         if (!Arrays.equals(oldCol.getIdentityOptions(), newCol.getIdentityOptions())) {
             detail.append("identityOptions changed from ").append(Arrays.toString(oldCol.getIdentityOptions())).append(" to ").append(Arrays.toString(newCol.getIdentityOptions())).append("; ");
         }
+        // ✨ 일관성 유지를 위해 추가된 코드
+        if (oldCol.isManualPrimaryKey() != newCol.isManualPrimaryKey()) {
+            detail.append("isManualPrimaryKey changed from ").append(oldCol.isManualPrimaryKey()).append(" to ").append(newCol.isManualPrimaryKey()).append("; ");
+        }
         if (oldCol.isLob() != newCol.isLob()) {
             detail.append("isLob changed from ").append(oldCol.isLob()).append(" to ").append(newCol.isLob()).append("; ");
         }
@@ -269,6 +273,8 @@ public class ColumnDiffer implements EntityComponentDiffer {
                 modified.getWarnings().add("Dangerous type conversion in column " + newCol.getColumnName() + ": " + change);
             } else if (change.startsWith("Widening")) {
                 modified.getWarnings().add("Safe type conversion in column " + newCol.getColumnName() + ": " + change);
+            } else {
+                modified.getWarnings().add("Type conversion in column " + newCol.getColumnName() + ": " + change);
             }
         }
         if (oldCol.getLength() > newCol.getLength() && newCol.getLength() > 0) {
@@ -284,13 +290,6 @@ public class ColumnDiffer implements EntityComponentDiffer {
             modified.getWarnings().add("Converter changed in column " + newCol.getColumnName() +
                     " from " + oldCol.getConversionClass() + " to " + newCol.getConversionClass() +
                     "; verify data compatibility.");
-        }
-        if (isEnumMappingChanged(oldCol, newCol)) {
-            modified.getWarnings().add(
-                    "Enum mapping changed on " + newCol.getColumnName()
-                            + " from " + (oldCol.isEnumStringMapping() ? "STRING" : "ORDINAL")
-                            + " to " + (newCol.isEnumStringMapping() ? "STRING" : "ORDINAL")
-                            + "; verify data compatibility.");
         }
     }
 

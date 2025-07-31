@@ -9,10 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
-import javax.lang.model.element.Element;
-import javax.lang.model.element.Name;
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.element.VariableElement;
+import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
 import java.util.*;
 
@@ -62,7 +59,8 @@ class EmbeddedHandlerTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        embeddedHandler = new EmbeddedHandler(context, columnHandler);
+        EmbeddedHandler realHandler = new EmbeddedHandler(context, columnHandler);
+        embeddedHandler = spy(realHandler);
 
         // Initialize collections for each test
         columns = new HashMap<>();
@@ -226,4 +224,137 @@ class EmbeddedHandlerTest {
         when(referencedEntityModel.getColumns()).thenReturn(Map.of("id", pkColumn));
         when(referencedEntityModel.getTableName()).thenReturn("countries");
     }
+
+    @Test
+    @DisplayName("Should skip processing if embeddable type was already processed")
+    void processEmbedded_WhenAlreadyProcessed_DoesNothing() {
+        // Given
+        processedTypes.add("com.example.Address"); // simulate already processed
+        when(embeddableTypeElement.getQualifiedName()).thenReturn(embeddableTypeName);
+        when(embeddableTypeName.toString()).thenReturn("com.example.Address");
+
+        // When
+        embeddedHandler.processEmbedded(embeddedField, columns, relationships, processedTypes);
+
+        // Then
+        assertThat(columns).isEmpty();
+        assertThat(relationships).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should recursively process nested @Embedded fields")
+    void processEmbedded_WithNestedEmbedded_ProcessesRecursively() {
+        // Given
+        VariableElement nestedField = mock(VariableElement.class);
+        Name nestedFieldName = mock(Name.class);
+
+        when(nestedField.getKind()).thenReturn(javax.lang.model.element.ElementKind.FIELD);
+        when(nestedField.getSimpleName()).thenReturn(nestedFieldName);
+        when(nestedFieldName.toString()).thenReturn("zipCode");
+        when(nestedField.getAnnotation(Embedded.class)).thenReturn(mock(Embedded.class));
+        doReturn(List.of(nestedField)).when(embeddableTypeElement).getEnclosedElements();
+
+        doNothing().when(embeddedHandler).processEmbedded(eq(nestedField), any(), any(), any());
+
+        // When
+        embeddedHandler.processEmbedded(embeddedField, columns, relationships, processedTypes);
+
+        // Then
+        verify(embeddedHandler).processEmbedded(eq(nestedField), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Should process OneToOne relationship with cascade and orphanRemoval")
+    void processEmbeddedRelationship_WithOneToOne_SetsCascadeAndOrphan() {
+        setupRelationshipMocks();
+
+        OneToOne oneToOne = mock(OneToOne.class);
+        when(oneToOne.cascade()).thenReturn(new CascadeType[]{CascadeType.ALL});
+        when(oneToOne.orphanRemoval()).thenReturn(true);
+        when(oneToOne.fetch()).thenReturn(FetchType.EAGER);
+
+        when(relationshipFieldInEmbeddable.getAnnotation(OneToOne.class)).thenReturn(oneToOne);
+        when(relationshipFieldInEmbeddable.getAnnotation(ManyToOne.class)).thenReturn(null);
+        when(relationshipFieldInEmbeddable.getSimpleName()).thenReturn(relationshipFieldName);
+        when(relationshipFieldName.toString()).thenReturn("country");
+
+        doReturn(List.of(relationshipFieldInEmbeddable)).when(embeddableTypeElement).getEnclosedElements();
+
+        // When
+        embeddedHandler.processEmbedded(embeddedField, columns, relationships, processedTypes);
+
+        // Then
+        assertThat(relationships).hasSize(1);
+        RelationshipModel rel = relationships.get(0);
+        assertThat(rel.getCascadeTypes()).contains(CascadeType.ALL);
+        assertThat(rel.isOrphanRemoval()).isTrue();
+        assertThat(rel.getFetchType()).isEqualTo(FetchType.EAGER);
+    }
+
+    @Test
+    @DisplayName("Should set isPrimaryKey when @MapsId is present")
+    void processEmbeddedRelationship_WithMapsId_SetsPrimaryKey() {
+        setupRelationshipMocks();
+        when(relationshipFieldInEmbeddable.getAnnotation(MapsId.class)).thenReturn(mock(MapsId.class));
+        when(relationshipFieldInEmbeddable.getAnnotation(ManyToOne.class)).thenReturn(mock(ManyToOne.class));
+
+        doReturn(List.of(relationshipFieldInEmbeddable)).when(embeddableTypeElement).getEnclosedElements();
+
+        // When
+        embeddedHandler.processEmbedded(embeddedField, columns, relationships, processedTypes);
+
+        // Then
+        ColumnModel column = columns.get("country_id");
+        assertThat(column.isPrimaryKey()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should process fields inside embeddable within ElementCollection")
+    void processEmbeddableFields_WithCollectionField_AddsPrefixedColumn() {
+        // Given
+        VariableElement collectionField = mock(VariableElement.class);
+        Name collectionFieldName = mock(Name.class);
+        when(collectionField.getSimpleName()).thenReturn(collectionFieldName);
+        when(collectionFieldName.toString()).thenReturn("locations");
+
+        // Mock embedded field
+        when(simpleFieldInEmbeddable.getKind()).thenReturn(ElementKind.FIELD);
+        when(simpleFieldInEmbeddable.getSimpleName()).thenReturn(simpleFieldName);
+        when(simpleFieldName.toString()).thenReturn("street");
+
+        // No overrides present
+        doReturn(List.of(simpleFieldInEmbeddable)).when(embeddableTypeElement).getEnclosedElements();
+        when(embeddableTypeElement.getQualifiedName()).thenReturn(embeddableTypeName);
+        when(embeddableTypeName.toString()).thenReturn("com.example.Address");
+
+        ColumnModel column = ColumnModel.builder().columnName("street").build();
+        when(columnHandler.createFrom(eq(simpleFieldInEmbeddable), any())).thenReturn(column);
+
+        // When
+        embeddedHandler.processEmbeddableFields(
+                embeddableTypeElement, columns, relationships, processedTypes, "", collectionField
+        );
+
+        // Then
+        assertThat(columns).containsKey("locations_street");
+        assertThat(columns.get("locations_street").getColumnName()).isEqualTo("locations_street");
+    }
+
+    @Test
+    @DisplayName("Should skip embeddable field processing if already processed")
+    void processEmbeddableFields_AlreadyProcessed_DoesNothing() {
+        // Given
+        when(embeddableTypeElement.getQualifiedName()).thenReturn(embeddableTypeName);
+        when(embeddableTypeName.toString()).thenReturn("com.example.Address");
+        processedTypes.add("com.example.Address");
+
+        // When
+        embeddedHandler.processEmbeddableFields(
+                embeddableTypeElement, columns, relationships, processedTypes, "prefix_", null
+        );
+
+        // Then
+        assertThat(columns).isEmpty();
+    }
+
 }

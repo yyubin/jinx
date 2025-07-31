@@ -1,7 +1,9 @@
 package org.jinx.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -14,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Data
 @Builder
+@AllArgsConstructor
 @NoArgsConstructor
 public class SchemaModel {
     private String version;
@@ -23,10 +26,19 @@ public class SchemaModel {
     private Map<String, SequenceModel> sequences = new LinkedHashMap<>();
     @Builder.Default
     private Map<String, TableGeneratorModel> tableGenerators = new LinkedHashMap<>();
+
     @Builder.Default
-    private Map<String, TypeElement> mappedSuperclasses = new HashMap<>();
+    private Map<String, ClassInfoModel> mappedSuperclasses = new HashMap<>();
+
     @Builder.Default
-    private Map<String, TypeElement> embeddables = new HashMap<>();
+    private Map<String, ClassInfoModel> embeddables = new HashMap<>();
+
+    @Builder.Default
+    @JsonIgnore
+    private Map<String, TypeElement> processingMappedSuperclasses = new HashMap<>();
+    @Builder.Default
+    @JsonIgnore
+    private Map<String, TypeElement> processingEmbeddables = new HashMap<>();
 
     @JsonCreator
     public SchemaModel(
@@ -34,8 +46,8 @@ public class SchemaModel {
             @JsonProperty("entities")            Map<String, EntityModel> entities,
             @JsonProperty("sequences")           Map<String, SequenceModel> sequences,
             @JsonProperty("tableGenerators")     Map<String, TableGeneratorModel> tableGenerators,
-            @JsonProperty("mappedSuperclasses")  Map<String, TypeElement> mappedSuperclasses,
-            @JsonProperty("embeddables")         Map<String, TypeElement> embeddables) {
+            @JsonProperty("mappedSuperclasses")  Map<String, ClassInfoModel> mappedSuperclasses,
+            @JsonProperty("embeddables")         Map<String, ClassInfoModel> embeddables) {
 
         this.version            = version;
         this.entities           = entities != null ? entities : new ConcurrentHashMap<>();

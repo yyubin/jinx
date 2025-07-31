@@ -14,8 +14,8 @@ public class RelationshipDiffer implements EntityComponentDiffer {
     public void diff(EntityModel oldEntity, EntityModel newEntity, DiffResult.ModifiedEntity result) {
         newEntity.getRelationships().forEach(newRel -> {
             RelationshipModel oldRel = oldEntity.getRelationships().stream()
-                    .filter(r -> Optional.ofNullable(r.getType()).equals(Optional.ofNullable(newRel.getType())) &&
-                            Optional.ofNullable(r.getColumn()).equals(Optional.ofNullable(newRel.getColumn())))
+                    // // FIX : column + type 으로 같은 관계로 파악하다가 type 제거 -> 드물게 오탐 가능성 있지만 유연한게 나은듯.. 어차피 이단임
+                    .filter(r -> Optional.ofNullable(r.getColumn()).equals(Optional.ofNullable(newRel.getColumn())))
                     .findFirst()
                     .orElse(null);
             if (oldRel == null) {
@@ -37,8 +37,7 @@ public class RelationshipDiffer implements EntityComponentDiffer {
         oldEntity.getRelationships().forEach(oldRel -> {
             if (oldRel.getType() == null) return;
             if (newEntity.getRelationships().stream()
-                    .noneMatch(r -> Optional.ofNullable(r.getType()).equals(Optional.ofNullable(oldRel.getType())) &&
-                            Optional.ofNullable(r.getColumn()).equals(Optional.ofNullable(oldRel.getColumn())))) {
+                    .noneMatch(r -> Optional.ofNullable(r.getColumn()).equals(Optional.ofNullable(oldRel.getColumn())))) {
                 result.getRelationshipDiffs().add(DiffResult.RelationshipDiff.builder()
                         .type(DiffResult.RelationshipDiff.Type.DROPPED)
                         .relationship(oldRel)

@@ -1,10 +1,8 @@
 package org.jinx.migration;
 
 import org.jinx.migration.differs.SequenceDiffer;
-import org.jinx.model.DiffResult;
-import org.jinx.model.EntityModel;
-import org.jinx.model.SchemaModel;
-import org.jinx.model.SequenceModel;
+import org.jinx.migration.differs.TableGeneratorDiffer;
+import org.jinx.model.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,7 +13,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class MigrationGeneratorTest {
 
@@ -155,6 +153,69 @@ class MigrationGeneratorTest {
     }
 
     @Test
+    @DisplayName("TableGenerator 삭제 Diff가 있을 때, 관련 SQL을 생성해야 한다")
+    void generateSql_withDroppedTableGenerator_shouldGenerateDropSql() {
+        // Given
+        DiffResult diff = DiffResult.builder().build();
+        TableGeneratorModel tg = createDummyTableGenerator("my_gen");
+        diff.getTableGeneratorDiffs().add(DiffResult.TableGeneratorDiff.dropped(tg));
+        when(dialect.getDropTableGeneratorSql(tg)).thenReturn("DROP TABLE my_gen_table;");
+
+        // When
+        String sql = migrationGenerator.generateSql(diff);
+
+        // Then
+        assertThat(sql).contains("DROP TABLE my_gen_table;");
+    }
+
+    @Test
+    @DisplayName("TableGenerator 수정 Diff가 있을 때, 관련 SQL을 생성해야 한다")
+    void generateSql_withModifiedTableGenerator_shouldGenerateAlterSql() {
+        // Given
+        DiffResult diff = DiffResult.builder().build();
+        SchemaModel oldSchema = SchemaModel.builder().build();
+        SchemaModel newSchema = SchemaModel.builder().build();
+        TableGeneratorModel oldTg = createDummyTableGenerator("my_gen");
+        TableGeneratorModel newTg = createDummyTableGenerator("my_gen");
+        oldSchema.getTableGenerators().put(oldTg.getName(), oldTg);
+        newSchema.getTableGenerators().put(newTg.getName(), newTg);
+        newTg.setInitialValue(50);
+        TableGeneratorDiffer tableGeneratorDiffer = new TableGeneratorDiffer();
+        tableGeneratorDiffer.diff(oldSchema, newSchema, diff);
+        when(dialect.getAlterTableGeneratorSql(newTg, oldTg)).thenReturn("UPDATE my_gen_table SET ...;");
+
+        // When
+        String sql = migrationGenerator.generateSql(diff);
+
+        // Then
+        assertThat(sql).contains("UPDATE my_gen_table SET ...;");
+    }
+
+    @Test
+    @DisplayName("알 수 없는 타입의 SequenceDiff는 무시해야 한다")
+    void generateSql_withUnknownSequenceDiffType_shouldDoNothing() {
+        // Given
+        DiffResult diff = DiffResult.builder().build();
+        SequenceModel sequence = createDummySequence("user_seq");
+
+        // type이 null인 Diff를 만들어 switch의 default 분기를 테스트
+        DiffResult.SequenceDiff unknownDiff = DiffResult.SequenceDiff.builder()
+                .type(null)
+                .sequence(sequence)
+                .build();
+        diff.getSequenceDiffs().add(unknownDiff);
+
+        // When
+        migrationGenerator.generateSql(diff);
+
+        // Then
+        // 어떠한 시퀀스 관련 메서드도 호출되지 않아야 함
+        verify(dialect, never()).getCreateSequenceSql(any());
+        verify(dialect, never()).getDropSequenceSql(any());
+        verify(dialect, never()).getAlterSequenceSql(any(), any());
+    }
+
+    @Test
     @DisplayName("경고(Warning)가 있을 때, SQL 주석으로 경고를 생성해야 한다")
     void generateSql_withWarnings_shouldGenerateSqlComments() {
         // Given
@@ -211,5 +272,9 @@ class MigrationGeneratorTest {
 
         // Then
         assertThat(sql).isEqualTo(expectedSql);
+    }
+
+    private TableGeneratorModel createDummyTableGenerator(String name) {
+        return TableGeneratorModel.builder().name(name).table(name + "_table").build();
     }
 }

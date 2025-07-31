@@ -37,6 +37,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
     private SequenceHandler sequenceHandler;
     private EmbeddedHandler embeddedHandler;
     private ConstraintHandler constraintHandler;
+    private ElementCollectionHandler elementCollectionHandler;
 
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {
@@ -52,7 +53,8 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         this.inheritanceHandler = new InheritanceHandler(context);
         this.embeddedHandler = new EmbeddedHandler(context, columnHandler);
         this.constraintHandler = new ConstraintHandler(context);
-        this.entityHandler = new EntityHandler(context, columnHandler, embeddedHandler, constraintHandler, sequenceHandler);
+        this.elementCollectionHandler = new ElementCollectionHandler(context, columnHandler, embeddedHandler);
+        this.entityHandler = new EntityHandler(context, columnHandler, embeddedHandler, constraintHandler, sequenceHandler, elementCollectionHandler);
     }
 
     @Override
@@ -77,12 +79,28 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         // Process @MappedSuperclass and @Embeddable first
         for (Element element : roundEnv.getElementsAnnotatedWith(MappedSuperclass.class)) {
             if (element.getKind() == ElementKind.CLASS) {
-                context.getSchemaModel().getMappedSuperclasses().put(element.getSimpleName().toString(), (TypeElement) element);
+                TypeElement typeElement = (TypeElement) element;
+                String qualifiedName = typeElement.getQualifiedName().toString();
+
+                // Populate transient map for processing logic
+                context.getSchemaModel().getProcessingMappedSuperclasses().put(qualifiedName, typeElement);
+
+                // Populate DTO map for JSON serialization
+                ClassInfoModel classInfo = new ClassInfoModel(qualifiedName);
+                context.getSchemaModel().getMappedSuperclasses().put(qualifiedName, classInfo);
             }
         }
         for (Element element : roundEnv.getElementsAnnotatedWith(Embeddable.class)) {
             if (element.getKind() == ElementKind.CLASS) {
-                context.getSchemaModel().getEmbeddables().put(element.getSimpleName().toString(), (TypeElement) element);
+                TypeElement typeElement = (TypeElement) element;
+                String qualifiedName = typeElement.getQualifiedName().toString();
+
+                // Populate transient map for processing logic
+                context.getSchemaModel().getProcessingEmbeddables().put(qualifiedName, typeElement);
+
+                // Populate DTO map for JSON serialization
+                ClassInfoModel classInfo = new ClassInfoModel(qualifiedName);
+                context.getSchemaModel().getEmbeddables().put(qualifiedName, classInfo);
             }
         }
 

@@ -35,6 +35,7 @@ public class InheritanceHandler {
                     if (entityModel.getColumns().containsKey(dColumn.getColumnName())) {
                         context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                                 "Duplicate column name '" + dColumn.getColumnName() + "' for discriminator in entity " + entityModel.getEntityName(), typeElement);
+                        entityModel.setValid(false);
                         return;
                     }
                     entityModel.getColumns().putIfAbsent(dColumn.getColumnName(), dColumn);

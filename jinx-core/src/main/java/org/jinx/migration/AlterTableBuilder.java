@@ -11,6 +11,7 @@ public class AlterTableBuilder {
     private final String tableName;
     @Getter
     private final Dialect dialect;
+    @Getter
     private final List<SqlContributor> units = new ArrayList<>();
 
     public AlterTableBuilder(String tableName, Dialect dialect) {

@@ -24,10 +24,14 @@ public interface Dialect {
     String getDropTableSql(String tableName);
     String getAlterTableSql(DiffResult.ModifiedEntity modifiedEntity);
     String getRenameTableSql(String oldTableName, String newTableName); // New method
+
     String preSchemaObjects(SchemaModel schema);
+
     JavaTypeMapper getJavaTypeMapper();
+
     String openCreateTable(String tableName);
     String closeCreateTable();
+
     String indexStatement(IndexModel idx, String table);
     String quoteIdentifier(String raw);
     String getColumnDefinitionSql(ColumnModel column);

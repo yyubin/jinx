@@ -8,8 +8,13 @@ import org.jinx.processor.JpaSqlGeneratorProcessor;
 
 import javax.annotation.processing.Messager;
 import javax.annotation.processing.ProcessingEnvironment;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
+import javax.tools.Diagnostic;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
 import java.io.IOException;
@@ -61,5 +66,17 @@ public class ProcessingContext {
                 .filter(ColumnModel::isPrimaryKey)
                 .map(ColumnModel::getColumnName)
                 .findFirst();
+    }
+
+    public boolean isSubtype(TypeMirror type, String supertypeName) {
+        Elements elements = getElementUtils();
+        Types types = getTypeUtils();
+        javax.lang.model.element.TypeElement supertypeElement = elements.getTypeElement(supertypeName);
+        if (supertypeElement == null) {
+            getMessager().printMessage(Diagnostic.Kind.ERROR, "Supertype not found: " + supertypeName);
+            return false;
+        }
+        TypeMirror supertypeMirror = supertypeElement.asType();
+        return types.isSubtype(type, supertypeMirror);
     }
 }

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -409,6 +410,114 @@ class MySqlDialectTest {
             String sql = dialect.getAlterTableSql(modified);
 
             assertThat(sql).contains("ALTER TABLE `users` ADD COLUMN `email` VARCHAR(255)");
+        }
+
+        @Test
+        @DisplayName("[Constructor] 테스트용 생성자 커버")
+        void testOnlyConstructor() {
+            Dialect testDialect = new MySqlDialect(mock(JavaTypeMapper.class), mock(ValueTransformer.class));
+            assertThat(testDialect).isNotNull();
+        }
+
+        @Test
+        @DisplayName("[getAddPrimaryKeySql] null 또는 빈 컬럼 리스트는 빈 문자열 반환")
+        void addPrimaryKeyWithNullOrEmptyColumns() {
+            assertThat(dialect.getAddPrimaryKeySql("users", null)).isEmpty();
+            assertThat(dialect.getAddPrimaryKeySql("users", Collections.emptyList())).isEmpty();
+        }
+
+        @Test
+        @DisplayName("[getColumnDefinitionSql] 특수 케이스 타입 매핑")
+        void columnDefinitionForSpecialCases() {
+            // @Convert 사용 시
+            ColumnModel cc = col("data", "com.example.MyType", false, true);
+            cc.setConversionClass("java.lang.String");
+            assertThat(dialect.getColumnDefinitionSql(cc)).contains("VARCHAR(255)");
+
+            // LOB (byte[])
+            ColumnModel blob = col("data", "byte[]", false, true);
+            blob.setLob(true);
+            assertThat(dialect.getColumnDefinitionSql(blob)).contains("BLOB");
+
+            // @Version
+            ColumnModel verLong = col("version", "java.lang.Long", false, false);
+            verLong.setVersion(true);
+            assertThat(dialect.getColumnDefinitionSql(verLong)).contains("BIGINT");
+
+            // isManualPrimaryKey
+            ColumnModel manualPk = col("id", "java.lang.String", true, false);
+            manualPk.setManualPrimaryKey(true);
+            assertThat(dialect.getColumnDefinitionSql(manualPk)).endsWith("PRIMARY KEY");
+
+            // defaultValue
+            ColumnModel defaultCol = col("status", "java.lang.String", false, false);
+            defaultCol.setDefaultValue("ACTIVE");
+            assertThat(dialect.getColumnDefinitionSql(defaultCol)).contains("DEFAULT 'ACTIVE'");
+        }
+
+        @Test
+        @DisplayName("[getDropColumnSql] UNIQUE 또는 PK 컬럼 삭제")
+        void dropUniqueOrPkColumn() {
+            // UNIQUE 컬럼 삭제
+            ColumnModel uniqueCol = col("email", "java.lang.String", false, false);
+            uniqueCol.setUnique(true);
+            String sqlUnique = dialect.getDropColumnSql("users", uniqueCol);
+            assertThat(sqlUnique)
+                    .contains("DROP INDEX `uk_users_email`")
+                    .contains("DROP COLUMN `email`");
+
+            // PK 컬럼 삭제
+            ColumnModel pkCol = col("id", "java.lang.Integer", true, false);
+            String sqlPk = dialect.getDropColumnSql("users", pkCol);
+            assertThat(sqlPk)
+                    .contains("DROP PRIMARY KEY")
+                    .contains("DROP COLUMN `id`");
+        }
+
+        @Test
+        @DisplayName("[getAddRelationshipSql] ON DELETE/UPDATE 기본값(NO_ACTION)은 SQL에 미포함")
+        void addRelationshipWithDefaultActions() {
+            RelationshipModel fk = RelationshipModel.builder()
+                    .column("role_id").referencedTable("role").referencedColumn("id")
+                    .onDelete(OnDeleteAction.NO_ACTION) // 무시되어야 함
+                    .onUpdate(null) // 무시되어야 함
+                    .build();
+            String sql = dialect.getAddRelationshipSql("user_role", fk);
+            assertThat(sql)
+                    .doesNotContain("ON DELETE")
+                    .doesNotContain("ON UPDATE");
+        }
+
+        @Test
+        @DisplayName("[getDropRelationshipSql] 제약조건 이름이 null일 때 자동 생성")
+        void dropRelationshipWithNullConstraintName() {
+            RelationshipModel fk = RelationshipModel.builder()
+                    .constraintName(null)
+                    .column("company_id")
+                    .build();
+            String sql = dialect.getDropRelationshipSql("users", fk);
+            assertThat(sql).contains("DROP FOREIGN KEY `fk_users_company_id`");
+        }
+
+        @Test
+        @DisplayName("[indexStatement] 고유하지 않은 인덱스 생성")
+        void nonUniqueIndexStatement() {
+            IndexModel idx = IndexModel.builder().indexName("idx_name").columnNames(List.of("name")).isUnique(false).build();
+            String sql = dialect.indexStatement(idx, "users");
+            assertThat(sql).startsWith("CREATE INDEX");
+        }
+
+        @Test
+        @DisplayName("[getDropPrimaryKeySql(String, Collection)] IDENTITY 컬럼의 AUTO_INCREMENT 속성을 제거")
+        void dropPrimaryKeyRemovesAutoIncrement_() {
+            ColumnModel idCol = col("id", "java.lang.Integer", true, false);
+            idCol.setGenerationStrategy(GenerationStrategy.IDENTITY);
+
+            String sql = dialect.getDropPrimaryKeySql("users", List.of(idCol));
+
+            assertThat(sql)
+                    .startsWith("ALTER TABLE `users` MODIFY COLUMN `id` INT NOT NULL;")
+                    .endsWith("ALTER TABLE `users` DROP PRIMARY KEY;\n");
         }
     }
 }

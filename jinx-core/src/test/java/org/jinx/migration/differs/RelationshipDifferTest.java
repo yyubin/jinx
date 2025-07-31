@@ -115,6 +115,98 @@ class RelationshipDifferTest {
                 .anyMatch(w -> w.contains("Fetch strategy changed")));
     }
 
+    @Test
+    @DisplayName("type, column, referencedTable, referencedColumn, mapsId 변경 시 감지되어야 함")
+    void shouldDetectAllBasicPropertyChanges() {
+        RelationshipModel oldRel = createRelationship("team_id", "Team", FetchType.LAZY, false);
+        RelationshipModel newRel = createRelationship("team_id", "Group", FetchType.LAZY, false); // column 동일하게
+
+        oldRel.setType(RelationshipType.MANY_TO_ONE);
+        oldRel.setReferencedColumn("id");
+        oldRel.setMapsId(false);
+
+        newRel.setType(RelationshipType.ONE_TO_ONE);
+        newRel.setReferencedColumn("uuid");
+        newRel.setMapsId(true);
+
+        oldEntity.setRelationships(List.of(oldRel));
+        newEntity.setRelationships(List.of(newRel));
+
+        relationshipDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
+
+        String detail = modifiedEntityResult.getRelationshipDiffs().get(0).getChangeDetail();
+
+        assertAll(
+                () -> assertTrue(detail.contains("type changed from MANY_TO_ONE to ONE_TO_ONE")),
+                () -> assertTrue(detail.contains("referencedTable changed from Team to Group")),
+                () -> assertTrue(detail.contains("referencedColumn changed from id to uuid")),
+                () -> assertTrue(detail.contains("mapsId changed from false to true"))
+        );
+    }
+
+    @Test
+    @DisplayName("orphanRemoval 비활성화 시 경고 생성되어야 함")
+    void shouldWarnWhenOrphanRemovalDisabled() {
+        RelationshipModel oldRel = createRelationship("team_id", "Team", FetchType.LAZY, true); // originally true
+        RelationshipModel newRel = createRelationship("team_id", "Team", FetchType.LAZY, false); // now false
+
+        oldEntity.setRelationships(List.of(oldRel));
+        newEntity.setRelationships(List.of(newRel));
+
+        relationshipDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
+
+        assertTrue(modifiedEntityResult.getWarnings().stream()
+                .anyMatch(w -> w.contains("Orphan removal disabled")));
+    }
+
+    @Test
+    @DisplayName("CascadeType 제거 시 'removed' 포함한 경고 발생해야 함")
+    void shouldWarnWhenCascadeTypeRemoved() {
+        RelationshipModel oldRel = createRelationship("team_id", "Team", FetchType.LAZY, false);
+        oldRel.setCascadeTypes(List.of(CascadeType.PERSIST, CascadeType.REMOVE));
+
+        RelationshipModel newRel = createRelationship("team_id", "Team", FetchType.LAZY, false);
+        newRel.setCascadeTypes(List.of(CascadeType.PERSIST)); // REMOVE 제거됨
+
+        oldEntity.setRelationships(List.of(oldRel));
+        newEntity.setRelationships(List.of(newRel));
+
+        relationshipDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
+
+        assertTrue(modifiedEntityResult.getWarnings().stream()
+                .anyMatch(w -> w.contains("removed: [REMOVE]")));
+    }
+
+    @Test
+    @DisplayName("changeDetail 마지막 세미콜론은 제거되어야 함")
+    void shouldTrimTrailingSemicolonInChangeDetail() {
+        RelationshipModel oldRel = createRelationship("team_id", "Team", FetchType.LAZY, false);
+        RelationshipModel newRel = createRelationship("team_id", "Team", FetchType.EAGER, false);
+
+        oldEntity.setRelationships(List.of(oldRel));
+        newEntity.setRelationships(List.of(newRel));
+
+        relationshipDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
+
+        String detail = modifiedEntityResult.getRelationshipDiffs().get(0).getChangeDetail();
+        assertFalse(detail.endsWith(";"));
+        assertFalse(detail.endsWith("; "));
+    }
+
+    @Test
+    @DisplayName("type이 null인 관계는 DROP 대상에서 제외되어야 함")
+    void shouldIgnoreDropWhenOldTypeIsNull() {
+        RelationshipModel oldRel = createRelationship("team_id", "Team", FetchType.LAZY, false);
+        oldRel.setType(null); // 중요한 조건
+
+        oldEntity.setRelationships(List.of(oldRel));
+        newEntity.setRelationships(Collections.emptyList());
+
+        relationshipDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
+
+        assertTrue(modifiedEntityResult.getRelationshipDiffs().isEmpty(), "DROP으로 감지되면 안 됩니다.");
+    }
+
     private RelationshipModel createRelationship(String column, String referencedTable, FetchType fetchType, boolean orphanRemoval) {
         RelationshipModel rel = RelationshipModel.builder().build();
         rel.setType(RelationshipType.MANY_TO_ONE);

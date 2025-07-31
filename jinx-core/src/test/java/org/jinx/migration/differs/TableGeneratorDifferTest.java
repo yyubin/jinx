@@ -88,6 +88,82 @@ class TableGeneratorDifferTest {
         assertEquals(100, diff.getTableGenerator().getInitialValue());
     }
 
+    @Test
+    @DisplayName("table, schema, catalog 변경 시 detail에 모두 포함돼야 함")
+    void shouldDetectTableSchemaCatalogChanges() {
+        TableGeneratorModel oldTg = createTableGenerator("tg", "tblA", 1);
+        oldTg.setSchema("public");
+        oldTg.setCatalog("catalogA");
+
+        TableGeneratorModel newTg = createTableGenerator("tg", "tblB", 1);
+        newTg.setSchema("app");
+        newTg.setCatalog("catalogB");
+
+        SchemaModel oldSchema = createSchema(oldTg);
+        SchemaModel newSchema = createSchema(newTg);
+        DiffResult result = DiffResult.builder().build();
+
+        tableGeneratorDiffer.diff(oldSchema, newSchema, result);
+
+        String detail = result.getTableGeneratorDiffs().get(0).getChangeDetail();
+        assertAll(
+                () -> assertTrue(detail.contains("table changed from tblA to tblB")),
+                () -> assertTrue(detail.contains("schema changed from public to app")),
+                () -> assertTrue(detail.contains("catalog changed from catalogA to catalogB"))
+        );
+    }
+
+    @Test
+    @DisplayName("pkColumnName, valueColumnName, pkColumnValue 변경 시 detail 포함돼야 함")
+    void shouldDetectPkAndValueColumnChanges() {
+        TableGeneratorModel oldTg = createTableGenerator("tg", "table", 1);
+        oldTg.setPkColumnName("id");
+        oldTg.setValueColumnName("val");
+        oldTg.setPkColumnValue("GEN1");
+
+        TableGeneratorModel newTg = createTableGenerator("tg", "table", 1);
+        newTg.setPkColumnName("pk_id");
+        newTg.setValueColumnName("value");
+        newTg.setPkColumnValue("GEN_X");
+
+        SchemaModel oldSchema = createSchema(oldTg);
+        SchemaModel newSchema = createSchema(newTg);
+        DiffResult result = DiffResult.builder().build();
+
+        tableGeneratorDiffer.diff(oldSchema, newSchema, result);
+
+        String detail = result.getTableGeneratorDiffs().get(0).getChangeDetail();
+        assertAll(
+                () -> assertTrue(detail.contains("pkColumnName changed from id to pk_id")),
+                () -> assertTrue(detail.contains("valueColumnName changed from val to value")),
+                () -> assertTrue(detail.contains("pkColumnValue changed from GEN1 to GEN_X"))
+        );
+    }
+
+    @Test
+    @DisplayName("allocationSize 변경 시 detail 포함되며 마지막 세미콜론은 제거돼야 함")
+    void shouldDetectAllocationSizeChangeAndTrimTrailingSemicolon() {
+        TableGeneratorModel oldTg = createTableGenerator("tg", "table", 1);
+        oldTg.setAllocationSize(50);
+
+        TableGeneratorModel newTg = createTableGenerator("tg", "table", 1);
+        newTg.setAllocationSize(100);  // 변경
+
+        SchemaModel oldSchema = createSchema(oldTg);
+        SchemaModel newSchema = createSchema(newTg);
+        DiffResult result = DiffResult.builder().build();
+
+        tableGeneratorDiffer.diff(oldSchema, newSchema, result);
+
+        String detail = result.getTableGeneratorDiffs().get(0).getChangeDetail();
+        assertAll(
+                () -> assertTrue(detail.contains("allocationSize changed from 50 to 100")),
+                () -> assertFalse(detail.endsWith(";")),
+                () -> assertFalse(detail.endsWith("; "))
+        );
+    }
+
+
     private SchemaModel createSchema(TableGeneratorModel... generators) {
         SchemaModel schema = new SchemaModel();
         if (generators != null) {

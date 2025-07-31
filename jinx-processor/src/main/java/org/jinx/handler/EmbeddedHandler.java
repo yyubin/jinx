@@ -139,6 +139,44 @@ public class EmbeddedHandler {
         relationshipModels.add(relationship);
     }
 
+    public void processEmbeddableFields(TypeElement embeddableType, Map<String, ColumnModel> columns,
+                                        List<RelationshipModel> relationships, Set<String> processedTypes,
+                                        String prefix, VariableElement collectionField) {
+        String typeName = embeddableType.getQualifiedName().toString();
+        if (processedTypes.contains(typeName)) return;
+        processedTypes.add(typeName);
+
+        String effectivePrefix = (prefix != null ? prefix : "") + (collectionField != null ? collectionField.getSimpleName() + "_" : "");
+
+        for (Element enclosed : embeddableType.getEnclosedElements()) {
+            if (enclosed.getKind() != ElementKind.FIELD) continue;
+            VariableElement embeddedField = (VariableElement) enclosed;
+
+            if (embeddedField.getAnnotation(Embedded.class) != null) {
+                processEmbedded(embeddedField, columns, relationships, processedTypes);
+            } else if (embeddedField.getAnnotation(ManyToOne.class) != null || embeddedField.getAnnotation(OneToOne.class) != null) {
+                processEmbeddedRelationship(embeddedField, columns, relationships, new HashMap<>(), effectivePrefix);
+            } else {
+                // 컬렉션 필드의 어노테이션을 참조하여 ColumnModel 생성
+                Map<String, String> overrides = new HashMap<>();
+                if (collectionField != null) {
+                    AttributeOverride attrOverride = collectionField.getAnnotation(AttributeOverride.class);
+                    if (attrOverride != null && attrOverride.name().equals(embeddedField.getSimpleName().toString())) {
+                        overrides.put(embeddedField.getSimpleName().toString(), attrOverride.column().name());
+                    }
+                }
+                ColumnModel column = columnHandler.createFrom(embeddedField, overrides);
+                if (column != null) {
+                    String columnName = effectivePrefix + column.getColumnName();
+                    column.setColumnName(columnName);
+                    columns.putIfAbsent(columnName, column);
+                }
+            }
+        }
+
+        processedTypes.remove(typeName);
+    }
+
     private static List<CascadeType> toCascadeList(CascadeType[] arr) {
         return arr == null ? List.of() : Arrays.stream(arr).toList();
     }

@@ -59,31 +59,31 @@ public class ConstraintDiffer implements EntityComponentDiffer {
 
     private ConstraintModel findMatchingConstraint(List<ConstraintModel> pool, ConstraintModel target) {
         return pool.stream()
-                .filter(c -> c.getType() == target.getType() &&
-                        equalIgnoreOrder(c.getColumns(), target.getColumns()) &&
-                        Optional.ofNullable(c.getReferencedTable()).equals(Optional.ofNullable(target.getReferencedTable())) &&
-                        equalIgnoreOrder(c.getReferencedColumns(), target.getReferencedColumns()) &&
-                        c.getOnDelete() == target.getOnDelete() &&
-                        c.getOnUpdate() == target.getOnUpdate())
+                .filter(c -> isConstraintLooselyMatching(c, target))
                 .findFirst()
                 .orElse(null);
     }
 
+    private boolean isConstraintLooselyMatching(ConstraintModel a, ConstraintModel b) {
+        return a.getType() == b.getType()
+                && equalIgnoreOrder(a.getColumns(), b.getColumns());
+    }
+
     private boolean equalIgnoreOrder(List<String> a, List<String> b) {
-        return Optional.ofNullable(a)
-                .map(aList -> Optional.ofNullable(b)
-                        .map(bList -> new HashSet<>(aList).equals(new HashSet<>(bList)))
-                        .orElse(false))
-                .orElse(Optional.ofNullable(b).isEmpty());
+        if (a == null && b == null) {
+            return true;
+        }
+        if (a == null || b == null) {
+            return false;
+        }
+        return new HashSet<>(a).equals(new HashSet<>(b));
     }
 
     private boolean isConstraintEqual(ConstraintModel oldCons, ConstraintModel newCons) {
-        return Optional.ofNullable(oldCons.getType()).equals(Optional.ofNullable(newCons.getType())) &&
-                Optional.ofNullable(oldCons.getColumns()).equals(Optional.ofNullable(newCons.getColumns())) &&
-                Optional.ofNullable(oldCons.getReferencedTable()).equals(Optional.ofNullable(newCons.getReferencedTable())) &&
-                Optional.ofNullable(oldCons.getReferencedColumns()).equals(Optional.ofNullable(newCons.getReferencedColumns())) &&
-                oldCons.getOnDelete() == newCons.getOnDelete() &&
-                oldCons.getOnUpdate() == newCons.getOnUpdate();
+        // Type and columns are already confirmed equal by the loose matching logic.
+        // Foreign key details are handled by RelationshipDiffer.
+        // Therefore, for this differ, if loosely matched, the core attributes are equal.
+        return true;
     }
 
     private boolean isConstraintEqualWithName(ConstraintModel oldCons, ConstraintModel newCons) {
@@ -94,28 +94,7 @@ public class ConstraintDiffer implements EntityComponentDiffer {
     private String getConstraintChangeDetail(ConstraintModel oldCons, ConstraintModel newCons) {
         StringBuilder detail = new StringBuilder();
         if (!Optional.ofNullable(oldCons.getName()).equals(Optional.ofNullable(newCons.getName()))) {
-            detail.append("name changed from ").append(oldCons.getName()).append(" to ").append(newCons.getName()).append("; ");
-        }
-        if (!Optional.ofNullable(oldCons.getType()).equals(Optional.ofNullable(newCons.getType()))) {
-            detail.append("type changed from ").append(oldCons.getType()).append(" to ").append(newCons.getType()).append("; ");
-        }
-        if (!Optional.ofNullable(oldCons.getColumns()).equals(Optional.ofNullable(newCons.getColumns()))) {
-            detail.append("columns changed from ").append(oldCons.getColumns()).append(" to ").append(newCons.getColumns()).append("; ");
-        }
-        if (!Optional.ofNullable(oldCons.getReferencedTable()).equals(Optional.ofNullable(newCons.getReferencedTable()))) {
-            detail.append("referencedTable changed from ").append(oldCons.getReferencedTable()).append(" to ").append(newCons.getReferencedTable()).append("; ");
-        }
-        if (!Optional.ofNullable(oldCons.getReferencedColumns()).equals(Optional.ofNullable(newCons.getReferencedColumns()))) {
-            detail.append("referencedColumns changed from ").append(oldCons.getReferencedColumns()).append(" to ").append(newCons.getReferencedColumns()).append("; ");
-        }
-        if (oldCons.getOnDelete() != newCons.getOnDelete()) {
-            detail.append("onDelete changed from ").append(oldCons.getOnDelete()).append(" to ").append(newCons.getOnDelete()).append("; ");
-        }
-        if (oldCons.getOnUpdate() != newCons.getOnUpdate()) {
-            detail.append("onUpdate changed from ").append(oldCons.getOnUpdate()).append(" to ").append(newCons.getOnUpdate()).append("; ");
-        }
-        if (detail.length() > 2) {
-            detail.setLength(detail.length() - 2);
+            detail.append("name changed from ").append(oldCons.getName()).append(" to ").append(newCons.getName());
         }
         return detail.toString();
     }
