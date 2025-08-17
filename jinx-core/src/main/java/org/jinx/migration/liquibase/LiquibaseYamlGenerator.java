@@ -1,51 +1,45 @@
 package org.jinx.migration.liquibase;
 
 import org.jinx.migration.liquibase.model.*;
+import org.jinx.model.DialectBundle;
 import org.jinx.model.DiffResult;
+import org.jinx.model.DiffResult.*;
 import org.jinx.model.SchemaModel;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class LiquibaseYamlGenerator {
-    public DatabaseChangeLog generate(DiffResult diff, SchemaModel oldSchema, SchemaModel newSchema, Dialect dialect) {
-
+    public DatabaseChangeLog generate(DiffResult diff, SchemaModel oldSchema, SchemaModel newSchema, DialectBundle dialectBundle) {
         ChangeSetIdGenerator idGenerator = new ChangeSetIdGenerator();
-        LiquibaseVisitor visitor = new LiquibaseVisitor(dialect, idGenerator);
+        LiquibaseVisitor visitor = new LiquibaseVisitor(dialectBundle, idGenerator);
 
-        // 1. Visitor가 DiffResult를 방문하여 변경사항을 생성하도록 함
-        diff.accept(visitor);
+        // 1. 시퀀스 변경 (ADDED, DROPPED, MODIFIED)
+        diff.sequenceAccept(visitor, SequenceDiff.Type.values());
 
-        // 2. Generator가 Visitor로부터 결과물을 받아 최종 순서를 조립
-        List<ChangeSetWrapper> finalChangeSets = new ArrayList<>();
-        finalChangeSets.addAll(visitor.getSequenceChanges()); // 시퀀스 먼저
-        finalChangeSets.addAll(visitor.getTableChanges().stream()
-                .filter(cs -> cs.getChangeSet().getChanges().stream()
-                        .anyMatch(change -> change instanceof DropTableChange || change instanceof DropTableGeneratorChange))
-                .toList()); // 테이블 삭제
-        finalChangeSets.addAll(visitor.getDroppedFkChanges()); // 외래 키 삭제
-        finalChangeSets.addAll(visitor.getConstraintChanges().stream()
-                .filter(cs -> cs.getChangeSet().getChanges().stream()
-                        .anyMatch(change -> change instanceof DropUniqueConstraintChange || change instanceof DropCheckConstraintChange))
-                .toList()); // 제약조건 삭제 (Unique, Check)
-        finalChangeSets.addAll(visitor.getDroppedIndexChanges()); // 인덱스 삭제
-        finalChangeSets.addAll(visitor.getTableChanges().stream()
-                .filter(cs -> cs.getChangeSet().getChanges().stream()
-                        .anyMatch(change -> change instanceof RenameTableChange))
-                .toList()); // 테이블 이름 변경
-        finalChangeSets.addAll(visitor.getTableChanges().stream()
-                .filter(cs -> cs.getChangeSet().getChanges().stream()
-                        .anyMatch(change -> change instanceof CreateTableChange || change instanceof CreateTableGeneratorChange))
-                .toList()); // 테이블 생성
-        finalChangeSets.addAll(visitor.getColumnChanges()); // 컬럼 변경
-        finalChangeSets.addAll(visitor.getPrimaryKeyChanges()); // 기본 키 변경
-        finalChangeSets.addAll(visitor.getCreatedIndexChanges()); // 인덱스 생성
-        finalChangeSets.addAll(visitor.getConstraintChanges().stream()
-                .filter(cs -> cs.getChangeSet().getChanges().stream()
-                        .anyMatch(change -> change instanceof AddUniqueConstraintChange || change instanceof AddCheckConstraintChange))
-                .toList()); // 제약조건 생성 (Unique, Check)
-        finalChangeSets.addAll(visitor.getCreatedFkChanges()); // 외래 키 생성
+        // 2. 테이블 생성기 변경 (ADDED, DROPPED, MODIFIED)
+        diff.tableGeneratorAccept(visitor, TableGeneratorDiff.Type.values());
 
-        return DatabaseChangeLog.builder().changeSets(finalChangeSets).build();
+        // 3. 테이블 삭제
+        diff.tableAccept(visitor, TablePhase.DROPPED);
+
+        // 4. 테이블 컨텐츠 변경 - DROP 단계 (FK, 인덱스, 제약, 컬럼 삭제)
+        diff.tableContentAccept(visitor, TableContentPhase.DROP);
+
+        // 5. 테이블 이름 변경
+        diff.tableAccept(visitor, TablePhase.RENAMED);
+
+        // 6. 테이블 생성
+        diff.tableAccept(visitor, TablePhase.ADDED);
+
+        // 7. 테이블 컨텐츠 변경 - ALTER 단계 (컬럼, 인덱스, 제약 추가/수정)
+        diff.tableContentAccept(visitor, TableContentPhase.ALTER);
+
+        // 8. 테이블 컨텐츠 변경 - FK 추가
+        diff.tableContentAccept(visitor, TableContentPhase.FK_ADD);
+
+        return DatabaseChangeLog.builder()
+                .changeSets(visitor.getChangeSets())
+                .build();
     }
 }

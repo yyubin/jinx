@@ -1,0 +1,22 @@
+package org.jinx.migration.liquibase.model;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Builder;
+import lombok.Data;
+
+/**
+ * YAML:
+ * - insert:
+ *     tableName: ...
+ *     columns:
+ *       - column: { name: ..., value: ... }
+ *       - column: { name: ..., valueNumeric: ... }
+ */
+@Data
+@Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class InsertDataChange {
+    @JsonProperty("insert")
+    private InsertDataConfig config;
+}

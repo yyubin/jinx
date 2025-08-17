@@ -2,68 +2,80 @@ package org.jinx.migration.liquibase;
 
 import lombok.Getter;
 import lombok.Setter;
-import org.jinx.migration.MigrationVisitor;
 import org.jinx.migration.liquibase.model.*;
+import org.jinx.migration.spi.visitor.*;
 import org.jinx.model.*;
+import org.jinx.model.DiffResult.*;
 
 import java.util.ArrayList;
 import java.util.List;
 
 @Getter
-public class LiquibaseVisitor implements MigrationVisitor {
-    private final Dialect dialect;
+public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, SequenceVisitor, TableGeneratorVisitor, SqlGeneratingVisitor {
+    private final DialectBundle dialectBundle;
     private final ChangeSetIdGenerator idGenerator;
-    private final List<ChangeSetWrapper> sequenceChanges = new ArrayList<>();
-    private final List<ChangeSetWrapper> tableChanges = new ArrayList<>();
-    private final List<ChangeSetWrapper> columnChanges = new ArrayList<>();
-    private final List<ChangeSetWrapper> createdIndexChanges = new ArrayList<>();
-    private final List<ChangeSetWrapper> droppedIndexChanges = new ArrayList<>();
-    private final List<ChangeSetWrapper> createdFkChanges = new ArrayList<>();
-    private final List<ChangeSetWrapper> droppedFkChanges = new ArrayList<>();
-    private final List<ChangeSetWrapper> constraintChanges = new ArrayList<>();
-    private final List<ChangeSetWrapper> primaryKeyChanges = new ArrayList<>();
+    private final List<ChangeSetWrapper> changeSets = new ArrayList<>();
     @Setter
     private String currentTableName;
 
-    public LiquibaseVisitor(Dialect dialect, ChangeSetIdGenerator idGenerator) {
-        this.dialect = dialect;
+    public LiquibaseVisitor(DialectBundle dialectBundle, ChangeSetIdGenerator idGenerator) {
+        this.dialectBundle = dialectBundle;
         this.idGenerator = idGenerator;
     }
 
+
+    // 복합 PK에서 문제 생길 수 있어서
+    // 컬럼 constraints에는 primaryKey 표시를 하지 말고
+    // 테이블 생성 직후 AddPrimaryKeyChange를 별도 changeSet으로 추가
     @Override
     public void visitAddedTable(EntityModel table) {
         currentTableName = table.getTableName();
+
+        var pkCols = table.getColumns().values().stream()
+                .filter(ColumnModel::isPrimaryKey)
+                .map(ColumnModel::getColumnName)
+                .toList();
+
         List<ColumnWrapper> columns = table.getColumns().values().stream()
                 .map(col -> ColumnWrapper.builder()
                         .config(ColumnConfig.builder()
                                 .name(col.getColumnName())
-                                .type(dialect.getLiquibaseTypeName(col))
-                                .defaultValue(col.getDefaultValue())
-                                .defaultValueSequenceNext(col.getGenerationStrategy() == GenerationStrategy.SEQUENCE ? col.getSequenceName() : null)
+                                .type(getLiquibaseTypeName(col))
+                                .defaultValue(col.getDefaultValue()) // 필요시 타입별 defaultValueXxx로 분기 고려
                                 .autoIncrement(col.getGenerationStrategy() == GenerationStrategy.IDENTITY ? true : null)
-                                .constraints(buildConstraints(col))
+                                .constraints(LiquibaseUtils.buildConstraintsWithoutPK(col, currentTableName)) // ← PK 제외
                                 .build())
                         .build())
                 .toList();
 
-        CreateTableChange createTable = CreateTableChange.builder()
+        var createTable = CreateTableChange.builder()
                 .config(CreateTableConfig.builder()
                         .tableName(table.getTableName())
                         .columns(columns)
                         .build())
                 .build();
-        tableChanges.add(createChangeSet(idGenerator.nextId(), List.of(createTable)));
 
-        // 인덱스 생성
-        for (IndexModel index : table.getIndexes().values()) {
-            visitAddedIndex(index);
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(createTable)));
+
+        if (!pkCols.isEmpty()) {
+            var addPk = AddPrimaryKeyConstraintChange.builder()
+                    .config(AddPrimaryKeyConstraintConfig.builder()
+                            .constraintName("pk_" + currentTableName)
+                            .tableName(currentTableName)
+                            .columnNames(String.join(",", pkCols))
+                            .build())
+                    .build();
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(addPk)));
         }
 
-        // 외래 키 생성
-        for (RelationshipModel rel : table.getRelationships()) {
-            visitAddedRelationship(rel);
-        }
+        // 고유/체크 제약도 반영
+        table.getConstraints().forEach(this::visitAddedConstraint);
+
+        // 인덱스, FK
+        table.getIndexes().values().forEach(this::visitAddedIndex);
+        table.getRelationships().forEach(this::visitAddedRelationship);
     }
+
 
     @Override
     public void visitDroppedTable(EntityModel table) {
@@ -72,124 +84,155 @@ public class LiquibaseVisitor implements MigrationVisitor {
                         .tableName(table.getTableName())
                         .build())
                 .build();
-        tableChanges.add(createChangeSet(idGenerator.nextId(), List.of(dropTable)));
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropTable)));
     }
 
     @Override
-    public void visitRenamedTable(DiffResult.RenamedTable renamed) {
+    public void visitRenamedTable(RenamedTable renamed) {
         RenameTableChange renameTable = RenameTableChange.builder()
                 .config(RenameTableConfig.builder()
                         .oldTableName(renamed.getOldEntity().getTableName())
                         .newTableName(renamed.getNewEntity().getTableName())
                         .build())
                 .build();
-        tableChanges.add(createChangeSet(idGenerator.nextId(), List.of(renameTable)));
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(renameTable)));
     }
 
+    // 시퀀스 관련 방문 메서드
     @Override
     public void visitAddedSequence(SequenceModel sequence) {
-        CreateSequenceChange createSequence = CreateSequenceChange.builder()
-                .config(CreateSequenceConfig.builder()
-                        .sequenceName(sequence.getName())
-                        .startValue(String.valueOf(sequence.getInitialValue()))
-                        .incrementBy(String.valueOf(sequence.getAllocationSize()))
-                        .build())
-                .build();
-        sequenceChanges.add(createChangeSet(idGenerator.nextId(), List.of(createSequence)));
+        dialectBundle.withSequence(seqDialect -> {
+            CreateSequenceChange createSequence = CreateSequenceChange.builder()
+                    .config(CreateSequenceConfig.builder()
+                            .sequenceName(sequence.getName())
+                            .startValue(String.valueOf(sequence.getInitialValue()))
+                            .incrementBy(String.valueOf(sequence.getAllocationSize()))
+                            .build())
+                    .build();
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(createSequence)));
+        });
     }
 
     @Override
     public void visitDroppedSequence(SequenceModel sequence) {
-        DropSequenceChange dropSequence = DropSequenceChange.builder()
-                .config(DropSequenceConfig.builder()
-                        .sequenceName(sequence.getName())
-                        .build())
-                .build();
-        sequenceChanges.add(createChangeSet(idGenerator.nextId(), List.of(dropSequence)));
+        dialectBundle.withSequence(seqDialect -> {
+            DropSequenceChange dropSequence = DropSequenceChange.builder()
+                    .config(DropSequenceConfig.builder()
+                            .sequenceName(sequence.getName())
+                            .build())
+                    .build();
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropSequence)));
+        });
     }
 
     @Override
     public void visitModifiedSequence(SequenceModel newSequence, SequenceModel oldSequence) {
-        DropSequenceChange dropSequence = DropSequenceChange.builder()
-                .config(DropSequenceConfig.builder()
-                        .sequenceName(oldSequence.getName())
-                        .build())
-                .build();
-        CreateSequenceChange createSequence = CreateSequenceChange.builder()
-                .config(CreateSequenceConfig.builder()
-                        .sequenceName(newSequence.getName())
-                        .startValue(String.valueOf(newSequence.getInitialValue()))
-                        .incrementBy(String.valueOf(newSequence.getAllocationSize()))
-                        .build())
-                .build();
-        sequenceChanges.add(createChangeSet(idGenerator.nextId(), List.of(dropSequence)));
-        sequenceChanges.add(createChangeSet(idGenerator.nextId(), List.of(createSequence)));
+        dialectBundle.withSequence(seqDialect -> {
+            DropSequenceChange dropSequence = DropSequenceChange.builder()
+                    .config(DropSequenceConfig.builder()
+                            .sequenceName(oldSequence.getName())
+                            .build())
+                    .build();
+            CreateSequenceChange createSequence = CreateSequenceChange.builder()
+                    .config(CreateSequenceConfig.builder()
+                            .sequenceName(newSequence.getName())
+                            .startValue(String.valueOf(newSequence.getInitialValue()))
+                            .incrementBy(String.valueOf(newSequence.getAllocationSize()))
+                            .build())
+                    .build();
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropSequence)));
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(createSequence)));
+        });
     }
 
     @Override
-    public void visitAddedTableGenerator(TableGeneratorModel tableGenerator) {
-        CreateTableGeneratorChange createTable = CreateTableGeneratorChange.builder()
-                .config(CreateTableConfig.builder()
-                        .tableName(tableGenerator.getName())
-                        .columns(List.of(
-                                ColumnWrapper.builder()
-                                        .config(ColumnConfig.builder()
-                                                .name("pk_column")
-                                                .type("varchar(255)")
-                                                .constraints(Constraints.builder().primaryKey(true).build())
-                                                .build())
-                                        .build(),
-                                ColumnWrapper.builder()
-                                        .config(ColumnConfig.builder()
-                                                .name("value_column")
-                                                .type("bigint")
-                                                .build())
-                                        .build()))
-                        .build())
-                .build();
-        tableChanges.add(createChangeSet(idGenerator.nextId(), List.of(createTable)));
+    public void visitAddedTableGenerator(TableGeneratorModel tg) {
+        dialectBundle.withTableGenerator(tgd -> {
+            var createTable = CreateTableChange.builder()
+                    .config(CreateTableConfig.builder()
+                            .tableName(tg.getTable())
+                            .columns(List.of(
+                                    ColumnWrapper.builder().config(ColumnConfig.builder()
+                                            .name(tg.getPkColumnName())
+                                            .type("varchar(255)")
+                                            .constraints(Constraints.builder().primaryKey(true).build())
+                                            .build()).build(),
+                                    ColumnWrapper.builder().config(ColumnConfig.builder()
+                                            .name(tg.getValueColumnName())
+                                            .type("bigint")
+                                            .build()).build()
+                            ))
+                            .build())
+                    .build();
+
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(createTable)));
+
+            // 초기 row insert
+            var insert = InsertDataChange.builder()
+                    .config(InsertDataConfig.builder()
+                            .tableName(tg.getTable())
+                            .columns(List.of(
+                                    ColumnWrapper.builder().config(ColumnConfig.builder()
+                                            .name(tg.getPkColumnName())
+                                            .defaultValue(tg.getPkColumnValue()) // 필요시 valueComputed/… 고려
+                                            .build()).build(),
+                                    ColumnWrapper.builder().config(ColumnConfig.builder()
+                                            .name(tg.getValueColumnName())
+                                            .defaultValue(String.valueOf(tg.getInitialValue()))
+                                            .build()).build()
+                            )).build())
+                    .build();
+
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(insert)));
+        });
     }
+
 
     @Override
     public void visitDroppedTableGenerator(TableGeneratorModel tableGenerator) {
-        DropTableGeneratorChange dropTable = DropTableGeneratorChange.builder()
-                .config(DropTableConfig.builder()
-                        .tableName(tableGenerator.getTable())
-                        .build())
-                .build();
-        tableChanges.add(createChangeSet(idGenerator.nextId(), List.of(dropTable)));
+        dialectBundle.withTableGenerator(tgDialect -> {
+            DropTableGeneratorChange dropTable = DropTableGeneratorChange.builder()
+                    .config(DropTableConfig.builder()
+                            .tableName(tableGenerator.getTable())
+                            .build())
+                    .build();
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropTable)));
+        });
     }
 
     @Override
     public void visitModifiedTableGenerator(TableGeneratorModel newTableGenerator, TableGeneratorModel oldTableGenerator) {
-        DropTableGeneratorChange dropTable = DropTableGeneratorChange.builder()
-                .config(DropTableConfig.builder()
-                        .tableName(oldTableGenerator.getTable())
-                        .build())
-                .build();
-        CreateTableGeneratorChange createTable = CreateTableGeneratorChange.builder()
-                .config(CreateTableConfig.builder()
-                        .tableName(newTableGenerator.getTable())
-                        .columns(List.of(
-                                ColumnWrapper.builder()
-                                        .config(ColumnConfig.builder()
-                                                .name("pk_column")
-                                                .type("varchar(255)")
-                                                .constraints(Constraints.builder().primaryKey(true).build())
-                                                .build())
-                                        .build(),
-                                ColumnWrapper.builder()
-                                        .config(ColumnConfig.builder()
-                                                .name("value_column")
-                                                .type("bigint")
-                                                .build())
-                                        .build()))
-                        .build())
-                .build();
-        tableChanges.add(createChangeSet(idGenerator.nextId(), List.of(dropTable)));
-        tableChanges.add(createChangeSet(idGenerator.nextId(), List.of(createTable)));
+        dialectBundle.withTableGenerator(tgDialect -> {
+            DropTableGeneratorChange dropTable = DropTableGeneratorChange.builder()
+                    .config(DropTableConfig.builder()
+                            .tableName(oldTableGenerator.getTable())
+                            .build())
+                    .build();
+            CreateTableGeneratorChange createTable = CreateTableGeneratorChange.builder()
+                    .config(CreateTableConfig.builder()
+                            .tableName(newTableGenerator.getTable())
+                            .columns(List.of(
+                                    ColumnWrapper.builder()
+                                            .config(ColumnConfig.builder()
+                                                    .name("pk_column")
+                                                    .type("varchar(255)")
+                                                    .constraints(Constraints.builder().primaryKey(true).build())
+                                                    .build())
+                                            .build(),
+                                    ColumnWrapper.builder()
+                                            .config(ColumnConfig.builder()
+                                                    .name("value_column")
+                                                    .type("bigint")
+                                                    .build())
+                                            .build()))
+                            .build())
+                    .build();
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropTable)));
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(createTable)));
+        });
     }
 
+    // 테이블 컨텐츠 관련 방문 메서드
     @Override
     public void visitAddedColumn(ColumnModel column) {
         AddColumnChange addColumn = AddColumnChange.builder()
@@ -198,15 +241,15 @@ public class LiquibaseVisitor implements MigrationVisitor {
                         .columns(List.of(ColumnWrapper.builder()
                                 .config(ColumnConfig.builder()
                                         .name(column.getColumnName())
-                                        .type(dialect.getLiquibaseTypeName(column))
+                                        .type(getLiquibaseTypeName(column))
                                         .defaultValue(column.getDefaultValue())
                                         .autoIncrement(column.getGenerationStrategy() == GenerationStrategy.IDENTITY ? true : null)
-                                        .constraints(buildConstraints(column))
+                                        .constraints(LiquibaseUtils.buildConstraints(column, currentTableName))
                                         .build())
                                 .build()))
                         .build())
                 .build();
-        columnChanges.add(createChangeSet(idGenerator.nextId(), List.of(addColumn)));
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(addColumn)));
     }
 
     @Override
@@ -217,23 +260,23 @@ public class LiquibaseVisitor implements MigrationVisitor {
                         .columnName(column.getColumnName())
                         .build())
                 .build();
-        columnChanges.add(createChangeSet(idGenerator.nextId(), List.of(dropColumn)));
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropColumn)));
     }
 
     @Override
-    public void visitModifiedColumn(ColumnModel oldColumn, ColumnModel newColumn) {
+    public void visitModifiedColumn(ColumnModel newColumn, ColumnModel oldColumn) {
         ModifyDataTypeChange modifyDataType = ModifyDataTypeChange.builder()
                 .config(ModifyDataTypeConfig.builder()
                         .tableName(currentTableName)
                         .columnName(newColumn.getColumnName())
-                        .newDataType(dialect.getLiquibaseTypeName(newColumn))
+                        .newDataType(getLiquibaseTypeName(newColumn))
                         .build())
                 .build();
-        columnChanges.add(createChangeSet(idGenerator.nextId(), List.of(modifyDataType)));
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(modifyDataType)));
     }
 
     @Override
-    public void visitRenamedColumn(ColumnModel oldColumn, ColumnModel newColumn) {
+    public void visitRenamedColumn(ColumnModel newColumn, ColumnModel oldColumn) {
         RenameColumnChange renameColumn = RenameColumnChange.builder()
                 .config(RenameColumnConfig.builder()
                         .tableName(currentTableName)
@@ -241,7 +284,7 @@ public class LiquibaseVisitor implements MigrationVisitor {
                         .newColumnName(newColumn.getColumnName())
                         .build())
                 .build();
-        columnChanges.add(createChangeSet(idGenerator.nextId(), List.of(renameColumn)));
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(renameColumn)));
     }
 
     @Override
@@ -259,7 +302,7 @@ public class LiquibaseVisitor implements MigrationVisitor {
                         .columns(indexColumns)
                         .build())
                 .build();
-        createdIndexChanges.add(createChangeSet(idGenerator.nextId(), List.of(createIndex)));
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(createIndex)));
     }
 
     @Override
@@ -270,11 +313,11 @@ public class LiquibaseVisitor implements MigrationVisitor {
                         .tableName(currentTableName)
                         .build())
                 .build();
-        droppedIndexChanges.add(createChangeSet(idGenerator.nextId(), List.of(dropIndex)));
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropIndex)));
     }
 
     @Override
-    public void visitModifiedIndex(IndexModel oldIndex, IndexModel newIndex) {
+    public void visitModifiedIndex(IndexModel newIndex, IndexModel oldIndex) {
         DropIndexChange dropOldIndex = DropIndexChange.builder()
                 .config(DropIndexConfig.builder()
                         .indexName(oldIndex.getIndexName())
@@ -293,8 +336,8 @@ public class LiquibaseVisitor implements MigrationVisitor {
                                 .toList())
                         .build())
                 .build();
-        droppedIndexChanges.add(createChangeSet(idGenerator.nextId(), List.of(dropOldIndex)));
-        createdIndexChanges.add(createChangeSet(idGenerator.nextId(), List.of(createNewIndex)));
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropOldIndex)));
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(createNewIndex)));
     }
 
     @Override
@@ -307,7 +350,7 @@ public class LiquibaseVisitor implements MigrationVisitor {
                             .columnNames(String.join(",", constraint.getColumns()))
                             .build())
                     .build();
-            constraintChanges.add(createChangeSet(idGenerator.nextId(), List.of(uniqueChange)));
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(uniqueChange)));
         } else if (constraint.getType() == ConstraintType.CHECK) {
             AddCheckConstraintChange checkChange = AddCheckConstraintChange.builder()
                     .config(AddCheckConstraintConfig.builder()
@@ -316,7 +359,7 @@ public class LiquibaseVisitor implements MigrationVisitor {
                             .constraintExpression(constraint.getCheckClause())
                             .build())
                     .build();
-            constraintChanges.add(createChangeSet(idGenerator.nextId(), List.of(checkChange)));
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(checkChange)));
         }
     }
 
@@ -329,7 +372,7 @@ public class LiquibaseVisitor implements MigrationVisitor {
                             .tableName(currentTableName)
                             .build())
                     .build();
-            constraintChanges.add(createChangeSet(idGenerator.nextId(), List.of(dropUnique)));
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropUnique)));
         } else if (constraint.getType() == ConstraintType.CHECK) {
             DropCheckConstraintChange dropCheck = DropCheckConstraintChange.builder()
                     .config(DropCheckConstraintConfig.builder()
@@ -337,7 +380,7 @@ public class LiquibaseVisitor implements MigrationVisitor {
                             .tableName(currentTableName)
                             .build())
                     .build();
-            constraintChanges.add(createChangeSet(idGenerator.nextId(), List.of(dropCheck)));
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropCheck)));
         }
     }
 
@@ -356,11 +399,11 @@ public class LiquibaseVisitor implements MigrationVisitor {
                         .baseColumnNames(relationship.getColumn())
                         .referencedTableName(relationship.getReferencedTable())
                         .referencedColumnNames(relationship.getReferencedColumn())
-                        .onDelete(relationship.getOnDelete() != null ? relationship.getOnDelete().name() : null)
-                        .onUpdate(relationship.getOnUpdate() != null ? relationship.getOnUpdate().name() : null)
+                        .onDelete(relationship.getOnDelete() != null ? relationship.getOnDelete().name().replace('_',' ') : null)
+                        .onUpdate(relationship.getOnUpdate() != null ? relationship.getOnUpdate().name().replace('_',' ') : null)
                         .build())
                 .build();
-        createdFkChanges.add(createChangeSet(idGenerator.nextId(), List.of(fkChange)));
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(fkChange)));
     }
 
     @Override
@@ -371,11 +414,11 @@ public class LiquibaseVisitor implements MigrationVisitor {
                         .baseTableName(currentTableName)
                         .build())
                 .build();
-        droppedFkChanges.add(createChangeSet(idGenerator.nextId(), List.of(dropFk)));
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropFk)));
     }
 
     @Override
-    public void visitModifiedRelationship(RelationshipModel oldRelationship, RelationshipModel newRelationship) {
+    public void visitModifiedRelationship(RelationshipModel newRelationship, RelationshipModel oldRelationship) {
         visitDroppedRelationship(oldRelationship);
         visitAddedRelationship(newRelationship);
     }
@@ -389,7 +432,7 @@ public class LiquibaseVisitor implements MigrationVisitor {
                         .columnNames(String.join(",", pkColumns))
                         .build())
                 .build();
-        primaryKeyChanges.add(createChangeSet(idGenerator.nextId(), List.of(addPk)));
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(addPk)));
     }
 
     @Override
@@ -400,7 +443,7 @@ public class LiquibaseVisitor implements MigrationVisitor {
                         .tableName(currentTableName)
                         .build())
                 .build();
-        primaryKeyChanges.add(createChangeSet(idGenerator.nextId(), List.of(dropPk)));
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropPk)));
     }
 
     @Override
@@ -411,58 +454,18 @@ public class LiquibaseVisitor implements MigrationVisitor {
 
     @Override
     public String getGeneratedSql() {
-        return ""; // Liquibase 태그 기반으로 작동하므로 SQL 직접 생성 불필요
+        return ""; // Liquibase는 태그 기반이므로 SQL 직접 생성 불필요
     }
 
-    public List<ChangeSetWrapper> getFinalChangeSets() {
-        List<ChangeSetWrapper> finalChangeSets = new ArrayList<>();
-        finalChangeSets.addAll(sequenceChanges); // 시퀀스 먼저
-        finalChangeSets.addAll(tableChanges.stream()
-                .filter(cs -> cs.getChangeSet().getChanges().stream()
-                        .anyMatch(change -> change instanceof DropTableChange || change instanceof DropTableGeneratorChange))
-                .toList()); // 테이블 삭제
-        finalChangeSets.addAll(droppedFkChanges); // 외래 키 삭제
-        finalChangeSets.addAll(constraintChanges.stream()
-                .filter(cs -> cs.getChangeSet().getChanges().stream()
-                        .anyMatch(change -> change instanceof DropUniqueConstraintChange || change instanceof DropCheckConstraintChange))
-                .toList()); // 제약조건 삭제
-        finalChangeSets.addAll(droppedIndexChanges); // 인덱스 삭제
-        finalChangeSets.addAll(tableChanges.stream()
-                .filter(cs -> cs.getChangeSet().getChanges().stream()
-                        .anyMatch(change -> change instanceof RenameTableChange))
-                .toList()); // 테이블 이름 변경
-        finalChangeSets.addAll(tableChanges.stream()
-                .filter(cs -> cs.getChangeSet().getChanges().stream()
-                        .anyMatch(change -> change instanceof CreateTableChange || change instanceof CreateTableGeneratorChange))
-                .toList()); // 테이블 생성
-        finalChangeSets.addAll(columnChanges); // 컬럼 변경
-        finalChangeSets.addAll(primaryKeyChanges); // 기본 키 변경
-        finalChangeSets.addAll(createdIndexChanges); // 인덱스 생성
-        finalChangeSets.addAll(constraintChanges.stream()
-                .filter(cs -> cs.getChangeSet().getChanges().stream()
-                        .anyMatch(change -> change instanceof AddUniqueConstraintChange || change instanceof AddCheckConstraintChange))
-                .toList()); // 제약조건 생성
-        finalChangeSets.addAll(createdFkChanges); // 외래 키 생성
-        return finalChangeSets;
+    private String getLiquibaseTypeName(ColumnModel c) {
+        return dialectBundle.liquibase()
+                .map(lb -> lb.getLiquibaseTypeName(c))
+                .orElseGet(() -> {
+                    var ddl = dialectBundle.ddl();
+                    var jt = ddl.getJavaTypeMapper().map(
+                            c.getConversionClass() != null ? c.getConversionClass() : c.getJavaType());
+                    return jt.getSqlType(c.getLength(), c.getPrecision(), c.getScale());
+                });
     }
 
-    private Constraints buildConstraints(ColumnModel col) {
-        return Constraints.builder()
-                .primaryKey(col.isPrimaryKey() || col.isManualPrimaryKey() ? true : null)
-                .primaryKeyName(col.isPrimaryKey() ? "pk_" + col.getTableName() + "_" + col.getColumnName() : null)
-                .nullable(col.isNullable() ? null : false)
-                .unique(col.isUnique() ? true : null)
-                .uniqueConstraintName(col.isUnique() ? "uk_" + col.getTableName() + "_" + col.getColumnName() : null)
-                .build();
-    }
-
-    private ChangeSetWrapper createChangeSet(String id, List<Object> changes) {
-        return ChangeSetWrapper.builder()
-                .changeSet(ChangeSet.builder()
-                        .id(id)
-                        .author("auto-generated")
-                        .changes(changes)
-                        .build())
-                .build();
-    }
 }

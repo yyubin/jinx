@@ -2,8 +2,6 @@ package org.jinx.model;
 
 import lombok.Builder;
 import lombok.Getter;
-import org.jinx.migration.MigrationVisitor;
-import org.jinx.migration.liquibase.LiquibaseVisitor;
 import org.jinx.migration.spi.visitor.SequenceVisitor;
 import org.jinx.migration.spi.visitor.TableContentVisitor;
 import org.jinx.migration.spi.visitor.TableGeneratorVisitor;
@@ -11,7 +9,6 @@ import org.jinx.migration.spi.visitor.TableVisitor;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 @Builder
 @Getter
