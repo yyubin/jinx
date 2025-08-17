@@ -1,5 +1,7 @@
 package org.jinx.migration;
 
+import org.jinx.migration.spi.IdentifierPolicy;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;

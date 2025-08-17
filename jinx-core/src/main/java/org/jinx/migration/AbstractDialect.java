@@ -1,5 +1,7 @@
 package org.jinx.migration;
 
+import org.jinx.migration.spi.JavaTypeMapper;
+import org.jinx.migration.spi.ValueTransformer;
 import org.jinx.migration.spi.dialect.BaseDialect;
 import org.jinx.migration.spi.dialect.DdlDialect;
 import org.jinx.model.ColumnModel;

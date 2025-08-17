@@ -7,6 +7,7 @@ import org.jinx.model.*;
 import javax.lang.model.element.*;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 public class InheritanceHandler {
@@ -114,9 +115,9 @@ public class InheritanceHandler {
 
         RelationshipModel relationship = RelationshipModel.builder()
                 .type(RelationshipType.JOINED_INHERITANCE)
-                .column(parentPkColumnName)
+                .columns(List.of(parentPkColumnName))
                 .referencedTable(parentEntity.getTableName())
-                .referencedColumn(parentPkColumnName)
+                .referencedColumns(List.of(parentPkColumnName))
                 .build();
         childEntity.getRelationships().add(relationship);
     }

@@ -1,6 +1,6 @@
 package org.jinx.migration.dialect.mysql;
 
-import org.jinx.migration.IdentifierPolicy;
+import org.jinx.migration.spi.IdentifierPolicy;
 
 
 class MySqlIdentifierPolicy implements IdentifierPolicy {

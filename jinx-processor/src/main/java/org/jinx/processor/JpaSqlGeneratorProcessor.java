@@ -38,6 +38,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
     private EmbeddedHandler embeddedHandler;
     private ConstraintHandler constraintHandler;
     private ElementCollectionHandler elementCollectionHandler;
+    private TableGeneratorHandler tableGeneratorHandler;
 
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {
@@ -54,7 +55,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         this.embeddedHandler = new EmbeddedHandler(context, columnHandler);
         this.constraintHandler = new ConstraintHandler(context);
         this.elementCollectionHandler = new ElementCollectionHandler(context, columnHandler, embeddedHandler);
-        this.entityHandler = new EntityHandler(context, columnHandler, embeddedHandler, constraintHandler, sequenceHandler, elementCollectionHandler);
+        this.entityHandler = new EntityHandler(context, columnHandler, embeddedHandler, constraintHandler, sequenceHandler, elementCollectionHandler, tableGeneratorHandler);
     }
 
     @Override

@@ -1,7 +1,7 @@
 package org.jinx.migration.dialect.mysql;
 
 import lombok.Getter;
-import org.jinx.migration.JavaTypeMapper;
+import org.jinx.migration.spi.JavaTypeMapper;
 
 import java.util.Map;
 

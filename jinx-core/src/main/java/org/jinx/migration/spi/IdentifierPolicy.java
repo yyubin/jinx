@@ -1,4 +1,4 @@
-package org.jinx.migration;
+package org.jinx.migration.spi;
 
 public interface IdentifierPolicy {
     int  maxLength();                      // 30, 63, 64, 128 …

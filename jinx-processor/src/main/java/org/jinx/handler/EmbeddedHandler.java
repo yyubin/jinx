@@ -121,9 +121,9 @@ public class EmbeddedHandler {
 
         RelationshipModel relationship = RelationshipModel.builder()
                 .type(manyToOne != null ? RelationshipType.MANY_TO_ONE : RelationshipType.ONE_TO_ONE)
-                .column(fkColumnName)
+                .columns(List.of(fkColumnName))
                 .referencedTable(referencedEntity.getTableName())
-                .referencedColumn(referencedPkColumnName.get())
+                .referencedColumns(List.of(referencedPkColumnName.get()))
                 .mapsId(mapsId != null)
                 .constraintName(rawName == null || rawName.isEmpty()
                         ? "fk_" + fkColumnName

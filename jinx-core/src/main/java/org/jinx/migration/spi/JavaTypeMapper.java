@@ -1,4 +1,4 @@
-package org.jinx.migration;
+package org.jinx.migration.spi;
 
 public interface JavaTypeMapper {
     JavaType map(String className);

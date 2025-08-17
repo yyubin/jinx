@@ -146,9 +146,9 @@ public class ElementCollectionHandler {
         // 7. 외래 키 관계 모델 생성
         RelationshipModel fkRelationship = RelationshipModel.builder()
                 .type(RelationshipType.ELEMENT_COLLECTION)
-                .column(fkColumn.getColumnName())
+                .columns(List.of(fkColumn.getColumnName()))
                 .referencedTable(ownerEntity.getTableName())
-                .referencedColumn(ownerPkName)
+                .referencedColumns(List.of(ownerPkName))
                 .constraintName("fk_" + tableName + "_" + fkColumn.getColumnName())
                 .build();
         collectionEntity.getRelationships().add(fkRelationship);

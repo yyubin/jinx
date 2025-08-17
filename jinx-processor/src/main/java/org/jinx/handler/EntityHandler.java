@@ -19,14 +19,16 @@ public class EntityHandler {
     private final ConstraintHandler constraintHandler;
     private final SequenceHandler sequenceHandler;
     private final ElementCollectionHandler elementCollectionHandler;
+    private final TableGeneratorHandler tableGeneratorHandler;
 
-    public EntityHandler(ProcessingContext context, ColumnHandler columnHandler, EmbeddedHandler embeddedHandler, ConstraintHandler constraintHandler, SequenceHandler sequenceHandler, ElementCollectionHandler elementCollectionHandler) {
+    public EntityHandler(ProcessingContext context, ColumnHandler columnHandler, EmbeddedHandler embeddedHandler, ConstraintHandler constraintHandler, SequenceHandler sequenceHandler, ElementCollectionHandler elementCollectionHandler, TableGeneratorHandler tableGeneratorHandler) {
         this.context = context;
         this.columnHandler = columnHandler;
         this.embeddedHandler = embeddedHandler;
         this.constraintHandler = constraintHandler;
         this.sequenceHandler = sequenceHandler;
         this.elementCollectionHandler = elementCollectionHandler;
+        this.tableGeneratorHandler = tableGeneratorHandler;
     }
 
     public void handle(TypeElement typeElement) {
@@ -53,6 +55,20 @@ public class EntityHandler {
                 .build();
 
         sequenceHandler.processSequenceGenerators(typeElement);
+
+        tableOpt.ifPresent(table -> {
+            for (UniqueConstraint uc : table.uniqueConstraints()) {
+                ConstraintModel constraint = ConstraintModel.builder()
+                        .name(uc.name().isBlank() ? "uc_" + tableName + "_" + String.join("_", uc.columnNames()) : uc.name())
+                        .type(ConstraintType.UNIQUE)
+                        .columns(Arrays.asList(uc.columnNames()))
+                        .build();
+                entity.getConstraints().add(constraint);
+            }
+        });
+
+        tableGeneratorHandler.processTableGenerators(typeElement);
+
         processConstraints(typeElement, null, entity.getConstraints(), entity.getTableName());
 
         // Handle @SecondaryTable(s)
@@ -70,9 +86,9 @@ public class EntityHandler {
                 String fkColumnName = st.pkJoinColumns()[0].name();
                 RelationshipModel fkRelationship = RelationshipModel.builder()
                         .type(RelationshipType.SECONDARY_TABLE)
-                        .column(fkColumnName)
+                        .columns(List.of(fkColumnName))
                         .referencedTable(entity.getTableName())
-                        .referencedColumn(pkColumnName.get())
+                        .referencedColumns(List.of(pkColumnName.get()))
                         .constraintName("fk_" + st.name() + "_" + fkColumnName)
                         .build();
                 entity.getRelationships().add(fkRelationship);

@@ -1,5 +1,7 @@
 package org.jinx.migration;
 
+import org.jinx.migration.spi.JavaTypeMapper;
+import org.jinx.migration.spi.ValueTransformer;
 import org.jinx.model.*;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

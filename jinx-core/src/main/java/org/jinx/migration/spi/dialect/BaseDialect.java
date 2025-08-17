@@ -1,7 +1,7 @@
 package org.jinx.migration.spi.dialect;
 
-import org.jinx.migration.JavaTypeMapper;
-import org.jinx.migration.ValueTransformer;
+import org.jinx.migration.spi.JavaTypeMapper;
+import org.jinx.migration.spi.ValueTransformer;
 import org.jinx.migration.spi.visitor.SqlGeneratingVisitor;
 import org.jinx.model.DiffResult;
 

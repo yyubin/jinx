@@ -12,9 +12,9 @@ import java.util.List;
 @Builder
 public class RelationshipModel {
     private RelationshipType type;
-    private String column;
+    private List<String> columns;
     private String referencedTable;
-    private String referencedColumn;
+    private List<String> referencedColumns;
     private String constraintName;
     private OnDeleteAction onDelete;
     private OnUpdateAction onUpdate;

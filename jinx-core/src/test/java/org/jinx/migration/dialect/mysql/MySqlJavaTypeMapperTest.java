@@ -1,7 +1,7 @@
 package org.jinx.migration.dialect.mysql;
 
 import org.assertj.core.api.Assertions;
-import org.jinx.migration.JavaTypeMapper;
+import org.jinx.migration.spi.JavaTypeMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

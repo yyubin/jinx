@@ -7,15 +7,17 @@ import org.jinx.model.RelationshipModel;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 public class RelationshipDiffer implements EntityComponentDiffer {
     @Override
     public void diff(EntityModel oldEntity, EntityModel newEntity, DiffResult.ModifiedEntity result) {
         newEntity.getRelationships().forEach(newRel -> {
             RelationshipModel oldRel = oldEntity.getRelationships().stream()
-                    // // FIX : column + type 으로 같은 관계로 파악하다가 type 제거 -> 드물게 오탐 가능성 있지만 유연한게 나은듯.. 어차피 이단임
-                    .filter(r -> Optional.ofNullable(r.getColumn()).equals(Optional.ofNullable(newRel.getColumn())))
+                    // FIX: columns 리스트로 비교, type 제거로 유연성 유지
+                    .filter(r -> Objects.equals(r.getColumns(), newRel.getColumns()))
                     .findFirst()
                     .orElse(null);
             if (oldRel == null) {
@@ -37,7 +39,7 @@ public class RelationshipDiffer implements EntityComponentDiffer {
         oldEntity.getRelationships().forEach(oldRel -> {
             if (oldRel.getType() == null) return;
             if (newEntity.getRelationships().stream()
-                    .noneMatch(r -> Optional.ofNullable(r.getColumn()).equals(Optional.ofNullable(oldRel.getColumn())))) {
+                    .noneMatch(r -> Objects.equals(r.getColumns(), oldRel.getColumns()))) {
                 result.getRelationshipDiffs().add(DiffResult.RelationshipDiff.builder()
                         .type(DiffResult.RelationshipDiff.Type.DROPPED)
                         .relationship(oldRel)
@@ -47,40 +49,42 @@ public class RelationshipDiffer implements EntityComponentDiffer {
     }
 
     private boolean isRelationshipEqual(RelationshipModel oldRel, RelationshipModel newRel) {
-        return Optional.ofNullable(oldRel.getType()).equals(Optional.ofNullable(newRel.getType())) &&
-                Optional.ofNullable(oldRel.getColumn()).equals(Optional.ofNullable(newRel.getColumn())) &&
-                Optional.ofNullable(oldRel.getReferencedTable()).equals(Optional.ofNullable(newRel.getReferencedTable())) &&
-                Optional.ofNullable(oldRel.getReferencedColumn()).equals(Optional.ofNullable(newRel.getReferencedColumn())) &&
+        return Objects.equals(oldRel.getType(), newRel.getType()) &&
+                Objects.equals(oldRel.getColumns(), newRel.getColumns()) &&
+                Objects.equals(oldRel.getReferencedTable(), newRel.getReferencedTable()) &&
+                Objects.equals(oldRel.getReferencedColumns(), newRel.getReferencedColumns()) &&
                 oldRel.isMapsId() == newRel.isMapsId() &&
-                Optional.ofNullable(oldRel.getCascadeTypes()).equals(Optional.ofNullable(newRel.getCascadeTypes())) &&
+                Objects.equals(oldRel.getCascadeTypes(), newRel.getCascadeTypes()) &&
                 oldRel.isOrphanRemoval() == newRel.isOrphanRemoval() &&
-                oldRel.getFetchType() == newRel.getFetchType();
+                Objects.equals(oldRel.getFetchType(), newRel.getFetchType());
     }
 
     private String getRelationshipChangeDetail(RelationshipModel oldRel, RelationshipModel newRel) {
         StringBuilder detail = new StringBuilder();
-        if (!Optional.ofNullable(oldRel.getType()).equals(Optional.ofNullable(newRel.getType()))) {
+        if (!Objects.equals(oldRel.getType(), newRel.getType())) {
             detail.append("type changed from ").append(oldRel.getType()).append(" to ").append(newRel.getType()).append("; ");
         }
-        if (!Optional.ofNullable(oldRel.getColumn()).equals(Optional.ofNullable(newRel.getColumn()))) {
-            detail.append("column changed from ").append(oldRel.getColumn()).append(" to ").append(newRel.getColumn()).append("; ");
+        if (!Objects.equals(oldRel.getColumns(), newRel.getColumns())) {
+            detail.append("columns changed from [").append(String.join(",", oldRel.getColumns() != null ? oldRel.getColumns() : List.of()))
+                    .append("] to [").append(String.join(",", newRel.getColumns() != null ? newRel.getColumns() : List.of())).append("]; ");
         }
-        if (!Optional.ofNullable(oldRel.getReferencedTable()).equals(Optional.ofNullable(newRel.getReferencedTable()))) {
+        if (!Objects.equals(oldRel.getReferencedTable(), newRel.getReferencedTable())) {
             detail.append("referencedTable changed from ").append(oldRel.getReferencedTable()).append(" to ").append(newRel.getReferencedTable()).append("; ");
         }
-        if (!Optional.ofNullable(oldRel.getReferencedColumn()).equals(Optional.ofNullable(newRel.getReferencedColumn()))) {
-            detail.append("referencedColumn changed from ").append(oldRel.getReferencedColumn()).append(" to ").append(newRel.getReferencedColumn()).append("; ");
+        if (!Objects.equals(oldRel.getReferencedColumns(), newRel.getReferencedColumns())) {
+            detail.append("referencedColumns changed from [").append(String.join(",", oldRel.getReferencedColumns() != null ? oldRel.getReferencedColumns() : List.of()))
+                    .append("] to [").append(String.join(",", newRel.getReferencedColumns() != null ? newRel.getReferencedColumns() : List.of())).append("]; ");
         }
         if (oldRel.isMapsId() != newRel.isMapsId()) {
             detail.append("mapsId changed from ").append(oldRel.isMapsId()).append(" to ").append(newRel.isMapsId()).append("; ");
         }
-        if (!Optional.ofNullable(oldRel.getCascadeTypes()).equals(Optional.ofNullable(newRel.getCascadeTypes()))) {
+        if (!Objects.equals(oldRel.getCascadeTypes(), newRel.getCascadeTypes())) {
             detail.append("cascadeTypes changed from ").append(oldRel.getCascadeTypes()).append(" to ").append(newRel.getCascadeTypes()).append("; ");
         }
         if (oldRel.isOrphanRemoval() != newRel.isOrphanRemoval()) {
             detail.append("orphanRemoval changed from ").append(oldRel.isOrphanRemoval()).append(" to ").append(newRel.isOrphanRemoval()).append("; ");
         }
-        if (oldRel.getFetchType() != newRel.getFetchType()) {
+        if (!Objects.equals(oldRel.getFetchType(), newRel.getFetchType())) {
             detail.append("fetchType changed from ").append(oldRel.getFetchType()).append(" to ").append(newRel.getFetchType()).append("; ");
         }
         if (detail.length() > 2) {
@@ -90,12 +94,13 @@ public class RelationshipDiffer implements EntityComponentDiffer {
     }
 
     private void analyzeRelationshipChanges(RelationshipModel oldRel, RelationshipModel newRel, DiffResult.ModifiedEntity modified) {
-        if (!Optional.ofNullable(oldRel.getCascadeTypes()).equals(Optional.ofNullable(newRel.getCascadeTypes()))) {
+        if (!Objects.equals(oldRel.getCascadeTypes(), newRel.getCascadeTypes())) {
             List<CascadeType> added = new ArrayList<>(newRel.getCascadeTypes() != null ? newRel.getCascadeTypes() : List.of());
             added.removeAll(oldRel.getCascadeTypes() != null ? oldRel.getCascadeTypes() : List.of());
             List<CascadeType> removed = new ArrayList<>(oldRel.getCascadeTypes() != null ? oldRel.getCascadeTypes() : List.of());
             removed.removeAll(newRel.getCascadeTypes() != null ? newRel.getCascadeTypes() : List.of());
-            StringBuilder warning = new StringBuilder("Persistence cascade options changed for relationship on column " + newRel.getColumn());
+            StringBuilder warning = new StringBuilder("Persistence cascade options changed for relationship on columns [" +
+                    String.join(",", newRel.getColumns() != null ? newRel.getColumns() : List.of()) + "]");
             if (!added.isEmpty()) {
                 warning.append("; added: ").append(added);
             }
@@ -107,16 +112,19 @@ public class RelationshipDiffer implements EntityComponentDiffer {
         }
         if (oldRel.isOrphanRemoval() != newRel.isOrphanRemoval()) {
             if (newRel.isOrphanRemoval()) {
-                modified.getWarnings().add("Orphan removal enabled for relationship on column " + newRel.getColumn() +
-                        "; may cause automatic deletion of related entities.");
+                modified.getWarnings().add("Orphan removal enabled for relationship on columns [" +
+                        String.join(",", newRel.getColumns() != null ? newRel.getColumns() : List.of()) +
+                        "]; may cause automatic deletion of related entities.");
             } else {
-                modified.getWarnings().add("Orphan removal disabled for relationship on column " + newRel.getColumn() +
-                        "; may affect data cleanup logic.");
+                modified.getWarnings().add("Orphan removal disabled for relationship on columns [" +
+                        String.join(",", newRel.getColumns() != null ? newRel.getColumns() : List.of()) +
+                        "]; may affect data cleanup logic.");
             }
         }
-        if (oldRel.getFetchType() != newRel.getFetchType()) {
-            modified.getWarnings().add("Fetch strategy changed for relationship on column " + newRel.getColumn() +
-                    " from " + oldRel.getFetchType() + " to " + newRel.getFetchType() +
+        if (!Objects.equals(oldRel.getFetchType(), newRel.getFetchType())) {
+            modified.getWarnings().add("Fetch strategy changed for relationship on columns [" +
+                    String.join(",", newRel.getColumns() != null ? newRel.getColumns() : List.of()) +
+                    "] from " + oldRel.getFetchType() + " to " + newRel.getFetchType() +
                     "; may impact data retrieval performance.");
         }
     }

@@ -1,5 +1,6 @@
 package org.jinx.migration;
 
+import org.jinx.migration.spi.IdentifierPolicy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
