@@ -1,6 +1,9 @@
 package org.jinx.migration;
 
 import lombok.Getter;
+import org.jinx.migration.contributor.DdlContributor;
+import org.jinx.migration.contributor.SqlContributor;
+import org.jinx.migration.spi.dialect.DdlDialect;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -10,16 +13,16 @@ public class AlterTableBuilder {
     @Getter
     private final String tableName;
     @Getter
-    private final Dialect dialect;
+    private final DdlDialect dialect;
     @Getter
-    private final List<SqlContributor> units = new ArrayList<>();
+    private final List<DdlContributor> units = new ArrayList<>();
 
-    public AlterTableBuilder(String tableName, Dialect dialect) {
+    public AlterTableBuilder(String tableName, DdlDialect dialect) {
         this.tableName = tableName;
         this.dialect = dialect;
     }
 
-    public AlterTableBuilder add(SqlContributor unit) {
+    public AlterTableBuilder add(DdlContributor unit) {
         units.add(unit);
         return this;
     }

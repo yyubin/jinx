@@ -6,6 +6,8 @@ import java.util.List;
 
 public interface MigrationVisitor {
     // 테이블 레벨 변경
+    default void visitAddedTable(EntityModel table) {};
+    default void visitDroppedTable(EntityModel table) {};
     void visitRenamedTable(DiffResult.RenamedTable renamed);
 
     // 시퀀스 레벨 변경

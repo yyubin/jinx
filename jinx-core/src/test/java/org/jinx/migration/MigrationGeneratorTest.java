@@ -23,11 +23,13 @@ class MigrationGeneratorTest {
     private SchemaModel newSchema;
 
     private MigrationGenerator migrationGenerator;
+    private MigrationGenerator migrationReverseGenerator;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        migrationGenerator = new MigrationGenerator(dialect, newSchema);
+        migrationGenerator = new MigrationGenerator(dialect, newSchema, false);
+        migrationReverseGenerator = new MigrationGenerator(dialect, newSchema, true);
     }
 
     private EntityModel createDummyEntity(String name) {
@@ -42,7 +44,6 @@ class MigrationGeneratorTest {
     @DisplayName("테이블 추가 Diff가 있을 때, CREATE TABLE SQL을 생성해야 한다")
     void generateSql_withAddedTable_shouldGenerateCreateTableSql() {
         // Given
-
         DiffResult diff = DiffResult.builder().build();
         EntityModel addedTable = createDummyEntity("new_users");
         diff.getAddedTables().add(addedTable);
@@ -272,6 +273,19 @@ class MigrationGeneratorTest {
 
         // Then
         assertThat(sql).isEqualTo(expectedSql);
+    }
+
+    @Test
+    @DisplayName("rollback SQL 출력 시 경고 문구가 포함되어야 한다")
+    void generateRollbackSql_withWarnings_shouldGenerateSqlComments() {
+        // Given
+        DiffResult diff = DiffResult.builder().build();
+
+        // When
+        String sql = migrationReverseGenerator.generateSql(diff);
+
+        // Then
+        assertThat(sql).contains("-- WARNING: this is rollback SQL for a migration");
     }
 
     private TableGeneratorModel createDummyTableGenerator(String name) {

@@ -1,30 +1,35 @@
 package org.jinx.migration.dialect.mysql;
 
+import jakarta.persistence.TemporalType;
 import org.jinx.migration.*;
-import org.jinx.migration.internal.create.ColumnContributor;
-import org.jinx.migration.internal.create.ConstraintContributor;
-import org.jinx.migration.internal.create.IndexContributor;
-import org.jinx.migration.internal.drop.DropTableStatementContributor;
+import org.jinx.migration.contributor.create.ColumnContributor;
+import org.jinx.migration.contributor.create.ConstraintContributor;
+import org.jinx.migration.contributor.create.IndexContributor;
+import org.jinx.migration.contributor.drop.DropTableStatementContributor;
+import org.jinx.migration.spi.dialect.IdentityDialect;
+import org.jinx.migration.spi.dialect.SequenceDialect;
+import org.jinx.migration.spi.dialect.TableGeneratorDialect;
+import org.jinx.migration.spi.visitor.SqlGeneratingVisitor;
 import org.jinx.model.*;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 
-public class MySqlDialect extends AbstractDialect {
+public class MySqlDialect extends AbstractDialect
+        implements IdentityDialect, TableGeneratorDialect {
 
     public MySqlDialect() {
         super();
     }
 
-    // 테스트용 생성자
     public MySqlDialect(JavaTypeMapper javaTypeMapper, ValueTransformer valueTransformer) {
         this.javaTypeMapper = javaTypeMapper;
         this.valueTransformer = valueTransformer;
     }
 
     @Override
-    public MigrationVisitor createVisitor(DiffResult.ModifiedEntity diff) {
+    public SqlGeneratingVisitor createVisitor(DiffResult.ModifiedEntity diff) {
         return new MySqlMigrationVisitor(diff, this);
     }
 
@@ -43,6 +48,8 @@ public class MySqlDialect extends AbstractDialect {
         return javaTypeMapper;
     }
 
+    // DdlDialect - Table
+
     @Override
     public String getCreateTableSql(EntityModel entity) {
         CreateTableBuilder builder = new CreateTableBuilder(entity.getTableName(), this);
@@ -52,6 +59,7 @@ public class MySqlDialect extends AbstractDialect {
                 .map(ColumnModel::getColumnName)
                 .toList();
         List<String> reorderedPk = MySqlUtil.reorderForIdentity(pkCols, cols);
+
         builder.add(new ColumnContributor(reorderedPk, cols));
         builder.add(new ConstraintContributor(entity.getConstraints().stream().toList()));
         builder.add(new IndexContributor(
@@ -61,7 +69,6 @@ public class MySqlDialect extends AbstractDialect {
         return builder.build();
     }
 
-    @Override
     public String getDropTableSql(EntityModel entity) {
         DropTableBuilder builder = new DropTableBuilder(this);
         builder.add(new DropTableStatementContributor(entity.getTableName()));
@@ -80,152 +87,45 @@ public class MySqlDialect extends AbstractDialect {
 
     @Override
     public String getAlterTableSql(DiffResult.ModifiedEntity modifiedEntity) {
-        MySqlMigrationVisitor visitor = new MySqlMigrationVisitor(modifiedEntity, this);
-        modifiedEntity.accept(visitor);
+        var visitor = new MySqlMigrationVisitor(modifiedEntity, this);
+        modifiedEntity.accept(visitor, DiffResult.TableContentPhase.ALTER);
         return visitor.getAlterBuilder().build();
     }
 
-    @Override
-    public String preSchemaObjects(SchemaModel schema) {
-        StringBuilder ddl = new StringBuilder();
-        for (TableGeneratorModel tg : schema.getTableGenerators().values()) {
-            ddl.append("CREATE TABLE IF NOT EXISTS ")
-                    .append(quoteIdentifier(tg.getTable()))
-                    .append(" (")
-                    .append(quoteIdentifier(tg.getPkColumnName())).append(" VARCHAR(255) NOT NULL PRIMARY KEY, ")
-                    .append(quoteIdentifier(tg.getValueColumnName())).append(" BIGINT NOT NULL")
-                    .append(");\n");
+    // Helpers for create-table builders (kept public for builder usage)
 
-            ddl.append("INSERT IGNORE INTO ")
-                    .append(quoteIdentifier(tg.getTable()))
-                    .append(" (").append(quoteIdentifier(tg.getPkColumnName()))
-                    .append(", ").append(quoteIdentifier(tg.getValueColumnName())).append(")")
-                    // FIX: VALUES 뒤의 따옴표를 제거하고, 쉼표 뒤의 따옴표도 제거
-                    .append(" VALUES (").append(valueTransformer.quote(tg.getPkColumnValue(), new MySqlJavaTypeMapper().map("java.lang.String")))
-                    .append(", ").append(tg.getInitialValue()).append(");\n");
-        }
-        return ddl.toString();
-    }
-
-
-    @Override
     public String openCreateTable(String table) {
         return "CREATE TABLE " + quoteIdentifier(table) + " (\n";
     }
 
-    @Override
     public String closeCreateTable() {
         return "\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
     }
+
+    // BaseDialect
 
     @Override
     public String quoteIdentifier(String raw) {
         return "`" + raw + "`";
     }
 
-    @Override
-    protected String getIdentityClause(ColumnModel c) {
-        return " AUTO_INCREMENT";
-    }
-
+    // DdlDialect - PK
 
     @Override
     public String getAddPrimaryKeySql(String table, List<String> pkColumns) {
-        if (pkColumns == null || pkColumns.isEmpty()) {
-            return "";
-        }
-
-        String columns = pkColumns.stream()
-                .map(this::quoteIdentifier)
-                .collect(Collectors.joining(", "));
-
-        return "ALTER TABLE " + quoteIdentifier(table) +
-                " ADD PRIMARY KEY (" + columns + ");\n";
-    }
-
-
-    @Override
-    public String getColumnDefinitionSql(ColumnModel c) {
-        String javaType = c.getConversionClass() != null ? c.getConversionClass() : c.getJavaType();
-        JavaTypeMapper.JavaType javaTypeMapped = javaTypeMapper.map(javaType);
-
-        String sqlType;
-        if (c.isLob()) {
-            sqlType = c.getJavaType().equals("java.lang.String") ? "TEXT" : "BLOB";
-        } else if (c.isVersion()) {
-            sqlType = c.getJavaType().equals("java.lang.Long") ? "BIGINT" : "TIMESTAMP";
-        } else if (c.getTemporalType() != null) {
-            switch (c.getTemporalType()) {
-                case DATE: sqlType = "DATE"; break;
-                case TIME: sqlType = "TIME"; break;
-                case TIMESTAMP: sqlType = "DATETIME"; break;
-                default: sqlType = javaTypeMapped.getSqlType(c.getLength(), c.getPrecision(), c.getScale());
-            }
-        } else {
-            sqlType = javaTypeMapped.getSqlType(c.getLength(), c.getPrecision(), c.getScale());
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append(quoteIdentifier(c.getColumnName())).append(" ").append(sqlType);
-
-        if (!c.isNullable()) {
-            sb.append(" NOT NULL");
-        }
-
-        if (c.getGenerationStrategy() == GenerationStrategy.IDENTITY) {
-            sb.append(getIdentityClause(c));
-        } else if (c.isManualPrimaryKey()) {
-            sb.append(" PRIMARY KEY");
-        }
-
-        if (c.getDefaultValue() != null) {
-            sb.append(" DEFAULT ").append(valueTransformer.quote(c.getDefaultValue(), javaTypeMapped));
-        } else if (javaTypeMapped.getDefaultValue() != null) {
-            sb.append(" DEFAULT ").append(valueTransformer.quote(javaTypeMapped.getDefaultValue(), javaTypeMapped));
-        }
-
-        return sb.toString();
-    }
-
-    @Override
-    public String getConstraintDefinitionSql(ConstraintModel cons) {
-        StringBuilder sb = new StringBuilder();
-        switch (cons.getType()) {
-            case UNIQUE -> sb.append("CONSTRAINT ").append(quoteIdentifier(cons.getName()))
-                    .append(" UNIQUE (")
-                    .append(cons.getColumns().stream().map(this::quoteIdentifier).collect(Collectors.joining(", ")))
-                    .append(")");
-            case CHECK -> {
-                sb.append("-- WARNING: CHECK constraints may not be enforced in some databases\n");
-                sb.append("CONSTRAINT ").append(quoteIdentifier(cons.getName()));
-                if (cons.getCheckClause() != null) {
-                    sb.append(" CHECK (").append(cons.getCheckClause()).append(")");
-                }
-            }
-            case PRIMARY_KEY -> {
-                List<String> pkCols = cons.getColumns();
-                sb.append(getPrimaryKeyDefinitionSql(cons.getColumns()));
-            }
-            case INDEX -> sb.append(indexStatement(IndexModel.builder()
-                    .indexName(cons.getName())
-                    .columnNames(cons.getColumns())
-                    .build(), cons.getTableName()));
-            case DEFAULT, NOT_NULL, AUTO -> {} // MySQL에서는 별도 처리 불필요
-        }
-        return sb.toString();
-    }
-
-    @Override
-    public String getDropPrimaryKeySql(String table) {
-        return "ALTER TABLE " + quoteIdentifier(table) + " DROP PRIMARY KEY;\n";
+        if (pkColumns == null || pkColumns.isEmpty()) return "";
+        String columns = pkColumns.stream().map(this::quoteIdentifier).collect(Collectors.joining(", "));
+        return "ALTER TABLE " + quoteIdentifier(table) + " ADD PRIMARY KEY (" + columns + ");\n";
     }
 
     @Override
     public String getPrimaryKeyDefinitionSql(List<String> pkColumns) {
-        String cols = pkColumns.stream()
-                .map(this::quoteIdentifier)
-                .collect(Collectors.joining(", "));
+        String cols = pkColumns.stream().map(this::quoteIdentifier).collect(Collectors.joining(", "));
         return "PRIMARY KEY (" + cols + ")";
+    }
+
+    public String getDropPrimaryKeySql(String table) {
+        return "ALTER TABLE " + quoteIdentifier(table) + " DROP PRIMARY KEY;\n";
     }
 
     @Override
@@ -247,7 +147,48 @@ public class MySqlDialect extends AbstractDialect {
         return sb.append("ALTER TABLE ").append(quoteIdentifier(table)).append(" DROP PRIMARY KEY;\n").toString();
     }
 
-    // --- ALTER TABLE 구문 생성 메서드 ---
+    // DdlDialect - Column
+
+    @Override
+    public String getColumnDefinitionSql(ColumnModel c) {
+        String javaType = c.getConversionClass() != null ? c.getConversionClass() : c.getJavaType();
+        JavaTypeMapper.JavaType javaTypeMapped = javaTypeMapper.map(javaType);
+
+        String sqlType;
+        if (c.isLob()) {
+            sqlType = c.getJavaType().equals("java.lang.String") ? "TEXT" : "BLOB";
+        } else if (c.isVersion()) {
+            sqlType = c.getJavaType().equals("java.lang.Long") ? "BIGINT" : "TIMESTAMP";
+        } else if (c.getTemporalType() != null) {
+            switch (c.getTemporalType()) {
+                case DATE -> sqlType = "DATE";
+                case TIME -> sqlType = "TIME";
+                case TIMESTAMP -> sqlType = "DATETIME";
+                default -> sqlType = javaTypeMapped.getSqlType(c.getLength(), c.getPrecision(), c.getScale());
+            }
+        } else {
+            sqlType = javaTypeMapped.getSqlType(c.getLength(), c.getPrecision(), c.getScale());
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(quoteIdentifier(c.getColumnName())).append(" ").append(sqlType);
+
+        if (!c.isNullable()) sb.append(" NOT NULL");
+
+        if (c.getGenerationStrategy() == GenerationStrategy.IDENTITY) {
+            sb.append(getIdentityClause(c));
+        } else if (c.isManualPrimaryKey()) {
+            sb.append(" PRIMARY KEY");
+        }
+
+        if (c.getDefaultValue() != null) {
+            sb.append(" DEFAULT ").append(valueTransformer.quote(c.getDefaultValue(), javaTypeMapped));
+        } else if (javaTypeMapped.getDefaultValue() != null) {
+            sb.append(" DEFAULT ").append(valueTransformer.quote(javaTypeMapped.getDefaultValue(), javaTypeMapped));
+        }
+
+        return sb.toString();
+    }
 
     @Override
     public String getAddColumnSql(String table, ColumnModel col) {
@@ -314,6 +255,32 @@ public class MySqlDialect extends AbstractDialect {
                 + " TO " + quoteIdentifier(newCol.getColumnName()) + ";\n";
     }
 
+    // DdlDialect - Constraints & Indexes
+
+    @Override
+    public String getConstraintDefinitionSql(ConstraintModel cons) {
+        StringBuilder sb = new StringBuilder();
+        switch (cons.getType()) {
+            case UNIQUE -> sb.append("CONSTRAINT ").append(quoteIdentifier(cons.getName()))
+                    .append(" UNIQUE (")
+                    .append(cons.getColumns().stream().map(this::quoteIdentifier).collect(Collectors.joining(", ")))
+                    .append(")");
+            case CHECK -> {
+                sb.append("-- WARNING: CHECK constraints may not be enforced in some databases\n");
+                sb.append("CONSTRAINT ").append(quoteIdentifier(cons.getName()));
+                if (cons.getCheckClause() != null) {
+                    sb.append(" CHECK (").append(cons.getCheckClause()).append(")");
+                }
+            }
+            case PRIMARY_KEY -> sb.append(getPrimaryKeyDefinitionSql(cons.getColumns()));
+            case INDEX -> sb.append(indexStatement(
+                    IndexModel.builder().indexName(cons.getName()).columnNames(cons.getColumns()).build(),
+                    cons.getTableName()));
+            case DEFAULT, NOT_NULL, AUTO -> {}
+        }
+        return sb.toString();
+    }
+
     @Override
     public String getAddConstraintSql(String table, ConstraintModel cons) {
         return getConstraintDefinitionSql(cons).replaceFirst("CONSTRAINT", "ADD CONSTRAINT") + ";\n";
@@ -335,17 +302,13 @@ public class MySqlDialect extends AbstractDialect {
 
     @Override
     public String getModifyConstraintSql(String table, ConstraintModel newCons, ConstraintModel oldCons) {
-        String dropSql = getDropConstraintSql(table, oldCons);
-        String addSql = getAddConstraintSql(table, newCons);
-        return dropSql + addSql;
+        return getDropConstraintSql(table, oldCons) + getAddConstraintSql(table, newCons);
     }
 
     @Override
     public String indexStatement(IndexModel idx, String table) {
         String unique = idx.isUnique() ? "UNIQUE " : "";
-        String cols = idx.getColumnNames().stream()
-                .map(this::quoteIdentifier)
-                .collect(Collectors.joining(", "));
+        String cols = idx.getColumnNames().stream().map(this::quoteIdentifier).collect(Collectors.joining(", "));
         return "CREATE " + unique + "INDEX " + quoteIdentifier(idx.getIndexName())
                 + " ON " + quoteIdentifier(table) + " (" + cols + ");\n";
     }
@@ -357,10 +320,10 @@ public class MySqlDialect extends AbstractDialect {
 
     @Override
     public String getModifyIndexSql(String table, IndexModel newIndex, IndexModel oldIndex) {
-        String dropSql = getDropIndexSql(table, oldIndex);
-        String addSql = indexStatement(newIndex, table);
-        return dropSql + addSql;
+        return getDropIndexSql(table, oldIndex) + indexStatement(newIndex, table);
     }
+
+    // DdlDialect - Relationships
 
     @Override
     public String getAddRelationshipSql(String table, RelationshipModel rel) {
@@ -391,8 +354,81 @@ public class MySqlDialect extends AbstractDialect {
 
     @Override
     public String getModifyRelationshipSql(String table, RelationshipModel newRel, RelationshipModel oldRel) {
-        String dropSql = getDropRelationshipSql(table, oldRel);
-        String addSql = getAddRelationshipSql(table, newRel);
-        return dropSql + addSql;
+        return getDropRelationshipSql(table, oldRel) + getAddRelationshipSql(table, newRel);
+    }
+
+    // IdentityDialect
+
+    @Override
+    public String getIdentityClause(ColumnModel c) {
+        return " AUTO_INCREMENT";
+    }
+
+    // TableGeneratorDialect
+    @Override
+    public String getCreateTableGeneratorSql(TableGeneratorModel tg) {
+        StringBuilder ddl = new StringBuilder();
+        var stringType = getJavaTypeMapper().map("java.lang.String");
+        ddl.append("CREATE TABLE IF NOT EXISTS ")
+                .append(quoteIdentifier(tg.getTable()))
+                .append(" (")
+                .append(quoteIdentifier(tg.getPkColumnName())).append(" VARCHAR(255) NOT NULL PRIMARY KEY, ")
+                .append(quoteIdentifier(tg.getValueColumnName())).append(" BIGINT NOT NULL")
+                .append(");\n");
+        ddl.append("INSERT IGNORE INTO ")
+                .append(quoteIdentifier(tg.getTable()))
+                .append(" (").append(quoteIdentifier(tg.getPkColumnName()))
+                .append(", ").append(quoteIdentifier(tg.getValueColumnName())).append(")")
+                .append(" VALUES (")
+                .append(valueTransformer.quote(tg.getPkColumnValue(), stringType))
+                .append(", ").append(tg.getInitialValue())
+                .append(");\n");
+        return ddl.toString();
+    }
+
+    @Override
+    public String getDropTableGeneratorSql(TableGeneratorModel tg) {
+        return "DROP TABLE IF EXISTS " + quoteIdentifier(tg.getTable()) + ";\n";
+    }
+
+    @Override
+    public String getAlterTableGeneratorSql(TableGeneratorModel newTg, TableGeneratorModel oldTg) {
+        return "";
+    }
+
+    // Liquibase helper
+    public String getLiquibaseTypeName(ColumnModel column) {
+        String javaType = column.getJavaType();
+        int length = column.getLength();
+        int precision = column.getPrecision();
+        int scale = column.getScale();
+
+        if (column.isLob()) {
+            if (javaType.equals("java.lang.String")) return "TEXT";
+            return "BLOB";
+        }
+
+        return switch (javaType) {
+            case "java.lang.String" -> "VARCHAR(" + length + ")";
+            case "int", "java.lang.Integer" -> "INT";
+            case "long", "java.lang.Long" -> "BIGINT";
+            case "double", "java.lang.Double" -> "DOUBLE";
+            case "float", "java.lang.Float" -> "FLOAT";
+            case "java.math.BigDecimal" -> "DECIMAL(" + precision + "," + scale + ")";
+            case "java.math.BigInteger" -> "NUMERIC(" + precision + ")";
+            case "boolean", "java.lang.Boolean" -> "BOOLEAN";
+            case "java.time.LocalDate" -> "DATE";
+            case "java.time.LocalDateTime" -> "DATETIME";
+            case "java.time.OffsetDateTime", "java.time.ZonedDateTime" -> "TIMESTAMP";
+            case "java.util.Date" -> {
+                if (column.getTemporalType() == TemporalType.DATE) yield "DATE";
+                if (column.getTemporalType() == TemporalType.TIME) yield "TIME";
+                yield "DATETIME";
+            }
+            case "byte[]" -> "VARBINARY(" + length + ")";
+            case "java.util.UUID" -> "CHAR(36)";
+            case "java.lang.Enum" -> column.isEnumStringMapping() ? "VARCHAR(" + length + ")" : "INT";
+            default -> "VARCHAR(" + length + ")";
+        };
     }
 }

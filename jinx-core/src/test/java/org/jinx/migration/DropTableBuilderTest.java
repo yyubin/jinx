@@ -1,5 +1,6 @@
 package org.jinx.migration;
 
+import org.jinx.migration.contributor.SqlContributor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,7 +25,7 @@ class DropTableBuilderTest {
     }
 
     // 테스트를 위한 간단한 DropTableContributor 구현체
-    private static class TestContributor implements DropTableContributor {
+    private static class TestContributor implements SqlContributor {
         private final int priority;
         private final String sql;
 

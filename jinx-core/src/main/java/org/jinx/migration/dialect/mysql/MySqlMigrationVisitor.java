@@ -1,37 +1,35 @@
 package org.jinx.migration.dialect.mysql;
 
-import lombok.Getter;
-import org.jinx.migration.*;
-import org.jinx.migration.internal.alter.*;
-import org.jinx.migration.internal.create.*;
-import org.jinx.migration.internal.drop.*;
+import org.jinx.migration.AbstractMigrationVisitor;
+import org.jinx.migration.contributor.alter.*;
+import org.jinx.migration.contributor.create.*;
+import org.jinx.migration.contributor.drop.*;
+import org.jinx.migration.spi.dialect.DdlDialect;
+import org.jinx.migration.spi.visitor.TableContentVisitor;
+import org.jinx.migration.spi.visitor.TableGeneratorVisitor;
+import org.jinx.migration.spi.visitor.TableVisitor;
 import org.jinx.model.*;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.List;
 
-public class MySqlMigrationVisitor implements MigrationVisitor {
-    @Getter
-    private final AlterTableBuilder alterBuilder;
-    private final List<String> pkColumns;
-    @Getter
-    private final Collection<ColumnModel> currentColumns;
+public class MySqlMigrationVisitor extends AbstractMigrationVisitor implements
+        TableVisitor, TableContentVisitor {
+
     private final List<String> reOrderedPkColumns;
-    private final StringJoiner sql;
-    private final Dialect dialect;
+    private final Collection<ColumnModel> currentColumns;
 
-    public MySqlMigrationVisitor(DiffResult.ModifiedEntity diff, Dialect dialect) {
-        this.dialect = dialect;
-        this.alterBuilder = new AlterTableBuilder(diff != null ? diff.getNewEntity().getTableName() : "", dialect);
-        this.sql = new StringJoiner("\n");
+    public MySqlMigrationVisitor(DiffResult.ModifiedEntity diff, DdlDialect ddlDialect) {
+        super(ddlDialect, diff);
+
         if (diff != null) {
-            this.pkColumns = diff.getNewEntity().getColumns().values().stream()
+            this.currentColumns = diff.getNewEntity().getColumns().values();
+            List<String> pkColumns = this.currentColumns.stream()
                     .filter(ColumnModel::isPrimaryKey)
                     .map(ColumnModel::getColumnName)
                     .toList();
-            this.currentColumns = diff.getNewEntity().getColumns().values();
-            this.reOrderedPkColumns = MySqlUtil.reorderForIdentity(pkColumns, currentColumns.stream().toList());
+            this.reOrderedPkColumns = MySqlUtil.reorderForIdentity(pkColumns, this.currentColumns.stream().toList());
         } else {
-            this.pkColumns = List.of();
             this.currentColumns = List.of();
             this.reOrderedPkColumns = List.of();
         }
@@ -39,46 +37,10 @@ public class MySqlMigrationVisitor implements MigrationVisitor {
 
     @Override
     public void visitRenamedTable(DiffResult.RenamedTable renamed) {
-        alterBuilder.add(new TableRenameContributor(renamed.getOldEntity().getTableName(), renamed.getNewEntity().getTableName()));
-    }
-
-    @Override
-    public void visitAddedSequence(SequenceModel sequence) {
-        // MySQL은 시퀀스 미지원
-    }
-
-    @Override
-    public void visitDroppedSequence(SequenceModel sequence) {
-        // MySQL은 시퀀스 미지원
-    }
-
-    @Override
-    public void visitModifiedSequence(SequenceModel newSequence, SequenceModel oldSequence) {
-        // MySQL은 시퀀스 미지원
-    }
-
-    @Override
-    public void visitAddedTableGenerator(TableGeneratorModel tableGenerator) {
-        alterBuilder.add(new TableGeneratorAddContributor(tableGenerator));
-    }
-
-    @Override
-    public void visitDroppedTableGenerator(TableGeneratorModel tableGenerator) {
-        alterBuilder.add(new TableGeneratorDropContributor(tableGenerator));
-    }
-
-    @Override
-    public void visitModifiedTableGenerator(TableGeneratorModel newTableGenerator, TableGeneratorModel oldTableGenerator) {
-        alterBuilder.add(new TableGeneratorModifyContributor(newTableGenerator, oldTableGenerator));
-    }
-
-    @Override
-    public String getGeneratedSql() {
-        String alterSql = alterBuilder.build();
-        if (!alterSql.isEmpty()) {
-            sql.add(alterSql);
-        }
-        return sql.toString();
+        alterBuilder.add(new TableRenameContributor(
+                renamed.getOldEntity().getTableName(),
+                renamed.getNewEntity().getTableName()
+        ));
     }
 
     @Override
@@ -112,6 +74,22 @@ public class MySqlMigrationVisitor implements MigrationVisitor {
     }
 
     @Override
+    public void visitAddedPrimaryKey(List<String> pkColumns) {
+        alterBuilder.add(new PrimaryKeyAddContributor(alterBuilder.getTableName(), reOrderedPkColumns));
+    }
+
+    @Override
+    public void visitDroppedPrimaryKey() {
+        alterBuilder.add(new PrimaryKeyComplexDropContributor(alterBuilder.getTableName(), currentColumns));
+    }
+
+    @Override
+    public void visitModifiedPrimaryKey(List<String> newPkColumns, List<String> oldPkColumns) {
+        visitDroppedPrimaryKey();
+        alterBuilder.add(new PrimaryKeyAddContributor(alterBuilder.getTableName(), reOrderedPkColumns));
+    }
+
+    @Override
     public void visitAddedIndex(IndexModel index) {
         alterBuilder.add(new IndexAddContributor(alterBuilder.getTableName(), index));
     }
@@ -134,13 +112,11 @@ public class MySqlMigrationVisitor implements MigrationVisitor {
     @Override
     public void visitDroppedConstraint(ConstraintModel constraint) {
         alterBuilder.add(new ConstraintDropContributor(alterBuilder.getTableName(), constraint));
-
     }
 
     @Override
     public void visitModifiedConstraint(ConstraintModel newConstraint, ConstraintModel oldConstraint) {
         alterBuilder.add(new ConstraintModifyContributor(alterBuilder.getTableName(), newConstraint, oldConstraint));
-
     }
 
     @Override
@@ -159,18 +135,11 @@ public class MySqlMigrationVisitor implements MigrationVisitor {
     }
 
     @Override
-    public void visitAddedPrimaryKey(List<String> pkColumns) {
-        alterBuilder.add(new PrimaryKeyAddContributor(alterBuilder.getTableName(), reOrderedPkColumns));
-    }
-
-    @Override
-    public void visitDroppedPrimaryKey() {
-        alterBuilder.add(new PrimaryKeyComplexDropContributor(alterBuilder.getTableName(), currentColumns));
-    }
-
-    @Override
-    public void visitModifiedPrimaryKey(List<String> newPkColumns, List<String> oldPkColumns) {
-        visitDroppedPrimaryKey();
-        alterBuilder.add(new PrimaryKeyAddContributor(alterBuilder.getTableName(), reOrderedPkColumns));
+    public String getGeneratedSql() {
+        String alterSql = alterBuilder.build();
+        if (!alterSql.isEmpty()) {
+            sql.add(alterSql);
+        }
+        return sql.toString();
     }
 }

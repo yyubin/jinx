@@ -1,5 +1,6 @@
 package org.jinx.migration;
 
+import org.jinx.migration.contributor.SqlContributor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,7 @@ class CreateTableBuilderTest {
     }
 
     // 테스트를 위한 간단한 TableBodyContributor 구현체
-    private static class TestBodyContributor implements TableBodyContributor {
+    private static class TestBodyContributor implements SqlContributor {
         private final int priority;
         private final String sql;
 
@@ -49,7 +50,7 @@ class CreateTableBuilderTest {
     }
 
     // 테스트를 위한 간단한 PostCreateContributor 구현체
-    private static class TestPostContributor implements PostCreateContributor {
+    private static class TestPostContributor implements SqlContributor {
         private final int priority;
         private final String sql;
 

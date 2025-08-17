@@ -3,6 +3,11 @@ package org.jinx.model;
 import lombok.Builder;
 import lombok.Getter;
 import org.jinx.migration.MigrationVisitor;
+import org.jinx.migration.liquibase.LiquibaseVisitor;
+import org.jinx.migration.spi.visitor.SequenceVisitor;
+import org.jinx.migration.spi.visitor.TableContentVisitor;
+import org.jinx.migration.spi.visitor.TableGeneratorVisitor;
+import org.jinx.migration.spi.visitor.TableVisitor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,6 +28,49 @@ public class DiffResult {
         return warnings;
     }
 
+    public enum TablePhase { DROPPED, RENAMED, ADDED }
+    public enum TableContentPhase { DROP, ALTER, FK_ADD }
+
+    public void sequenceAccept(SequenceVisitor visitor, SequenceDiff.Type... types) {
+        var allow = java.util.EnumSet.noneOf(SequenceDiff.Type.class);
+        java.util.Collections.addAll(allow, types);
+        sequenceDiffs.stream()
+                .filter(d -> allow.contains(d.getType()))
+                .forEach(diff -> {
+                    switch (diff.getType()) {
+                        case ADDED -> visitor.visitAddedSequence(diff.getSequence());
+                        case DROPPED -> visitor.visitDroppedSequence(diff.getSequence());
+                        case MODIFIED -> visitor.visitModifiedSequence(diff.getSequence(), diff.getOldSequence());
+                    }
+                });
+    }
+
+    public void tableGeneratorAccept(TableGeneratorVisitor visitor, TableGeneratorDiff.Type... types) {
+        var allow = java.util.EnumSet.noneOf(TableGeneratorDiff.Type.class);
+        java.util.Collections.addAll(allow, types);
+        tableGeneratorDiffs.stream()
+                .filter(d -> allow.contains(d.getType()))
+                .forEach(diff -> {
+                    switch (diff.getType()) {
+                        case ADDED -> visitor.visitAddedTableGenerator(diff.getTableGenerator());
+                        case DROPPED -> visitor.visitDroppedTableGenerator(diff.getTableGenerator());
+                        case MODIFIED -> visitor.visitModifiedTableGenerator(diff.getTableGenerator(), diff.getOldTableGenerator());
+                    }
+                });
+    }
+
+    public void tableContentAccept(TableContentVisitor visitor, TableContentPhase phase) {
+        modifiedTables.forEach(m -> m.accept(visitor, phase));
+    }
+
+    public void tableAccept(TableVisitor visitor, TablePhase phase) {
+        switch (phase) {
+            case DROPPED -> droppedTables.forEach(visitor::visitDroppedTable);
+            case RENAMED -> renamedTables.forEach(visitor::visitRenamedTable);
+            case ADDED   -> addedTables.forEach(visitor::visitAddedTable);
+        }
+    }
+
     @Builder
     @Getter
     public static class ModifiedEntity {
@@ -34,34 +82,43 @@ public class DiffResult {
         @Builder.Default private List<RelationshipDiff> relationshipDiffs = new ArrayList<>();
         @Builder.Default private List<String> warnings = new ArrayList<>();
 
-        public void accept(MigrationVisitor visitor) {
-            for (ColumnDiff diff : columnDiffs) {
-                switch (diff.getType()) {
-                    case ADDED -> visitor.visitAddedColumn(diff.getColumn());
-                    case DROPPED -> visitor.visitDroppedColumn(diff.getColumn());
-                    case MODIFIED -> visitor.visitModifiedColumn(diff.getColumn(), diff.getOldColumn());
-                    case RENAMED -> visitor.visitRenamedColumn(diff.getColumn(), diff.getOldColumn());
+        public void accept(TableContentVisitor v, TableContentPhase phase) {
+            switch (phase) {
+                case DROP -> {
+                    // 1) FK drop / modify(drop-part)
+                    for (RelationshipDiff d : relationshipDiffs) {
+                        if (d.getType() == RelationshipDiff.Type.DROPPED) v.visitDroppedRelationship(d.getRelationship());
+                        else if (d.getType() == RelationshipDiff.Type.MODIFIED) v.visitModifiedRelationship(d.getRelationship(), d.getOldRelationship());
+                    }
+                    // 2) 보조 인덱스/제약 드롭
+                    for (IndexDiff d : indexDiffs) if (d.getType() == IndexDiff.Type.DROPPED) v.visitDroppedIndex(d.getIndex());
+                    for (ConstraintDiff d : constraintDiffs) if (d.getType() == ConstraintDiff.Type.DROPPED) v.visitDroppedConstraint(d.getConstraint());
+                    // 3) 컬럼 드롭
+                    for (ColumnDiff d : columnDiffs) if (d.getType() == ColumnDiff.Type.DROPPED) v.visitDroppedColumn(d.getColumn());
+                    // 4) 컬럼 리네임은 DROP 직후 처리 (FK 제거된 상태에서 안전)
+                    for (ColumnDiff d : columnDiffs) if (d.getType() == ColumnDiff.Type.RENAMED) v.visitRenamedColumn(d.getColumn(), d.getOldColumn());
                 }
-            }
-            for (IndexDiff diff : indexDiffs) {
-                switch (diff.getType()) {
-                    case ADDED -> visitor.visitAddedIndex(diff.getIndex());
-                    case DROPPED -> visitor.visitDroppedIndex(diff.getIndex());
-                    case MODIFIED -> visitor.visitModifiedIndex(diff.getIndex(), diff.getOldIndex());
+                case ALTER -> {
+                    // 컬럼 추가/수정, 인덱스/제약 추가 및 수정 (FK 제외)
+                    for (ColumnDiff d : columnDiffs) {
+                        if (d.getType() == ColumnDiff.Type.ADDED) v.visitAddedColumn(d.getColumn());
+                        else if (d.getType() == ColumnDiff.Type.MODIFIED) v.visitModifiedColumn(d.getColumn(), d.getOldColumn());
+                    }
+                    for (IndexDiff d : indexDiffs) {
+                        if (d.getType() == IndexDiff.Type.ADDED) v.visitAddedIndex(d.getIndex());
+                        else if (d.getType() == IndexDiff.Type.MODIFIED) v.visitModifiedIndex(d.getIndex(), d.getOldIndex());
+                    }
+                    for (ConstraintDiff d : constraintDiffs) {
+                        if (d.getType() == ConstraintDiff.Type.ADDED) v.visitAddedConstraint(d.getConstraint());
+                        else if (d.getType() == ConstraintDiff.Type.MODIFIED) v.visitModifiedConstraint(d.getConstraint(), d.getOldConstraint());
+                    }
                 }
-            }
-            for (ConstraintDiff diff : constraintDiffs) {
-                switch (diff.getType()) {
-                    case ADDED -> visitor.visitAddedConstraint(diff.getConstraint());
-                    case DROPPED -> visitor.visitDroppedConstraint(diff.getConstraint());
-                    case MODIFIED -> visitor.visitModifiedConstraint(diff.getConstraint(), diff.getOldConstraint());
-                }
-            }
-            for (RelationshipDiff diff : relationshipDiffs) {
-                switch (diff.getType()) {
-                    case ADDED -> visitor.visitAddedRelationship(diff.getRelationship());
-                    case DROPPED -> visitor.visitDroppedRelationship(diff.getRelationship());
-                    case MODIFIED -> visitor.visitModifiedRelationship(diff.getRelationship(), diff.getOldRelationship());
+                case FK_ADD -> {
+                    // FK 추가 / modify(add-part)
+                    for (RelationshipDiff d : relationshipDiffs) {
+                        if (d.getType() == RelationshipDiff.Type.ADDED) v.visitAddedRelationship(d.getRelationship());
+                        else if (d.getType() == RelationshipDiff.Type.MODIFIED) v.visitModifiedRelationship(d.getRelationship(), d.getOldRelationship());
+                    }
                 }
             }
         }
