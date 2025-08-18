@@ -328,13 +328,24 @@ public class MySqlDialect extends AbstractDialect
 
     @Override
     public String getAddRelationshipSql(String table, RelationshipModel rel) {
-        String constraintName = rel.getConstraintName() != null ? rel.getConstraintName() : "fk_" + table + "_" + rel.getColumn();
+        // 제약 조건 이름 생성: 복합 컬럼을 고려
+        String constraintName = rel.getConstraintName() != null ? rel.getConstraintName() :
+                "fk_" + table + "_" + String.join("_", rel.getColumns() != null ? rel.getColumns() : List.of());
         StringBuilder sb = new StringBuilder();
+
+        // 복합 외래 키 컬럼 처리
+        String fkColumns = rel.getColumns() != null
+                ? rel.getColumns().stream().map(this::quoteIdentifier).collect(Collectors.joining(","))
+                : "";
+        String referencedColumns = rel.getReferencedColumns() != null
+                ? rel.getReferencedColumns().stream().map(this::quoteIdentifier).collect(Collectors.joining(","))
+                : "";
+
         sb.append("ALTER TABLE ").append(quoteIdentifier(table))
                 .append(" ADD CONSTRAINT ").append(quoteIdentifier(constraintName))
-                .append(" FOREIGN KEY (").append(quoteIdentifier(rel.getColumn())).append(")")
+                .append(" FOREIGN KEY (").append(fkColumns).append(")")
                 .append(" REFERENCES ").append(quoteIdentifier(rel.getReferencedTable()))
-                .append(" (").append(quoteIdentifier(rel.getReferencedColumn())).append(")");
+                .append(" (").append(referencedColumns).append(")");
 
         if (rel.getOnDelete() != null && rel.getOnDelete() != OnDeleteAction.NO_ACTION) {
             sb.append(" ON DELETE ").append(rel.getOnDelete().name().replace('_', ' '));
@@ -348,7 +359,9 @@ public class MySqlDialect extends AbstractDialect
 
     @Override
     public String getDropRelationshipSql(String table, RelationshipModel rel) {
-        String constraintName = rel.getConstraintName() != null ? rel.getConstraintName() : "fk_" + table + "_" + rel.getColumn();
+        // 제약 조건 이름 생성: 복합 컬럼을 고려
+        String constraintName = rel.getConstraintName() != null ? rel.getConstraintName() :
+                "fk_" + table + "_" + String.join("_", rel.getColumns() != null ? rel.getColumns() : List.of());
         return "ALTER TABLE " + quoteIdentifier(table)
                 + " DROP FOREIGN KEY " + quoteIdentifier(constraintName) + ";\n";
     }
@@ -359,7 +372,6 @@ public class MySqlDialect extends AbstractDialect
     }
 
     // IdentityDialect
-
     @Override
     public String getIdentityClause(ColumnModel c) {
         return " AUTO_INCREMENT";
