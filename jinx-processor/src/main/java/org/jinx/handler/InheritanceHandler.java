@@ -7,6 +7,7 @@ import org.jinx.model.*;
 import javax.lang.model.element.*;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -60,16 +61,20 @@ public class InheritanceHandler {
 
     private void checkIdentityStrategy(TypeElement typeElement, EntityModel entityModel) {
         for (Element enclosed : typeElement.getEnclosedElements()) {
-            if (enclosed.getKind() == ElementKind.FIELD) {
-                VariableElement field = (VariableElement) enclosed;
-                if (field.getAnnotation(Id.class) != null || field.getAnnotation(EmbeddedId.class) != null) {
-                    GeneratedValue gv = field.getAnnotation(GeneratedValue.class);
-                    if (gv != null && (gv.strategy() == GenerationType.IDENTITY || gv.strategy() == GenerationType.AUTO)) {
-                        context.getMessager().printMessage(Diagnostic.Kind.WARNING,
-                                "Using IDENTITY generation strategy in TABLE_PER_CLASS inheritance is not supported by JPA specification and may cause duplicate IDs across tables.",
-                                field);
-                    }
-                }
+            if (enclosed.getKind() != ElementKind.FIELD) continue;
+
+            VariableElement field = (VariableElement) enclosed;
+            if (field.getAnnotation(Id.class) == null && field.getAnnotation(EmbeddedId.class) == null) {
+                continue;
+            }
+
+            GeneratedValue gv = field.getAnnotation(GeneratedValue.class);
+            if (gv != null && (gv.strategy() == GenerationType.IDENTITY || gv.strategy() == GenerationType.AUTO)) {
+                context.getMessager().printMessage(Diagnostic.Kind.WARNING,
+                        String.format("IDENTITY generation strategy in TABLE_PER_CLASS inheritance may cause duplicate IDs. " +
+                                        "Consider using SEQUENCE or TABLE strategy in entity %s, field %s",
+                                entityModel.getEntityName(), field.getSimpleName()),
+                        field);
             }
         }
     }
@@ -89,37 +94,118 @@ public class InheritanceHandler {
                 .forEach(childEntity -> {
                     TypeElement childType = context.getElementUtils().getTypeElement(childEntity.getEntityName());
                     if (childType != null && context.getTypeUtils().isSubtype(childType.asType(), parentType.asType())) {
-                        processSingleJoinedChild(childEntity, parentEntity, parentPkColumnName, parentPkColumn);
-                        checkIdentityStrategy(childType, childEntity); // Check children too
+                        processSingleJoinedChild(childEntity, parentEntity, childType);
+                        checkIdentityStrategy(childType, childEntity);
                     }
                 });
     }
 
-    private void processSingleJoinedChild(EntityModel childEntity, EntityModel parentEntity, String parentPkColumnName, ColumnModel parentPkColumn) {
-        childEntity.setParentEntity(parentEntity.getEntityName());
-        childEntity.setInheritance(InheritanceType.JOINED);
+    public record JoinPair(ColumnModel parent, String childName) {}
 
-        ColumnModel idColumnAsFk = ColumnModel.builder()
-                .columnName(parentPkColumnName)
-                .javaType(parentPkColumn.getJavaType())
-                .isPrimaryKey(true)
-                .isNullable(false)
-                .build();
-        if (childEntity.getColumns().containsKey(idColumnAsFk.getColumnName())) {
-            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "Duplicate column name '" + idColumnAsFk.getColumnName() + "' in child entity " + childEntity.getEntityName());
+    private void processSingleJoinedChild(EntityModel childEntity, EntityModel parentEntity, TypeElement childType) {
+        List<ColumnModel> parentPkCols = context.findAllPrimaryKeyColumns(parentEntity);
+        if (parentPkCols.isEmpty()) {
             childEntity.setValid(false);
             return;
         }
-        childEntity.getColumns().putIfAbsent(idColumnAsFk.getColumnName(), idColumnAsFk);
+
+        List<JoinPair> joinPairs = resolvePrimaryKeyJoinPairs(childType, parentPkCols);
+
+        for (JoinPair jp : joinPairs) {
+            ColumnModel parentPk = jp.parent;
+            String childColName = jp.childName;
+            ColumnModel existing = childEntity.getColumns().get(childColName);
+            if (existing != null) {
+                if (!existing.getJavaType().equals(parentPk.getJavaType())
+                        || !existing.isPrimaryKey()
+                        || existing.isNullable()) {
+                    context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "JOINED inheritance column mismatch for '" + childColName + "' in " + childEntity.getEntityName());
+                    childEntity.setValid(false);
+                    return;
+                }
+            } else {
+                ColumnModel idAsFk = ColumnModel.builder()
+                        .columnName(childColName)
+                        .javaType(parentPk.getJavaType())
+                        .isPrimaryKey(true)
+                        .isNullable(false)
+                        .build();
+                childEntity.getColumns().put(childColName, idAsFk);
+            }
+        }
 
         RelationshipModel relationship = RelationshipModel.builder()
                 .type(RelationshipType.JOINED_INHERITANCE)
-                .columns(List.of(parentPkColumnName))
+                .columns(joinPairs.stream().map(j -> j.childName).toList())
                 .referencedTable(parentEntity.getTableName())
-                .referencedColumns(List.of(parentPkColumnName))
+                .referencedColumns(joinPairs.stream().map(j -> j.parent.getColumnName()).toList())
+                .constraintName(context.getNaming().fkName(
+                        childEntity.getTableName(),
+                        joinPairs.stream().map(j -> j.childName).toList(),
+                        parentEntity.getTableName(),
+                        joinPairs.stream().map(j -> j.parent.getColumnName()).toList()))
                 .build();
-        childEntity.getRelationships().add(relationship);
+
+        childEntity.getRelationships().put(relationship.getConstraintName(), relationship);
+        childEntity.setParentEntity(parentEntity.getEntityName());
+        childEntity.setInheritance(InheritanceType.JOINED);
+    }
+
+    private List<JoinPair> resolvePrimaryKeyJoinPairs(TypeElement childType, List<ColumnModel> parentPkCols) {
+        List<PrimaryKeyJoinColumn> annotations = collectPrimaryKeyJoinColumns(childType);
+        if (annotations.isEmpty()) {
+            return parentPkCols.stream()
+                    .map(col -> new JoinPair(col, col.getColumnName()))
+                    .toList();
+        }
+
+        // 개수 검증
+        if (annotations.size() != parentPkCols.size()) {
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    String.format("JOINED inheritance PK mapping mismatch in %s: expected %d columns, but got %d",
+                            childType.getQualifiedName(), parentPkCols.size(), annotations.size()));
+            throw new IllegalStateException("PK mapping size mismatch");
+        }
+
+        List<JoinPair> result = new ArrayList<>();
+        for (int i = 0; i < annotations.size(); i++) {
+            PrimaryKeyJoinColumn anno = annotations.get(i);
+            ColumnModel parentRef = resolveParentReference(parentPkCols, anno, i);
+            String childName = anno.name().isEmpty() ? parentRef.getColumnName() : anno.name();
+            result.add(new JoinPair(parentRef, childName));
+        }
+        return result;
+    }
+
+    private List<PrimaryKeyJoinColumn> collectPrimaryKeyJoinColumns(TypeElement childType) {
+        List<PrimaryKeyJoinColumn> result = new ArrayList<>();
+
+        PrimaryKeyJoinColumns multi = childType.getAnnotation(PrimaryKeyJoinColumns.class);
+        if (multi != null && multi.value().length > 0) {
+            return Arrays.asList(multi.value());
+        }
+
+        PrimaryKeyJoinColumn single = childType.getAnnotation(PrimaryKeyJoinColumn.class);
+        if (single != null) {
+            result.add(single);
+        }
+
+        return result;
+    }
+
+    private ColumnModel resolveParentReference(List<ColumnModel> parentPkCols, PrimaryKeyJoinColumn anno, int index) {
+        if (!anno.referencedColumnName().trim().isEmpty()) {
+            return parentPkCols.stream()
+                    .filter(col -> col.getColumnName().equals(anno.referencedColumnName()))
+                    .findFirst()
+                    .orElseThrow(() -> {
+                        context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                                "Referenced column '" + anno.referencedColumnName() + "' not found in parent primary keys");
+                        return new IllegalStateException("Invalid referencedColumnName: " + anno.referencedColumnName());
+                    });
+        }
+        return parentPkCols.get(index);
     }
 
     private void findAndProcessTablePerClassChildren(EntityModel parentEntity, TypeElement parentType) {
@@ -165,7 +251,7 @@ public class InheritanceHandler {
             }
         });
 
-        parentEntity.getConstraints().forEach(constraint -> {
+        parentEntity.getConstraints().values().forEach(constraint -> {
             ConstraintModel copiedConstraint = ConstraintModel.builder()
                     .name(constraint.getName())
                     .type(constraint.getType())
@@ -173,7 +259,7 @@ public class InheritanceHandler {
                     .referencedTable(constraint.getReferencedTable())
                     .referencedColumns(new ArrayList<>(constraint.getReferencedColumns()))
                     .build();
-            childEntity.getConstraints().add(copiedConstraint);
+            childEntity.getConstraints().put(copiedConstraint.getName(), copiedConstraint);
         });
     }
 }

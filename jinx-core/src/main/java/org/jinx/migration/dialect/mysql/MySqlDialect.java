@@ -62,7 +62,7 @@ public class MySqlDialect extends AbstractDialect
         List<String> reorderedPk = MySqlUtil.reorderForIdentity(pkCols, cols);
 
         builder.add(new ColumnContributor(reorderedPk, cols));
-        builder.add(new ConstraintContributor(entity.getConstraints().stream().toList()));
+        builder.add(new ConstraintContributor(entity.getConstraints().values().stream().toList()));
         builder.add(new IndexContributor(
                 entity.getTableName(),
                 entity.getIndexes().values().stream().toList()));

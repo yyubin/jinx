@@ -117,7 +117,7 @@ public class ElementCollectionHandler {
         Element valueElement = context.getTypeUtils().asElement(valueType);
         if (valueElement != null && valueElement.getAnnotation(Embeddable.class) != null) {
             // 값이 Embeddable 타입인 경우
-            embeddedHandler.processEmbeddableFields((TypeElement) valueElement, collectionEntity.getColumns(), collectionEntity.getRelationships(), new HashSet<>(), null, field);
+            embeddedHandler.processEmbeddableFields((TypeElement) valueElement, collectionEntity, new HashSet<>(), null, field);
         } else {
             // 값이 기본 타입인 경우
             String elementColumnName = Optional.ofNullable(field.getAnnotation(Column.class))
@@ -149,9 +149,10 @@ public class ElementCollectionHandler {
                 .columns(List.of(fkColumn.getColumnName()))
                 .referencedTable(ownerEntity.getTableName())
                 .referencedColumns(List.of(ownerPkName))
+                // TODO: 네이밍 규칙을 context에서 가져오도록 변경
                 .constraintName("fk_" + tableName + "_" + fkColumn.getColumnName())
                 .build();
-        collectionEntity.getRelationships().add(fkRelationship);
+        collectionEntity.getRelationships().put(fkRelationship.getConstraintName(), fkRelationship);
 
         // 8. 완성된 컬렉션 테이블 모델을 스키마에 등록
         context.getSchemaModel().getEntities().putIfAbsent(collectionEntity.getEntityName(), collectionEntity);

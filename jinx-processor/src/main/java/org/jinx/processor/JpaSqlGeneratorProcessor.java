@@ -125,6 +125,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 TypeElement typeElement = context.getElementUtils().getTypeElement(entityModel.getEntityName());
                 relationshipHandler.resolveRelationships(typeElement, entityModel);
             }
+
             context.saveModelToJson();
         }
         return true;

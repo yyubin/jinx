@@ -13,6 +13,7 @@ public class ColumnModel {
     @Builder.Default private String tableName = "";
     private String columnName;
     private String javaType;
+    @Builder.Default private String comment = null; // Added for @Column(comment)
     @Builder.Default private boolean isPrimaryKey = false;
     @Builder.Default private boolean isNullable = true;
     @Builder.Default private boolean isUnique = false;

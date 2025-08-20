@@ -16,7 +16,7 @@ ext {
             jackson      : '2.15.2',
             lombok       : '1.18.32',
             picocli      : '4.7.5',
-            jpaApi       : '3.1.0',
+            jpaApi       : '3.2.0',
             autoService  : '1.1.1',
             mockito      : '5.4.0',
             assertj      : '3.27.3',
@@ -45,7 +45,10 @@ subprojects {
 
         testImplementation platform("org.junit:junit-bom:${versions.junit}")
         testImplementation 'org.junit.jupiter:junit-jupiter'
+        testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.2")
+        testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.2")
         testImplementation "org.mockito:mockito-core:${versions.mockito}"
+        testImplementation("org.mockito:mockito-junit-jupiter:5.11.0")
         testImplementation("org.assertj:assertj-core:${versions.assertj}")
     }
 
