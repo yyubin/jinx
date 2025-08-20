@@ -22,13 +22,15 @@ public class EntityModel {
     private String tableName;
     @Builder.Default private String schema = null; // Added for @Table(schema)
     @Builder.Default private String catalog = null; // Added for @Table(catalog)
+    @Builder.Default private String comment = null; // Added for @Table(comment)
     private InheritanceType inheritance;
     private String parentEntity;
     @Builder.Default private TableType tableType = TableType.ENTITY;
     @Builder.Default private Map<String, ColumnModel> columns = new HashMap<>();
     @Builder.Default private Map<String, IndexModel> indexes = new HashMap<>();
-    @Builder.Default private List<ConstraintModel> constraints = new ArrayList<>();
-    @Builder.Default private List<RelationshipModel> relationships = new ArrayList<>();
+    @Builder.Default private Map<String, ConstraintModel> constraints = new HashMap<>();
+    @Builder.Default private Map<String, RelationshipModel> relationships = new HashMap<>();
+    @Builder.Default private List<SecondaryTableModel> secondaryTables = new ArrayList<>();
     @Builder.Default private boolean isValid = true;
     @Builder.Default private String discriminatorValue = null;
 

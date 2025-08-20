@@ -16,11 +16,11 @@ public class ConstraintDiffer implements EntityComponentDiffer {
     public void diff(EntityModel oldEntity, EntityModel newEntity, DiffResult.ModifiedEntity result) {
         // Map matched constraints and track unmatched ones
         Map<ConstraintModel, ConstraintModel> matchedConstraints = new HashMap<>();
-        List<ConstraintModel> oldUnmatched = new ArrayList<>(oldEntity.getConstraints());
+        List<ConstraintModel> oldUnmatched = new ArrayList<>(oldEntity.getConstraints().values());
         List<ConstraintModel> newUnmatched = new ArrayList<>();
 
         // Match constraints based on attributes (ignoring name)
-        for (ConstraintModel newConstraint : newEntity.getConstraints()) {
+        for (ConstraintModel newConstraint : newEntity.getConstraints().values()) {
             ConstraintModel oldMatch = findMatchingConstraint(oldUnmatched, newConstraint);
             if (oldMatch != null) {
                 matchedConstraints.put(oldMatch, newConstraint);

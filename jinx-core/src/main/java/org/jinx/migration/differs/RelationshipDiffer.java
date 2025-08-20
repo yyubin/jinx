@@ -14,8 +14,8 @@ import java.util.stream.Collectors;
 public class RelationshipDiffer implements EntityComponentDiffer {
     @Override
     public void diff(EntityModel oldEntity, EntityModel newEntity, DiffResult.ModifiedEntity result) {
-        newEntity.getRelationships().forEach(newRel -> {
-            RelationshipModel oldRel = oldEntity.getRelationships().stream()
+        newEntity.getRelationships().values().forEach(newRel -> {
+            RelationshipModel oldRel = oldEntity.getRelationships().values().stream()
                     // FIX: columns 리스트로 비교, type 제거로 유연성 유지
                     .filter(r -> Objects.equals(r.getColumns(), newRel.getColumns()))
                     .findFirst()
@@ -36,9 +36,9 @@ public class RelationshipDiffer implements EntityComponentDiffer {
             }
         });
 
-        oldEntity.getRelationships().forEach(oldRel -> {
+        oldEntity.getRelationships().values().forEach(oldRel -> {
             if (oldRel.getType() == null) return;
-            if (newEntity.getRelationships().stream()
+            if (newEntity.getRelationships().values().stream()
                     .noneMatch(r -> Objects.equals(r.getColumns(), oldRel.getColumns()))) {
                 result.getRelationshipDiffs().add(DiffResult.RelationshipDiff.builder()
                         .type(DiffResult.RelationshipDiff.Type.DROPPED)

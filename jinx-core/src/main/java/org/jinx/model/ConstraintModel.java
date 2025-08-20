@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.util.List;
+import java.util.Optional;
 
 @Data
 @Builder
@@ -17,5 +18,6 @@ public class ConstraintModel {
     private OnDeleteAction onDelete;
     private OnUpdateAction onUpdate;
 
-    private String checkClause;
+    private Optional<String> checkClause;
+    private Optional<String> options;
 }

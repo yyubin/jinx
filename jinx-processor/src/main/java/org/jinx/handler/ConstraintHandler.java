@@ -18,6 +18,7 @@ import javax.lang.model.type.TypeMirror;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 public class ConstraintHandler {
     private final ProcessingContext context;
@@ -51,28 +52,8 @@ public class ConstraintHandler {
                     .name(c.value())
                     .type(type)
                     .columns(List.of(fieldName))
-                    .checkClause(checkExpr)
+                    .checkClause(Optional.ofNullable(checkExpr))
                     .build();
-            // FIX: RelationshipModel과 ConstraintModel 양쪽 모두 외래 키(FK)를 생성할 수 있어, 중복이나 혼란의 여지가 있다
-            // 예를 들어 MigrationVisitor가 두 Diff를 모두 방문하면 FK가 두 번 생성될 수 있음
-            // ConstraintType에서 FOREINGN_KEY는 제외하고 전부 Relationship으로 해결하도록 주석 처리
-//            if (type == ConstraintType.FOREIGN_KEY && element.getKind() == ElementKind.FIELD) {
-//                VariableElement field = (VariableElement) element;
-//                TypeElement referencedTypeElement = getReferencedTypeElement(field.asType());
-//                if (referencedTypeElement != null) {
-//                    EntityModel referencedEntity = context.getSchemaModel().getEntities().get(referencedTypeElement.getQualifiedName().toString());
-//                    if (referencedEntity != null) {
-//                        String referencedPkColumnName = findPrimaryKeyColumnName(referencedEntity);
-//                        constraintModel.setReferencedTable(referencedEntity.getTableName());
-//                        constraintModel.setReferencedColumns(List.of(referencedPkColumnName));
-//                        constraintModel.setName(c.value().isEmpty() ? "fk_" + fieldName : c.value());
-//                    } else {
-//                        continue;
-//                    }
-//                } else {
-//                    continue;
-//                }
-//            }
 
             if (c.onDelete() != OnDeleteAction.NO_ACTION) constraintModel.setOnDelete(c.onDelete());
             if (c.onUpdate() != OnUpdateAction.NO_ACTION) constraintModel.setOnUpdate(c.onUpdate());

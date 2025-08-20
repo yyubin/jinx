@@ -72,7 +72,7 @@ public class CreateTableBuilder {
         // 1) 컬럼 & PK
         this.add(new ColumnContributor(pkColumns, columns));
         // 2) 제약조건
-        this.add(new ConstraintContributor(entity.getConstraints().stream().toList()));
+        this.add(new ConstraintContributor(entity.getConstraints().values().stream().toList()));
         // 3) 인덱스 (보통 CREATE TABLE 이후 생성)
         this.add(new IndexContributor(entity.getTableName(),
                 entity.getIndexes().values().stream().toList()));

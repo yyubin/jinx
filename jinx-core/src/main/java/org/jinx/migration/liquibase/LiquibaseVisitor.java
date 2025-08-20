@@ -69,11 +69,11 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         }
 
         // 고유/체크 제약도 반영
-        table.getConstraints().forEach(this::visitAddedConstraint);
+        table.getConstraints().values().forEach(this::visitAddedConstraint);
 
         // 인덱스, FK
         table.getIndexes().values().forEach(this::visitAddedIndex);
-        table.getRelationships().forEach(this::visitAddedRelationship);
+        table.getRelationships().values().forEach(this::visitAddedRelationship);
     }
 
 
@@ -356,7 +356,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                     .config(AddCheckConstraintConfig.builder()
                             .constraintName(constraint.getName() != null ? constraint.getName() : "ck_" + currentTableName)
                             .tableName(currentTableName)
-                            .constraintExpression(constraint.getCheckClause())
+                            .constraintExpression(constraint.getCheckClause().isPresent() ? constraint.getCheckClause().get() : "")
                             .build())
                     .build();
             changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(checkChange)));
@@ -394,11 +394,12 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     public void visitAddedRelationship(RelationshipModel relationship) {
         AddForeignKeyConstraintChange fkChange = AddForeignKeyConstraintChange.builder()
                 .config(AddForeignKeyConstraintConfig.builder()
-                        .constraintName(relationship.getConstraintName() != null ? relationship.getConstraintName() : "fk_" + currentTableName + "_" + relationship.getColumn())
+                        .constraintName(relationship.getConstraintName())
                         .baseTableName(currentTableName)
-                        .baseColumnNames(relationship.getColumn())
+                        // FIX: 컬럼 이름이 여러 개일 수 있으므로, 처리해야함 이미 모델 바뀜
+                        // .baseColumnNames(relationship.getColumn())
                         .referencedTableName(relationship.getReferencedTable())
-                        .referencedColumnNames(relationship.getReferencedColumn())
+                        // .referencedColumnNames(relationship.getReferencedColumn())
                         .onDelete(relationship.getOnDelete() != null ? relationship.getOnDelete().name().replace('_',' ') : null)
                         .onUpdate(relationship.getOnUpdate() != null ? relationship.getOnUpdate().name().replace('_',' ') : null)
                         .build())
@@ -410,7 +411,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     public void visitDroppedRelationship(RelationshipModel relationship) {
         DropForeignKeyConstraintChange dropFk = DropForeignKeyConstraintChange.builder()
                 .config(DropForeignKeyConstraintConfig.builder()
-                        .constraintName(relationship.getConstraintName() != null ? relationship.getConstraintName() : "fk_" + currentTableName + "_" + relationship.getColumn())
+                        .constraintName(relationship.getConstraintName())
                         .baseTableName(currentTableName)
                         .build())
                 .build();
