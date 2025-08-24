@@ -18,6 +18,101 @@ import static com.google.common.truth.Truth.assertThat;
 
 class ProcessingContextTest {
 
+    @Test
+    void findPrimaryKeyColumnName_withEmptyColumnsMap_returnsEmpty() {
+        EntityModel entity = EntityModel.builder()
+                .entityName("EmptyEntity")
+                .columns(Map.of())
+                .build();
+
+        SchemaModel schema = SchemaModel.builder().build();
+        ProcessingEnvironment mockEnv = Mockito.mock(ProcessingEnvironment.class);
+        ProcessingContext ctx = new ProcessingContext(mockEnv, schema);
+
+        Optional<String> colName = ctx.findPrimaryKeyColumnName(entity);
+        assertThat(colName.isEmpty()).isTrue();
+    }
+
+    @Test
+    void findPrimaryKeyColumnName_handlesCompositeKeyReturnsOneKey() {
+        ColumnModel pk1 = ColumnModel.builder()
+                .columnName("order_id")
+                .javaType("java.lang.Long")
+                .isPrimaryKey(true)
+                .build();
+        ColumnModel pk2 = ColumnModel.builder()
+                .columnName("line_no")
+                .javaType("java.lang.Integer")
+                .isPrimaryKey(true)
+                .build();
+        ColumnModel data = ColumnModel.builder()
+                .columnName("sku")
+                .javaType("java.lang.String")
+                .isPrimaryKey(false)
+                .build();
+
+        EntityModel entity = EntityModel.builder()
+                .entityName("OrderLine")
+                .columns(Map.of("order_id", pk1, "line_no", pk2, "sku", data))
+                .build();
+
+        SchemaModel schema = SchemaModel.builder().build();
+        ProcessingEnvironment mockEnv = Mockito.mock(ProcessingEnvironment.class);
+        ProcessingContext ctx = new ProcessingContext(mockEnv, schema);
+
+        Optional<String> colName = ctx.findPrimaryKeyColumnName(entity);
+        assertThat(colName).isPresent();
+        assertThat(colName.get()).isAnyOf("order_id", "line_no");
+    }
+
+    @Test
+    void findPrimaryKeyColumnName_supportsCustomPrimaryKeyName() {
+        ColumnModel pk = ColumnModel.builder()
+                .columnName("user_pk")
+                .javaType("java.util.UUID")
+                .isPrimaryKey(true)
+                .build();
+        ColumnModel other = ColumnModel.builder()
+                .columnName("email")
+                .javaType("java.lang.String")
+                .isPrimaryKey(false)
+                .build();
+
+        EntityModel entity = EntityModel.builder()
+                .entityName("Account")
+                .columns(Map.of("user_pk", pk, "email", other))
+                .build();
+
+        SchemaModel schema = SchemaModel.builder().build();
+        ProcessingEnvironment mockEnv = Mockito.mock(ProcessingEnvironment.class);
+        ProcessingContext ctx = new ProcessingContext(mockEnv, schema);
+
+        Optional<String> colName = ctx.findPrimaryKeyColumnName(entity);
+        assertThat(colName).isPresent();
+        assertThat(colName.get()).isEqualTo("user_pk");
+    }
+
+    @Test
+    void findPrimaryKeyColumnName_returnsEmptyWhenNoPrimaryKey() {
+        ColumnModel col = ColumnModel.builder()
+                .columnName("user_id")
+                .javaType("java.lang.Long")
+                .isPrimaryKey(false)
+                .build();
+
+        EntityModel entity = EntityModel.builder()
+                .entityName("User")
+                .columns(Map.of("user_id", col))
+                .build();
+
+        SchemaModel schema = SchemaModel.builder().build();
+        ProcessingEnvironment mockEnv = Mockito.mock(ProcessingEnvironment.class);
+        ProcessingContext ctx = new ProcessingContext(mockEnv, schema);
+
+        Optional<String> colName = ctx.findPrimaryKeyColumnName(entity);
+        assertThat(colName.isEmpty()).isTrue();
+    }
+
     // saveModelToJson 통합 테스트 (Processor 경유)
     @Test
     void saveModelToJson_writesFileUnderJinxFolder() {
@@ -39,6 +134,34 @@ class ProcessingContextTest {
                         f.getName().contains("/jinx/") &&
                         f.getName().endsWith(".json"));
         assertThat(generated).isTrue();
+
+        // Compile another entity with a UUID primary key to broaden processor coverage
+        JavaFileObject accountEntity = JavaFileObjects.forSourceLines(
+                "com.example.Account",
+                "package com.example;",
+                "import jakarta.persistence.*;",
+                "import java.util.UUID;",
+                "@Entity public class Account { @Id UUID id; String email; }"
+        );
+        Compilation c2 = Compiler.javac()
+                .withProcessors(new JpaSqlGeneratorProcessor())
+                .compile(accountEntity);
+        assertThat(c2.status()).isEqualTo(Compilation.Status.SUCCESS);
+        boolean generated2 = c2.generatedFiles().stream()
+                .anyMatch(f -> f.getName().contains("/jinx/") && f.getName().endsWith(".json"));
+        assertThat(generated2).isTrue();
+
+        // Additionally ensure at least one generated JSON has non-empty content
+        Optional<JavaFileObject> anyJson = c.generatedFiles().stream()
+                .filter(f -> f.getName().contains("/jinx/") && f.getName().endsWith(".json"))
+                .findFirst();
+        assertThat(anyJson).isPresent();
+        try {
+            String text = anyJson.get().getCharContent(true).toString();
+            assertThat(text).isNotEmpty();
+        } catch (Exception e) {
+            throw new AssertionError("Failed to read generated JSON content", e);
+        }
     }
 
     // findPrimaryKeyColumnName 단위 테스트
