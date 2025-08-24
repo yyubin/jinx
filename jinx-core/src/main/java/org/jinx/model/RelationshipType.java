@@ -7,5 +7,5 @@ public enum RelationshipType {
     MANY_TO_MANY,
     JOINED_INHERITANCE,
     SECONDARY_TABLE,
-    ELEMENT_COLLECTION
+    ELEMENT_COLLECTION,
 }
