@@ -154,4 +154,179 @@ class JpaSqlGeneratorProcessorTest {
         assertThat(cols).containsKey("city");       // Embeddable
         assertThat(cols).containsKey("street");     // Embeddable
     }
+
+    /*
+     * Additional unit tests appended to increase coverage of JPA mapping scenarios.
+     * Testing stack: JUnit 5 (Jupiter), Google Truth assertions, and Google Compile Testing.
+     * Focus: schema column derivation, field exclusions, attribute/column overrides, and converter precedence.
+     */
+
+    @Test
+    @DisplayName("@Transient fields are excluded from schema columns")
+    void transientFieldsExcludedFromSchema() throws Exception {
+        JavaFileObject user = JavaFileObjects.forSourceLines(
+                "com.example.User",
+                "package com.example;",
+                "import jakarta.persistence.*;",
+                "@Entity",
+                "public class User {",
+                "  @Id Long id;",
+                "  @Transient String temp;",
+                "  String name;",
+                "}"
+        );
+
+        Compilation c = Compiler.javac()
+                .withProcessors(new JpaSqlGeneratorProcessor())
+                .compile(user);
+
+        assertThat(c.status()).isEqualTo(Compilation.Status.SUCCESS);
+
+        Map<String, Object> root = readSchemaRoot(c);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> columns = (Map<String, Object>)
+                ((Map<?,?>)((Map<?,?>)root.get("entities"))
+                        .get("com.example.User"))
+                        .get("columns");
+
+        // Ensure transient field is not exported while a regular field is present.
+        assertThat(columns.containsKey("temp")).isFalse();
+        assertThat(columns.containsKey("name")).isTrue();
+    }
+
+    @Test
+    @DisplayName("@Column(name=...) is respected when deriving column keys")
+    void columnAnnotationOverridesName() throws Exception {
+        JavaFileObject user = JavaFileObjects.forSourceLines(
+                "com.example.User",
+                "package com.example;",
+                "import jakarta.persistence.*;",
+                "@Entity",
+                "public class User {",
+                "  @Id Long id;",
+                "  @Column(name=\"full_name\") String name;",
+                "}"
+        );
+
+        Compilation c = Compiler.javac()
+                .withProcessors(new JpaSqlGeneratorProcessor())
+                .compile(user);
+
+        assertThat(c.status()).isEqualTo(Compilation.Status.SUCCESS);
+
+        Map<String, Object> root = readSchemaRoot(c);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> columns = (Map<String, Object>)
+                ((Map<?,?>)((Map<?,?>)root.get("entities"))
+                        .get("com.example.User"))
+                        .get("columns");
+
+        // The overridden column name should be used as the key.
+        assertThat(columns.containsKey("full_name")).isTrue();
+    }
+
+    @Test
+    @DisplayName("@AttributeOverride on @Embedded field renames embedded column(s)")
+    void attributeOverrideOnEmbeddedField() throws Exception {
+        JavaFileObject addr = JavaFileObjects.forSourceLines(
+                "com.example.Address",
+                "package com.example;",
+                "import jakarta.persistence.*;",
+                "@Embeddable",
+                "public class Address {",
+                "  String city;",
+                "  String street;",
+                "}"
+        );
+
+        JavaFileObject user = JavaFileObjects.forSourceLines(
+                "com.example.User",
+                "package com.example;",
+                "import jakarta.persistence.*;",
+                "@Entity",
+                "public class User {",
+                "  @Id Long id;",
+                "  @Embedded",
+                "  @AttributeOverrides({",
+                "    @AttributeOverride(name=\"street\", column=@Column(name=\"str_name\"))",
+                "  })",
+                "  Address address;",
+                "}"
+        );
+
+        Compilation c = Compiler.javac()
+                .withOptions("--add-opens",
+                        "jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED")
+                .withProcessors(new JpaSqlGeneratorProcessor())
+                .compile(addr, user);
+
+        assertThat(c.status()).isEqualTo(Compilation.Status.SUCCESS);
+
+        Map<String, Object> root = readSchemaRoot(c);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> columns = (Map<String, Object>)
+                ((Map<?,?>)((Map<?,?>)root.get("entities"))
+                        .get("com.example.User"))
+                        .get("columns");
+
+        // Ensure both a default embedded column and an overridden column are present.
+        assertThat(columns.containsKey("city")).isTrue();
+        assertThat(columns.containsKey("str_name")).isTrue();
+    }
+
+    @Test
+    @DisplayName("Field-level @Convert overrides @Converter(autoApply=true)")
+    void fieldLevelConvertOverridesAutoApply() throws Exception {
+        JavaFileObject convYn = JavaFileObjects.forSourceLines(
+                "com.example.BoolYnConv",
+                "package com.example;",
+                "import jakarta.persistence.*;",
+                "@Converter(autoApply=true)",
+                "public class BoolYnConv implements AttributeConverter<Boolean,String>{",
+                "  public String convertToDatabaseColumn(Boolean a){return a==null?null:(a?\"Y\":\"N\");}",
+                "  public Boolean convertToEntityAttribute(String d){return \"Y\".equals(d);} }"
+        );
+
+        JavaFileObject conv10 = JavaFileObjects.forSourceLines(
+                "com.example.Bool10Conv",
+                "package com.example;",
+                "import jakarta.persistence.*;",
+                "public class Bool10Conv implements AttributeConverter<Boolean,String>{",
+                "  public String convertToDatabaseColumn(Boolean a){return a==null?null:(a?\"1\":\"0\");}",
+                "  public Boolean convertToEntityAttribute(String d){return \"1\".equals(d);} }"
+        );
+
+        JavaFileObject user = JavaFileObjects.forSourceLines(
+                "com.example.User",
+                "package com.example;",
+                "import jakarta.persistence.*;",
+                "@Entity",
+                "public class User {",
+                "  @Id Long id;",
+                "  @Convert(converter=Bool10Conv.class)",
+                "  Boolean active;",
+                "}"
+        );
+
+        Compilation c = Compiler.javac()
+                .withOptions("--add-opens",
+                        "jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED")
+                .withProcessors(new JpaSqlGeneratorProcessor())
+                .compile(convYn, conv10, user);
+
+        assertThat(c.status()).isEqualTo(Compilation.Status.SUCCESS);
+
+        Map<String, Object> root = readSchemaRoot(c);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> columns = (Map<String, Object>)
+                ((Map<?,?>)((Map<?,?>)root.get("entities"))
+                        .get("com.example.User"))
+                        .get("columns");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> active = (Map<String, Object>) columns.get("active");
+        assertThat(active.get("conversionClass"))
+                .isEqualTo("com.example.Bool10Conv");
+    }
+
 }
