@@ -22,10 +22,7 @@ import java.io.IOException;
 import java.io.Writer;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 @Getter
 public class ProcessingContext {
@@ -33,6 +30,8 @@ public class ProcessingContext {
     private final SchemaModel schemaModel;
     private final Map<String, String> autoApplyConverters = new HashMap<>();
     private final Naming naming;
+    private final Queue<EntityModel> deferredEntities = new ArrayDeque<>();
+    private final Set<String> deferredNames = new HashSet<>();
 
     public ProcessingContext(ProcessingEnvironment processingEnv, SchemaModel schemaModel) {
         this.processingEnv = processingEnv;

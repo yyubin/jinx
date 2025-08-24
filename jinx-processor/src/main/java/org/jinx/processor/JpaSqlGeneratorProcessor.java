@@ -13,6 +13,7 @@ import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
+import javax.tools.Diagnostic;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -55,11 +56,14 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         this.embeddedHandler = new EmbeddedHandler(context, columnHandler);
         this.constraintHandler = new ConstraintHandler(context);
         this.elementCollectionHandler = new ElementCollectionHandler(context, columnHandler, embeddedHandler);
+        this.tableGeneratorHandler = new TableGeneratorHandler(context);
         this.entityHandler = new EntityHandler(context, columnHandler, embeddedHandler, constraintHandler, sequenceHandler, elementCollectionHandler, tableGeneratorHandler);
     }
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+        processRetryTasks();
+
         // Process @Converter with autoApply=true
         for (Element element : roundEnv.getElementsAnnotatedWith(Converter.class)) {
             if (element.getKind() == ElementKind.CLASS) {
@@ -126,8 +130,23 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 relationshipHandler.resolveRelationships(typeElement, entityModel);
             }
 
+            // 3. Deferred FK (JOINED 상속 관련) 처리
+            // 최대 5회 시도
+            int maxPass = 5;
+            for (int pass = 0; pass < maxPass && !context.getDeferredEntities().isEmpty(); pass++) {
+                entityHandler.runDeferredJoinedFks();
+            }
+            if (!context.getDeferredEntities().isEmpty()) {
+                context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "Unresolved JOINED inheritance: " + context.getDeferredEntities());
+            }
             context.saveModelToJson();
         }
         return true;
+    }
+
+    public void processRetryTasks() {
+        entityHandler.runDeferredJoinedFks();
+
     }
 }

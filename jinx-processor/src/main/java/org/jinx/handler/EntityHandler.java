@@ -64,6 +64,20 @@ public class EntityHandler {
         processJoinedTables(typeElement, entity);
     }
 
+    public void runDeferredJoinedFks() {
+        int size = context.getDeferredEntities().size();
+        for (int i = 0; i < size; i++) {
+            EntityModel child = context.getDeferredEntities().poll();
+            if (child == null) break;
+            processInheritanceJoin(
+                    context.getElementUtils().getTypeElement(child.getEntityName()),
+                    child
+            );
+            // 부모가 여전히 없으면 processInheritanceJoin 내부에서 다시 enqueue
+            // 하지만 여기서는 '이번 라운드' 스냅샷만 처리해서 무한루프 방지
+        }
+    }
+
     private void processMappedSuperclasses(TypeElement typeElement, EntityModel entity) {
         for (TypeElement ms : getMappedSuperclasses(typeElement)) {
             processMappedSuperclass(ms, entity);
@@ -80,8 +94,9 @@ public class EntityHandler {
         if (context.getSchemaModel().getEntities().containsKey(entityName)) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Duplicate entity found: " + entityName, typeElement);
-            EntityModel invalidEntity = EntityModel.builder().entityName(entityName).isValid(false).build();
-            context.getSchemaModel().getEntities().putIfAbsent(entityName, invalidEntity);
+            // keep first
+//            EntityModel invalidEntity = EntityModel.builder().entityName(entityName).isValid(false).build();
+//            context.getSchemaModel().getEntities().putIfAbsent(entityName, invalidEntity);
             return null;
         }
 
@@ -120,10 +135,19 @@ public class EntityHandler {
 
         processInheritanceJoin(type, entity);
 
-        List<ColumnModel> parentPkCols = context.findAllPrimaryKeyColumns(entity);
+        List<ColumnModel> primaryKeyColumns = context.findAllPrimaryKeyColumns(entity);
+
+        // FIX: SecondaryTable을 처리하기 전에 주 테이블의 PK가 있는지 확인
+        if (!secondaryTables.isEmpty() && primaryKeyColumns.isEmpty()) {
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "Entity with @SecondaryTable must have a primary key (@Id or @EmbeddedId).", type);
+            entity.setValid(false);
+            return; // PK가 없으면 SecondaryTable 처리를 진행하지 않음
+        }
 
         for (SecondaryTable t : secondaryTables) {
-            processJoinTable(t.name(), Arrays.asList(t.pkJoinColumns()), type, entity, parentPkCols, entity.getTableName());
+            // 변수명을 parentPkCols에서 primaryKeyColumns로 명확하게 변경
+            processJoinTable(t.name(), Arrays.asList(t.pkJoinColumns()), type, entity, primaryKeyColumns, entity.getTableName(), RelationshipType.SECONDARY_TABLE);
         }
     }
 
@@ -131,23 +155,40 @@ public class EntityHandler {
         TypeMirror superclass = type.getSuperclass();
         if (superclass.getKind() != TypeKind.DECLARED) return;
 
-        TypeElement parentType = (TypeElement) ((DeclaredType) superclass).asElement();
+        Optional<TypeElement> parentElementOptional = findNearestJoinedParentEntity(type);
+        if (parentElementOptional.isEmpty()) {
+            return;
+        }
+        TypeElement parentType = parentElementOptional.get();
         Inheritance parentInheritance = parentType.getAnnotation(Inheritance.class);
         if (parentInheritance == null || parentInheritance.strategy() != InheritanceType.JOINED) return;
 
         // 부모 엔티티 모델/PK 컬럼 조회
         EntityModel parentEntity = context.getSchemaModel().getEntities()
                 .get(parentType.getQualifiedName().toString());
+        String childName = childEntity.getEntityName();
         if (parentEntity == null) {
-            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "Parent entity model not found for JOINED inheritance: " + parentType.getQualifiedName(), type);
+            if (context.getDeferredNames().contains(childName)) {
+                return; // 이미 재시도 대기 중
+            }
+            context.getDeferredNames().add(childName);
+            context.getDeferredEntities().add(childEntity); // 부모가 아직 처리되지 않음 -> 나중에 재시도
             return;
         }
+
+        if (!parentEntity.isValid()) {
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "JOINED parent entity is invalid: " + parentEntity.getEntityName(), type);
+            childEntity.setValid(false);
+            return;
+        }
+
         List<ColumnModel> parentPkCols = context.findAllPrimaryKeyColumns(parentEntity);
         if (parentPkCols.isEmpty()) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Parent entity '" + parentType.getQualifiedName() + "' must have a primary key for JOINED inheritance.",
                     type);
+            childEntity.setValid(false);
             return;
         }
 
@@ -157,17 +198,36 @@ public class EntityHandler {
                 ? new PrimaryKeyJoinColumn[]{type.getAnnotation(PrimaryKeyJoinColumn.class)}
                 : new PrimaryKeyJoinColumn[]{});
 
-        processJoinTable(
+        boolean ok = processJoinTable(
                 childEntity.getTableName(),
                 Arrays.asList(pkjcs),
                 type, childEntity, parentPkCols,
-                parentEntity.getTableName()
+                parentEntity.getTableName(),
+                RelationshipType.JOINED_INHERITANCE
         );
+
+        if (ok) {
+            context.getDeferredNames().remove(childName);
+        }
     }
 
+    // 다층 상속 방어 유틸
+    private Optional<TypeElement> findNearestJoinedParentEntity(TypeElement type) {
+        TypeMirror sup = type.getSuperclass();
+        while (sup.getKind() == TypeKind.DECLARED) {
+            TypeElement p = (TypeElement) ((DeclaredType) sup).asElement();
+            if (p.getAnnotation(Entity.class) != null) {
+                Inheritance inh = p.getAnnotation(Inheritance.class);
+                if (inh != null && inh.strategy() == InheritanceType.JOINED) return Optional.of(p);
+                return Optional.empty(); // 엔티티인데 JOINED가 아니면 여기서 종료
+            }
+            sup = p.getSuperclass();
+        }
+        return Optional.empty();
+    }
 
-    private void processJoinTable(String tableName, List<PrimaryKeyJoinColumn> pkjcs,
-                                  TypeElement type, EntityModel entity, List<ColumnModel> parentPkCols, String referencedTableName) {
+    private boolean processJoinTable(String tableName, List<PrimaryKeyJoinColumn> pkjcs,
+                                  TypeElement type, EntityModel entity, List<ColumnModel> parentPkCols, String referencedTableName, RelationshipType relType) {
         List<String> childCols = new ArrayList<>();
         List<String> refCols = new ArrayList<>();
 
@@ -182,7 +242,7 @@ public class EntityHandler {
                     "'" + tableName + "' pkJoinColumns size mismatch: expected " +
                             parentPkCols.size() + " but got " + pkjcs.size(), type);
             entity.setValid(false);
-            return;
+            return false;
         } else {
             for (int i = 0; i < pkjcs.size(); i++) {
                 PrimaryKeyJoinColumn a = pkjcs.get(i);
@@ -197,7 +257,7 @@ public class EntityHandler {
                 tableName, childCols, referencedTableName, refCols);
 
         RelationshipModel rel = RelationshipModel.builder()
-                .type(RelationshipType.SECONDARY_TABLE) // JOINED 상속도 내부적으로는 보조 테이블 관계와 유사
+                .type(relType)
                 .columns(childCols)
                 .referencedTable(referencedTableName)
                 .referencedColumns(refCols)
@@ -207,6 +267,7 @@ public class EntityHandler {
 
         // 보조 테이블의 경우엔 일반적으로 자식(보조) 테이블 쪽 컬럼을 생성해야 함
         ensureChildPkColumnsExist(entity, tableName, childCols, parentPkCols);
+        return true;
     }
 
     // 기존 private 메서드들 (변경 없음)
@@ -296,6 +357,7 @@ public class EntityHandler {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "IdClass is not supported. Use @EmbeddedId instead for composite primary keys.",
                     typeElement);
+            entity.setValid(false);
             return false;
         }
 
