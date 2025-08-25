@@ -74,9 +74,16 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                     TypeMirror superType = converterType.getInterfaces().stream()
                             .filter(i -> i.toString().startsWith("jakarta.persistence.AttributeConverter"))
                             .findFirst().orElse(null);
-                    if (superType instanceof DeclaredType declaredType) {
-                        TypeMirror targetType = declaredType.getTypeArguments().get(0);
+
+                    if (superType instanceof DeclaredType dt && !dt.getTypeArguments().isEmpty()) {
+                        TypeMirror targetType = dt.getTypeArguments().get(0);
                         context.getAutoApplyConverters().put(targetType.toString(), converterType.getQualifiedName().toString());
+                    } else {
+                        processingEnv.getMessager().printMessage(
+                                Diagnostic.Kind.WARNING,
+                                "@Converter(autoApply=true) generic target type unresolved: " + converterType.getQualifiedName(),
+                                converterType
+                        );
                     }
                 }
             }
@@ -124,13 +131,44 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 inheritanceHandler.resolveInheritance(typeElement, entityModel);
             }
             // 2. 관계 해석
-            for (EntityModel entityModel : context.getSchemaModel().getEntities().values()) {
-                if (!entityModel.isValid()) continue;
-                TypeElement typeElement = context.getElementUtils().getTypeElement(entityModel.getEntityName());
-                relationshipHandler.resolveRelationships(typeElement, entityModel);
+            for (EntityModel em : context.getSchemaModel().getEntities().values()) {
+                if (!em.isValid()) continue;
+                TypeElement te = context.getElementUtils().getTypeElement(em.getEntityName());
+                if (te == null) {
+                    // 증분 컴파일/다중 라운드에서 드물게 null 가능 → 스킵/경고 중 택1
+                    context.getMessager().printMessage(
+                            Diagnostic.Kind.WARNING,
+                            "Skip relationship resolution: cannot resolve TypeElement for " + em.getEntityName()
+                    );
+                    continue;
+                }
+                relationshipHandler.resolveRelationships(te, em);
             }
 
-            // 3. Deferred FK (JOINED 상속 관련) 처리
+            // 3. 최종 PK 검증 (2차 패스)
+            for (Map.Entry<String, EntityModel> e : context.getSchemaModel().getEntities().entrySet()) {
+                EntityModel em = e.getValue();
+                if (!em.isValid()) continue;
+                if (context.findAllPrimaryKeyColumns(em).isEmpty()) {
+                    // FQN을 사용하여 TypeElement 조회
+                    TypeElement te = context.getElementUtils().getTypeElement(e.getKey());
+                    if (te != null) {
+                        context.getMessager().printMessage(
+                                Diagnostic.Kind.ERROR,
+                                "Entity '" + e.getKey() + "' must have a primary key.",
+                                te
+                        );
+                    } else {
+                        context.getMessager().printMessage(
+                                Diagnostic.Kind.ERROR,
+                                "Entity '" + e.getKey() + "' must have a primary key."
+                        );
+                    }
+                    em.setValid(false);
+                }
+            }
+
+            // 4. Deferred FK (JOINED 상속 관련) 처리
             // 최대 5회 시도
             int maxPass = 5;
             for (int pass = 0; pass < maxPass && !context.getDeferredEntities().isEmpty(); pass++) {

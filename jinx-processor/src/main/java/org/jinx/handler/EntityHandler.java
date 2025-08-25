@@ -63,15 +63,7 @@ public class EntityHandler {
         // 8. 보조 테이블 처리 및 상속 관계 처리 -> PK가 확정된 뒤에 FK 생성
         processJoinedTables(typeElement, entity);
 
-        // 9. 최종 PK 검증: JOINED/SecondaryTable 처리까지 끝난 후에도 PK가 없다면 invalid
-        if (context.findAllPrimaryKeyColumns(entity).isEmpty()) {
-            context.getMessager().printMessage(
-                    Diagnostic.Kind.ERROR,
-                    "Entity '" + entity.getEntityName() + "' must have a primary key.",
-                    typeElement
-            );
-            entity.setValid(false);
-        }
+        // @MapsId 기반 PK 승격 반영 이후(2차 패스)로 검증 시점(PK)을 지연
     }
 
     public void runDeferredJoinedFks() {
