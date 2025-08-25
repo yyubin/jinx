@@ -1347,3 +1347,252 @@ class EntityHandlerTest {
 
 }
  
+
+    @Test
+    @DisplayName("@Embedded: 임베디드 필드는 EmbeddedHandler로 위임되며 PK로 마킹되지 않는다")
+    void handle_Embedded_ShouldDelegateAndNotMarkPk() {
+        // Arrange
+        TypeElement e = mock(TypeElement.class);
+        TypeMirror sup = mock(TypeMirror.class);
+        when(e.getSuperclass()).thenReturn(sup);
+        when(sup.getKind()).thenReturn(TypeKind.NONE);
+        lenient().when(e.getAnnotation(Entity.class)).thenReturn(mock(Entity.class));
+
+        Name qn = mock(Name.class), sn = mock(Name.class);
+        when(qn.toString()).thenReturn("com.example.EmbeddedOnly");
+        when(sn.toString()).thenReturn("EmbeddedOnly");
+        when(e.getQualifiedName()).thenReturn(qn);
+        when(e.getSimpleName()).thenReturn(sn);
+
+        // One @Embedded field (not @EmbeddedId)
+        VariableElement emb = mock(VariableElement.class);
+        when(emb.getKind()).thenReturn(ElementKind.FIELD);
+        doReturn(Collections.emptySet()).when(emb).getModifiers();
+        when(emb.getAnnotation(Transient.class)).thenReturn(null);
+        when(emb.getAnnotation(EmbeddedId.class)).thenReturn(null);
+        when(emb.getAnnotation(ElementCollection.class)).thenReturn(null);
+        when(emb.getAnnotation(Embedded.class)).thenReturn(mock(Embedded.class));
+        when(emb.getAnnotation(Column.class)).thenReturn(null);
+        Name en = mock(Name.class);
+        lenient().when(en.toString()).thenReturn("address");
+        lenient().when(emb.getSimpleName()).thenReturn(en);
+        doReturn(List.of(emb)).when(e).getEnclosedElements();
+
+        // Embedded handler will inject columns into entity (simulate)
+        doAnswer(inv -> {
+            EntityModel em = inv.getArgument(1);
+            em.getColumns().put("addr_line1", ColumnModel.builder().columnName("addr_line1").build());
+            em.getColumns().put("addr_zip", ColumnModel.builder().columnName("addr_zip").build());
+            return null;
+        }).when(embeddedHandler).processEmbedded(eq(emb), any(EntityModel.class), anySet());
+
+        // Act
+        entityHandler.handle(e);
+
+        // Assert
+        EntityModel em = schemaModel.getEntities().get("com.example.EmbeddedOnly");
+        assertNotNull(em);
+        assertTrue(em.getColumns().containsKey("addr_line1"));
+        assertTrue(em.getColumns().containsKey("addr_zip"));
+        // Pure @Embedded must not mark PKs by itself
+        assertFalse(em.getColumns().get("addr_line1").isPrimaryKey());
+        assertFalse(em.getColumns().get("addr_zip").isPrimaryKey());
+        verify(embeddedHandler, times(1)).processEmbedded(eq(emb), eq(em), anySet());
+        // ColumnHandler should not be called for @Embedded field
+        verify(columnHandler, never()).createFrom(eq(emb), any());
+    }
+
+    @Test
+    @DisplayName("JOINED 상속: 부모 PK가 2개인데 @PrimaryKeyJoinColumn(단일)만 제공 → size mismatch 에러")
+    void handle_JoinedInheritance_SinglePkjc_WhenParentHasCompositePk_ShouldError() {
+        // Parent with composite PK (k1, k2)
+        EntityModel parent = EntityModel.builder()
+                .entityName("com.example.Parent2")
+                .tableName("Parent2")
+                .isValid(true).build();
+        ColumnModel p1 = ColumnModel.builder().columnName("k1").isPrimaryKey(true).build();
+        ColumnModel p2 = ColumnModel.builder().columnName("k2").isPrimaryKey(true).build();
+        parent.getColumns().put("k1", p1);
+        parent.getColumns().put("k2", p2);
+        schemaModel.getEntities().put("com.example.Parent2", parent);
+
+        // Parent TypeElement with JOINED
+        TypeElement parentType = mock(TypeElement.class);
+        when(parentType.getAnnotation(Entity.class)).thenReturn(mock(Entity.class));
+        Inheritance inh = mock(Inheritance.class);
+        when(inh.strategy()).thenReturn(InheritanceType.JOINED);
+        when(parentType.getAnnotation(Inheritance.class)).thenReturn(inh);
+        Name pQN = mock(Name.class);
+        when(pQN.toString()).thenReturn("com.example.Parent2");
+        when(parentType.getQualifiedName()).thenReturn(pQN);
+        TypeMirror parentSup = mock(TypeMirror.class);
+        lenient().when(parentType.getSuperclass()).thenReturn(parentSup);
+        lenient().when(parentSup.getKind()).thenReturn(TypeKind.NONE);
+
+        // Child TypeElement extends parent
+        TypeElement child = mock(TypeElement.class);
+        lenient().when(child.getAnnotation(Entity.class)).thenReturn(mock(Entity.class));
+        when(child.getAnnotation(Table.class)).thenReturn(null);
+        when(child.getAnnotation(IdClass.class)).thenReturn(null);
+        lenient().when(child.getAnnotation(EmbeddedId.class)).thenReturn(null);
+        lenient().when(child.getAnnotation(MappedSuperclass.class)).thenReturn(null);
+        when(child.getAnnotation(SecondaryTable.class)).thenReturn(null);
+        when(child.getAnnotation(SecondaryTables.class)).thenReturn(null);
+
+        Name cQN = mock(Name.class), cSN = mock(Name.class);
+        when(cQN.toString()).thenReturn("com.example.ChildSinglePkjc");
+        when(cSN.toString()).thenReturn("ChildSinglePkjc");
+        when(child.getQualifiedName()).thenReturn(cQN);
+        when(child.getSimpleName()).thenReturn(cSN);
+
+        DeclaredType childSup = mock(DeclaredType.class);
+        when(child.getSuperclass()).thenReturn(childSup);
+        when(childSup.getKind()).thenReturn(TypeKind.DECLARED);
+        when(childSup.asElement()).thenReturn(parentType);
+
+        // Single @PrimaryKeyJoinColumn provided (insufficient for composite PK)
+        PrimaryKeyJoinColumn single = mock(PrimaryKeyJoinColumn.class);
+        when(single.name()).thenReturn("ck1");
+        when(single.referencedColumnName()).thenReturn("k1");
+        when(child.getAnnotation(PrimaryKeyJoinColumn.class)).thenReturn(single);
+        when(child.getAnnotation(PrimaryKeyJoinColumns.class)).thenReturn(null);
+
+        // No fields (columns will be ensured only if matching works)
+        doReturn(List.of()).when(child).getEnclosedElements();
+        when(context.findAllPrimaryKeyColumns(parent)).thenReturn(List.of(p1, p2));
+
+        // Act
+        entityHandler.handle(child);
+
+        // Assert
+        EntityModel cm = schemaModel.getEntities().get("com.example.ChildSinglePkjc");
+        assertNotNull(cm);
+        assertFalse(cm.isValid(), "부모 PK 개수와 pkjc 개수 불일치면 invalid 처리되어야 합니다.");
+        verify(messager).printMessage(eq(Diagnostic.Kind.ERROR), contains("pkJoinColumns size mismatch"), eq(child));
+    }
+
+    @Test
+    @DisplayName("deferred 재시도 성공 시: child 이름/엔티티가 대기 큐와 집합에서 제거된다")
+    void runDeferredJoinedFks_ShouldClearDeferredQueues_OnSuccess() {
+        // Prepare parent model (not yet in schema)
+        EntityModel parent = EntityModel.builder()
+                .entityName("com.example.PX")
+                .tableName("PX")
+                .isValid(true).build();
+        ColumnModel pk = ColumnModel.builder().columnName("pid").isPrimaryKey(true).build();
+        parent.getColumns().put("pid", pk);
+
+        // Parent TypeElement (JOINED)
+        TypeElement parentType = mock(TypeElement.class);
+        when(parentType.getAnnotation(Entity.class)).thenReturn(mock(Entity.class));
+        Inheritance inh = mock(Inheritance.class);
+        when(inh.strategy()).thenReturn(InheritanceType.JOINED);
+        when(parentType.getAnnotation(Inheritance.class)).thenReturn(inh);
+        Name pQN = mock(Name.class); when(pQN.toString()).thenReturn("com.example.PX");
+        when(parentType.getQualifiedName()).thenReturn(pQN);
+        TypeMirror parentSup = mock(TypeMirror.class);
+        lenient().when(parentType.getSuperclass()).thenReturn(parentSup);
+        lenient().when(parentSup.getKind()).thenReturn(TypeKind.NONE);
+
+        // Child model already present and deferred
+        EntityModel child = EntityModel.builder()
+                .entityName("com.example.CX")
+                .tableName("CX")
+                .isValid(true).build();
+        schemaModel.getEntities().put("com.example.CX", child);
+        context.getDeferredEntities().add(child);
+        context.getDeferredNames().add("com.example.CX");
+
+        // Child TypeElement with superclass -> parentType
+        TypeElement childType = mock(TypeElement.class);
+        DeclaredType dt = mock(DeclaredType.class);
+        when(dt.getKind()).thenReturn(TypeKind.DECLARED);
+        when(dt.asElement()).thenReturn(parentType);
+        when(childType.getSuperclass()).thenReturn(dt);
+        when(context.getElementUtils().getTypeElement("com.example.CX")).thenReturn(childType);
+
+        // Now parent enters schema
+        schemaModel.getEntities().put("com.example.PX", parent);
+
+        // Wiring for FK creation
+        when(context.findAllPrimaryKeyColumns(parent)).thenReturn(List.of(pk));
+        when(context.getNaming()).thenReturn(naming);
+        when(naming.fkName(anyString(), anyList(), anyString(), anyList())).thenReturn("fk_cx_px");
+
+        // Act
+        entityHandler.runDeferredJoinedFks();
+
+        // Assert FK created
+        assertFalse(schemaModel.getEntities().get("com.example.CX").getRelationships().isEmpty());
+        // And queues cleared
+        assertFalse(context.getDeferredNames().contains("com.example.CX"), "성공 후 이름 집합에서 제거되어야 합니다.");
+        assertTrue(context.getDeferredEntities().stream().noneMatch(em -> "com.example.CX".equals(em.getEntityName())),
+                "성공 후 엔티티 큐에서 제거되어야 합니다.");
+    }
+
+    @Test
+    @DisplayName("@Table/@SecondaryTable 제약 처리: ConstraintHandler 호출 확인")
+    void handle_TableAndSecondaryTable_ShouldInvokeConstraintHandler() {
+        // Arrange
+        TypeElement e = mock(TypeElement.class);
+        TypeMirror sup = mock(TypeMirror.class);
+        when(e.getSuperclass()).thenReturn(sup);
+        when(sup.getKind()).thenReturn(TypeKind.NONE);
+        lenient().when(e.getAnnotation(Entity.class)).thenReturn(mock(Entity.class));
+
+        Name qn = mock(Name.class), sn = mock(Name.class);
+        when(qn.toString()).thenReturn("com.example.Cons");
+        when(sn.toString()).thenReturn("Cons");
+        when(e.getQualifiedName()).thenReturn(qn);
+        when(e.getSimpleName()).thenReturn(sn);
+
+        // @Table with constraints
+        Table t = mock(Table.class);
+        UniqueConstraint uc = mock(UniqueConstraint.class);
+        Index ix = mock(Index.class);
+        CheckConstraint ck = mock(CheckConstraint.class);
+        doReturn(new UniqueConstraint[]{uc}).when(t).uniqueConstraints();
+        doReturn(new Index[]{ix}).when(t).indexes();
+        doReturn(new CheckConstraint[]{ck}).when(t).check();
+        when(e.getAnnotation(Table.class)).thenReturn(t);
+
+        // @SecondaryTable with constraints
+        SecondaryTable st = mock(SecondaryTable.class);
+        when(st.name()).thenReturn("aux");
+        doReturn(new PrimaryKeyJoinColumn[0]).when(st).pkJoinColumns();
+        UniqueConstraint uc2 = mock(UniqueConstraint.class);
+        Index ix2 = mock(Index.class);
+        CheckConstraint ck2 = mock(CheckConstraint.class);
+        doReturn(new UniqueConstraint[]{uc2}).when(st).uniqueConstraints();
+        doReturn(new Index[]{ix2}).when(st).indexes();
+        doReturn(new CheckConstraint[]{ck2}).when(st).check();
+        when(e.getAnnotation(SecondaryTable.class)).thenReturn(st);
+        when(e.getAnnotation(SecondaryTables.class)).thenReturn(null);
+
+        // Minimal @Id for PK presence
+        VariableElement id = mock(VariableElement.class);
+        when(id.getKind()).thenReturn(ElementKind.FIELD);
+        lenient().when(id.getAnnotation(Id.class)).thenReturn(mock(Id.class));
+        when(id.getAnnotation(EmbeddedId.class)).thenReturn(null);
+        when(id.getAnnotation(Transient.class)).thenReturn(null);
+        when(id.getAnnotation(ElementCollection.class)).thenReturn(null);
+        when(id.getAnnotation(Embedded.class)).thenReturn(null);
+        when(id.getAnnotation(Column.class)).thenReturn(null);
+        doReturn(Collections.emptySet()).when(id).getModifiers();
+        doReturn(List.of(id)).when(e).getEnclosedElements();
+        ColumnModel idCol = ColumnModel.builder().columnName("id").isPrimaryKey(true).build();
+        when(columnHandler.createFrom(eq(id), any())).thenReturn(idCol);
+
+        // Naming for secondary FK name
+        when(context.getNaming()).thenReturn(naming);
+        when(naming.fkName(eq("aux"), anyList(), eq("Cons"), anyList())).thenReturn("fk_aux_cons");
+
+        // Act
+        entityHandler.handle(e);
+
+        // Assert: entity exists and constraint handler was invoked for both tables
+        EntityModel em = schemaModel.getEntities().get("com.example.Cons");
+        assertNotNull(em);
+        verify(constraintHandler, atLeastOnce()).processTableConstraints(eq(t), eq(em));
+        verify(constraintHandler, atLeastOnce()).processSecondaryTableConstraints(eq(st), eq(em));
+    }
