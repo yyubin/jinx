@@ -390,7 +390,13 @@ public class RelationshipHandler {
         var types = context.getTypeUtils();
         var elems = context.getElementUtils();
         TypeMirror lhs = types.erasure(field.asType());
-        TypeMirror rhs = types.erasure(elems.getTypeElement("java.util.Collection").asType());
+        TypeElement collTe = elems.getTypeElement("java.util.Collection");
+        if (collTe == null) {
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "java.util.Collection 심볼을 해석할 수 없습니다.", field);
+            return;
+        }
+        TypeMirror rhs = types.erasure(collTe.asType());
         if (!types.isAssignable(lhs, rhs)) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "@OneToMany 필드는 java.util.Collection의 서브타입이어야 합니다. field=" + field.getSimpleName(), field);
@@ -442,6 +448,13 @@ public class RelationshipHandler {
             return;
         }
 
+        try {
+            validateExplicitJoinColumns(joinColumns, ownerPks, field, "owner");
+            validateExplicitJoinColumns(inverseJoinColumns, targetPks, field, "target");
+        } catch (IllegalStateException ex) {
+            return;
+        }
+
         String ownerFkConstraint = Arrays.stream(joinColumns)
                 .map(JoinColumn::foreignKey).map(ForeignKey::name)
                 .filter(n -> n != null && !n.isEmpty()).findFirst().orElse(null);
@@ -449,8 +462,28 @@ public class RelationshipHandler {
                 .map(JoinColumn::foreignKey).map(ForeignKey::name)
                 .filter(n -> n != null && !n.isEmpty()).findFirst().orElse(null);
 
-        Map<String,String> ownerFkToPkMap = resolveJoinColumnMapping(joinColumns, ownerPks, ownerEntity.getTableName());
-        Map<String,String> targetFkToPkMap = resolveJoinColumnMapping(inverseJoinColumns, targetPks, targetEntity.getTableName());
+        Map<String,String> ownerFkToPkMap;
+        Map<String,String> targetFkToPkMap;
+        try {
+            ownerFkToPkMap = resolveJoinColumnMapping(joinColumns, ownerPks, ownerEntity.getTableName(), field, true);
+            targetFkToPkMap = resolveJoinColumnMapping(inverseJoinColumns, targetPks, targetEntity.getTableName(), field, false);
+        } catch (IllegalStateException ex) {
+            return;
+        }
+
+        // 3) 매핑 개수 최종 확인
+        if (ownerFkToPkMap.size() != ownerPks.size()) {
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "Owner join-columns could not be resolved to all PK columns. expected=" + ownerPks.size()
+                            + ", found=" + ownerFkToPkMap.size(), field);
+            return;
+        }
+        if (targetFkToPkMap.size() != targetPks.size()) {
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "Target join-columns could not be resolved to all PK columns. expected=" + targetPks.size()
+                            + ", found=" + targetFkToPkMap.size(), field);
+            return;
+        }
 
         JoinTableDetails details = new JoinTableDetails(
                 joinTableName, ownerFkToPkMap, targetFkToPkMap, ownerEntity, targetEntity,
@@ -460,7 +493,89 @@ public class RelationshipHandler {
         EntityModel joinTableEntity = createJoinTableEntity(details, ownerPks, targetPks);
         addRelationshipsToJoinTable(joinTableEntity, details);
 
+        // 1:N semantics: target FK set must be unique
+        addOneToManyJoinTableUnique(joinTableEntity, targetFkToPkMap);
+
         context.getSchemaModel().getEntities().putIfAbsent(joinTableEntity.getEntityName(), joinTableEntity);
+    }
+
+    private void validateExplicitJoinColumns(JoinColumn[] joinColumns, List<ColumnModel> pks,
+                                             VariableElement field, String sideLabel) {
+        if (pks.size() > 1 && joinColumns.length > 0) {
+            for (int i = 0; i < joinColumns.length; i++) {
+                JoinColumn jc = joinColumns[i];
+                if (jc.referencedColumnName() == null || jc.referencedColumnName().isEmpty()) {
+                    context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "Composite PK requires explicit referencedColumnName for all @" + sideLabel
+                                    + " JoinColumns (index " + i + ", pkCount = " + pks.size() + ", joinColumnsCount = " + joinColumns.length  + ").", field);
+                    throw new IllegalStateException("invalid joinColumns");
+                }
+            }
+        }
+    }
+
+    // 2) resolveJoinColumnMapping 강화: 중복 시 즉시 실패
+    private Map<String, String> resolveJoinColumnMapping(JoinColumn[] joinColumns,
+                                                         List<ColumnModel> referencedPks,
+                                                         String entityTableName,
+                                                         VariableElement field,
+                                                         boolean isOwnerSide) {
+        Map<String, String> mapping = new LinkedHashMap<>();
+        if (joinColumns == null || joinColumns.length == 0) {
+            referencedPks.forEach(pk -> {
+                String fk = context.getNaming().foreignKeyColumnName(entityTableName, pk.getColumnName());
+                if (mapping.containsKey(fk)) {
+                    String side = isOwnerSide ? "owner" : "target";
+                    context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "Duplicate FK column '" + fk + "' in join table mapping for " + entityTableName + " (side=" + side + ")" , field);
+                    throw new IllegalStateException("duplicate fk");
+                }
+                mapping.put(fk, pk.getColumnName());
+            });
+        } else {
+            Set<String> pkNames = referencedPks.stream().map(ColumnModel::getColumnName).collect(Collectors.toSet());
+            for (int i = 0; i < joinColumns.length; i++) {
+                JoinColumn jc = joinColumns[i];
+                String pkName = jc.referencedColumnName().isEmpty()
+                        ? referencedPks.get(i).getColumnName()
+                        : jc.referencedColumnName();
+                if (!pkNames.contains(pkName)) {
+                    context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "referencedColumnName '" + pkName + "' is not a primary key column of " + entityTableName + ".", field);
+                    throw new IllegalStateException("invalid referencedColumnName");
+                }
+                String fkName = jc.name().isEmpty()
+                        ? context.getNaming().foreignKeyColumnName(entityTableName, pkName)
+                        : jc.name();
+                if (mapping.containsKey(fkName)) {
+                    context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "Duplicate FK column '" + fkName + "' in join table mapping for " + entityTableName, field);
+                    throw new IllegalStateException("duplicate fk");
+                }
+                mapping.put(fkName, pkName);
+            }
+        }
+        return mapping;
+    }
+
+    // 4) 일대다 의미 보장: inverse FK 세트에 유니크 제약 추가
+    private void addOneToManyJoinTableUnique(EntityModel joinTableEntity,
+                                             Map<String,String> targetFkToPkMap) {
+        // 예: UniqueConstraintModel 은 프로젝트 모델에 맞게 조정
+        List<String> cols = new ArrayList<>(targetFkToPkMap.keySet());
+        cols.sort(Comparator.naturalOrder());
+        if (!cols.isEmpty()) {
+            String ucName = context.getNaming().uqName(joinTableEntity.getTableName(), cols);
+            ConstraintModel constraintModel = ConstraintModel.builder()
+                    .name(ucName)
+                    .type(ConstraintType.UNIQUE)
+                    .tableName(joinTableEntity.getTableName())
+                    .columns(cols)
+                    .build();
+            if (!joinTableEntity.getConstraints().containsKey(ucName)) {
+                joinTableEntity.getConstraints().put(ucName, constraintModel);
+            }
+        }
     }
 
     /**
@@ -512,6 +627,7 @@ public class RelationshipHandler {
                 : context.getNaming().joinTableName(ownerEntity.getTableName(), referencedEntity.getTableName());
 
         if (context.getSchemaModel().getEntities().containsKey(joinTableName)) {
+            // 이미 처리됨, 여기에서 유니크 처리를 추가로 해야 할 수도?
             return;
         }
 
@@ -541,8 +657,8 @@ public class RelationshipHandler {
                 .map(JoinColumn::foreignKey).map(ForeignKey::name)
                 .filter(n -> n != null && !n.isEmpty()).findFirst().orElse(null);
 
-        Map<String, String> ownerFkToPkMap = resolveJoinColumnMapping(joinColumns, ownerPks, ownerEntity.getTableName());
-        Map<String, String> inverseFkToPkMap = resolveJoinColumnMapping(inverseJoinColumns, referencedPks, referencedEntity.getTableName());
+        Map<String, String> ownerFkToPkMap = resolveJoinColumnMapping(joinColumns, ownerPks, ownerEntity.getTableName(), true);
+        Map<String, String> inverseFkToPkMap = resolveJoinColumnMapping(inverseJoinColumns, referencedPks, referencedEntity.getTableName(), false);
 
         JoinTableDetails details = new JoinTableDetails(joinTableName, ownerFkToPkMap, inverseFkToPkMap,
                 ownerEntity, referencedEntity, ownerFkConstraint, inverseFkConstraint);
@@ -553,7 +669,8 @@ public class RelationshipHandler {
         context.getSchemaModel().getEntities().putIfAbsent(joinTableEntity.getEntityName(), joinTableEntity);
     }
 
-    private Map<String, String> resolveJoinColumnMapping(JoinColumn[] joinColumns, List<ColumnModel> referencedPks, String entityTableName) {
+    private Map<String, String> resolveJoinColumnMapping(JoinColumn[] joinColumns, List<ColumnModel> referencedPks, String entityTableName, boolean isOwnerSide) {
+        String side = isOwnerSide ? "owner" : "target";
         Map<String, String> mapping = new LinkedHashMap<>();
         if (joinColumns == null || joinColumns.length == 0) {
             referencedPks.forEach(pk -> mapping.put(
@@ -571,7 +688,7 @@ public class RelationshipHandler {
                         : jc.name();
                 if (mapping.containsKey(fkName)) {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                            "Duplicate FK column '" + fkName + "' in join table mapping for " + entityTableName);
+                            "Duplicate FK column '" + fkName + "' in join table mapping for " + entityTableName + " (side=" + side + ")" , null);
                     continue;
                 }
                 mapping.put(fkName, pkName);

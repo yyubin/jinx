@@ -5,6 +5,7 @@ import org.jinx.context.Naming;
 import org.jinx.context.ProcessingContext;
 import org.jinx.model.*;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -1714,6 +1715,275 @@ class RelationshipHandlerTest {
 
         // 에러는 없어야 함
         verify(messager, never()).printMessage(eq(Diagnostic.Kind.ERROR), anyString(), eq(field));
+    }
+
+
+    private void mockJoinTableAnnotationCustom(
+            VariableElement field,
+            String tableName,
+            String[][] ownerJoinColumns,   // {name, referencedColumnName}
+            String[][] targetJoinColumns   // {name, referencedColumnName}
+    ) {
+        jakarta.persistence.JoinTable joinTable = mock(jakarta.persistence.JoinTable.class);
+        lenient().when(joinTable.name()).thenReturn(tableName);
+
+        jakarta.persistence.JoinColumn[] owner = new jakarta.persistence.JoinColumn[
+                ownerJoinColumns == null ? 0 : ownerJoinColumns.length];
+        for (int i = 0; i < owner.length; i++) {
+            String n = ownerJoinColumns[i][0];
+            String r = ownerJoinColumns[i][1];
+            jakarta.persistence.JoinColumn jc = mock(jakarta.persistence.JoinColumn.class);
+            lenient().when(jc.name()).thenReturn(n == null ? "" : n);
+            lenient().when(jc.referencedColumnName()).thenReturn(r == null ? "" : r);
+            jakarta.persistence.ForeignKey fk = mock(jakarta.persistence.ForeignKey.class);
+            lenient().when(fk.name()).thenReturn("");
+            lenient().when(jc.foreignKey()).thenReturn(fk);
+            owner[i] = jc;
+        }
+
+        jakarta.persistence.JoinColumn[] target = new jakarta.persistence.JoinColumn[
+                targetJoinColumns == null ? 0 : targetJoinColumns.length];
+        for (int i = 0; i < target.length; i++) {
+            String n = targetJoinColumns[i][0];
+            String r = targetJoinColumns[i][1];
+            jakarta.persistence.JoinColumn jc = mock(jakarta.persistence.JoinColumn.class);
+            lenient().when(jc.name()).thenReturn(n == null ? "" : n);
+            lenient().when(jc.referencedColumnName()).thenReturn(r == null ? "" : r);
+            jakarta.persistence.ForeignKey fk = mock(jakarta.persistence.ForeignKey.class);
+            lenient().when(fk.name()).thenReturn("");
+            lenient().when(jc.foreignKey()).thenReturn(fk);
+            target[i] = jc;
+        }
+
+        lenient().when(joinTable.joinColumns()).thenReturn(owner);
+        lenient().when(joinTable.inverseJoinColumns()).thenReturn(target);
+        lenient().when(field.getAnnotation(jakarta.persistence.JoinTable.class)).thenReturn(joinTable);
+    }
+
+    @Test
+    @DisplayName("복합 PK + 일부 JoinColumns + referencedColumnName 누락 → 에러 & 미생성")
+    void testOneToMany_JoinTable_CompositeOwner_MissingReferencedColumnName_ShouldError_NoJoinTable() {
+        VariableElement field = mockField("targets");
+        TypeElement ownerTypeElement = mockOwnerTypeElement(field);
+        mockOneToManyAnnotation(field);
+        mockCollectionFieldType(field, "com.example.Target");
+
+        // Owner 복합 PK 2개
+        ColumnModel ownerPk1 = ColumnModel.builder().columnName("id1").javaType("Long").isPrimaryKey(true).build();
+        ColumnModel ownerPk2 = ColumnModel.builder().columnName("id2").javaType("Long").isPrimaryKey(true).build();
+        ownerEntity.getColumns().put("id1", ownerPk1);
+        ownerEntity.getColumns().put("id2", ownerPk2);
+        when(context.findAllPrimaryKeyColumns(ownerEntity)).thenReturn(List.of(ownerPk1, ownerPk2));
+
+        // Target 단일 PK
+        ColumnModel targetPk = ColumnModel.builder().columnName("tid").javaType("Long").isPrimaryKey(true).build();
+        targetEntity.getColumns().put("tid", targetPk);
+        when(context.findAllPrimaryKeyColumns(targetEntity)).thenReturn(List.of(targetPk));
+
+        // @JoinTable: owner측은 2개 제공하되, 하나는 referencedColumnName 누락
+        mockJoinTableAnnotationCustom(field, "jt_missing_ref",
+                new String[][] { {"o_fk1", "id1"}, {"o_fk2", ""} },  // 두 번째가 누락!
+                new String[][] { {"t_fk", "tid"} }
+        );
+
+        handler.resolveRelationships(ownerTypeElement, ownerEntity);
+
+        verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
+                contains("Composite PK requires explicit referencedColumnName"),
+                eq(field));
+        assertFalse(entities.containsKey("jt_missing_ref"), "조인 테이블이 생성되면 안 됨");
+    }
+
+    @Test
+    @DisplayName("FK 이름 중복 (Owner 측) → 에러 & 미생성")
+    void testOneToMany_JoinTable_DuplicateOwnerFkNames_ShouldError_NoJoinTable() {
+        VariableElement field = mockField("targets");
+        TypeElement ownerTypeElement = mockOwnerTypeElement(field);
+        mockOneToManyAnnotation(field);
+        mockCollectionFieldType(field, "com.example.Target");
+
+        // Owner 복합 PK 2개
+        ColumnModel ownerPk1 = ColumnModel.builder().columnName("id1").javaType("Long").isPrimaryKey(true).build();
+        ColumnModel ownerPk2 = ColumnModel.builder().columnName("id2").javaType("Long").isPrimaryKey(true).build();
+        ownerEntity.getColumns().put("id1", ownerPk1);
+        ownerEntity.getColumns().put("id2", ownerPk2);
+        when(context.findAllPrimaryKeyColumns(ownerEntity)).thenReturn(List.of(ownerPk1, ownerPk2));
+
+        // Target 단일 PK
+        ColumnModel targetPk = ColumnModel.builder().columnName("tid").javaType("Long").isPrimaryKey(true).build();
+        targetEntity.getColumns().put("tid", targetPk);
+        when(context.findAllPrimaryKeyColumns(targetEntity)).thenReturn(List.of(targetPk));
+
+        // Owner측 두 FK 이름을 동일하게(dup) → 중복 유도
+        mockJoinTableAnnotationCustom(field, "jt_dup_owner",
+                new String[][] { {"dup", "id1"}, {"dup", "id2"} }, // 이름 중복
+                new String[][] { {"t_fk", "tid"} }
+        );
+
+        handler.resolveRelationships(ownerTypeElement, ownerEntity);
+
+        verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
+                contains("Duplicate FK column 'dup'"),
+                eq(field));
+        assertFalse(entities.containsKey("jt_dup_owner"));
+    }
+
+    @Test
+    @DisplayName("FK 이름 중복 (Target 측) → 에러 & 미생성")
+    void testOneToMany_JoinTable_DuplicateTargetFkNames_ShouldError_NoJoinTable() {
+        VariableElement field = mockField("targets");
+        TypeElement ownerTypeElement = mockOwnerTypeElement(field);
+        mockOneToManyAnnotation(field);
+        mockCollectionFieldType(field, "com.example.Target");
+
+        // Owner 단일 PK
+        ColumnModel ownerPk = ColumnModel.builder().columnName("oid").javaType("Long").isPrimaryKey(true).build();
+        ownerEntity.getColumns().put("oid", ownerPk);
+        when(context.findAllPrimaryKeyColumns(ownerEntity)).thenReturn(List.of(ownerPk));
+
+        // Target 복합 PK 2개
+        ColumnModel targetPk1 = ColumnModel.builder().columnName("id1").javaType("Long").isPrimaryKey(true).build();
+        ColumnModel targetPk2 = ColumnModel.builder().columnName("id2").javaType("Long").isPrimaryKey(true).build();
+        targetEntity.getColumns().put("id1", targetPk1);
+        targetEntity.getColumns().put("id2", targetPk2);
+        when(context.findAllPrimaryKeyColumns(targetEntity)).thenReturn(List.of(targetPk1, targetPk2));
+
+        // Target 측 두 FK 이름을 동일하게(dup) → 중복 유도
+        mockJoinTableAnnotationCustom(field, "jt_dup_target",
+                new String[][] { {"o_fk", "oid"} },
+                new String[][] { {"dup", "id1"}, {"dup", "id2"} } // 이름 중복
+        );
+
+        handler.resolveRelationships(ownerTypeElement, ownerEntity);
+
+        verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
+                contains("Duplicate FK column 'dup'"),
+                eq(field));
+        assertFalse(entities.containsKey("jt_dup_target"));
+    }
+
+    @Test
+    @DisplayName("기본 네이밍 경로에서 FK 이름 중복 → 에러 & 미생성")
+    void testOneToMany_JoinTable_DefaultNaming_Duplicate_ShouldError() {
+        VariableElement field = mockField("targets");
+        TypeElement ownerTypeElement = mockOwnerTypeElement(field);
+        mockOneToManyAnnotation(field);
+        mockCollectionFieldType(field, "com.example.Target");
+
+        // Owner 복합 PK 2개
+        ColumnModel ownerPk1 = ColumnModel.builder().columnName("id1").javaType("Long").isPrimaryKey(true).build();
+        ColumnModel ownerPk2 = ColumnModel.builder().columnName("id2").javaType("Long").isPrimaryKey(true).build();
+        ownerEntity.getColumns().put("id1", ownerPk1);
+        ownerEntity.getColumns().put("id2", ownerPk2);
+        when(context.findAllPrimaryKeyColumns(ownerEntity)).thenReturn(List.of(ownerPk1, ownerPk2));
+
+        // Target 단일 PK
+        ColumnModel targetPk = ColumnModel.builder().columnName("tid").javaType("Long").isPrimaryKey(true).build();
+        targetEntity.getColumns().put("tid", targetPk);
+        when(context.findAllPrimaryKeyColumns(targetEntity)).thenReturn(List.of(targetPk));
+
+        // @JoinTable 명시: joinColumns / inverseJoinColumns 모두 비움 → 기본 네이밍 경로
+        mockJoinTableAnnotation(field, "jt_default_dup", new String[]{}, new String[]{});
+
+        // 네이밍 전략을 "항상 같은 이름"을 반환하도록 설정하여 중복 유도
+        when(namingStrategy.foreignKeyColumnName(eq(ownerEntity.getTableName()), anyString()))
+                .thenReturn("dup_fk");
+        lenient().when(namingStrategy.foreignKeyColumnName(eq(targetEntity.getTableName()), anyString()))
+                .thenReturn("t_fk"); // target은 굳이 중복 유도 안 해도 됨
+
+        handler.resolveRelationships(ownerTypeElement, ownerEntity);
+
+        verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
+                contains("Duplicate FK column 'dup_fk'"),
+                eq(field));
+        assertFalse(entities.containsKey("jt_default_dup"));
+    }
+
+    @Test
+    @DisplayName("referencedColumnName가 PK 목록에 없는 이름 → 에러 & 미생성")
+    void testOneToMany_JoinTable_ReferencedColumnNameNotInPk_ShouldError_NoJoinTable() {
+        VariableElement field = mockField("targets");
+        TypeElement ownerTypeElement = mockOwnerTypeElement(field);
+        mockOneToManyAnnotation(field);
+        mockCollectionFieldType(field, "com.example.Target");
+
+        // Owner 단일 PK
+        ColumnModel ownerPk = ColumnModel.builder().columnName("oid").javaType("Long").isPrimaryKey(true).build();
+        ownerEntity.getColumns().put("oid", ownerPk);
+        when(context.findAllPrimaryKeyColumns(ownerEntity)).thenReturn(List.of(ownerPk));
+
+        // Target 복합 PK 2개: id1, id2
+        ColumnModel targetPk1 = ColumnModel.builder().columnName("id1").javaType("Long").isPrimaryKey(true).build();
+        ColumnModel targetPk2 = ColumnModel.builder().columnName("id2").javaType("Long").isPrimaryKey(true).build();
+        targetEntity.getColumns().put("id1", targetPk1);
+        targetEntity.getColumns().put("id2", targetPk2);
+        when(context.findAllPrimaryKeyColumns(targetEntity)).thenReturn(List.of(targetPk1, targetPk2));
+
+        // Target 측 JoinColumns 중 하나의 referencedColumnName을 존재하지 않는 이름으로
+        mockJoinTableAnnotationCustom(field, "jt_bad_ref",
+                new String[][] { {"o_fk", "oid"} },
+                new String[][] { {"t_fk1", "id1"}, {"t_fk2", "NO_SUCH_PK"} } // 존재하지 않음
+        );
+
+        handler.resolveRelationships(ownerTypeElement, ownerEntity);
+
+        verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
+                anyString(), // 메시지에 존재하지 않는 referencedColumnName 언급이 포함되도록 프로덕션 코드 작성 권장
+                eq(field));
+        assertFalse(entities.containsKey("jt_bad_ref"));
+    }
+
+    @Test
+    @DisplayName("유니크 제약 생성 확인: UNIQUE, 정렬 일치, 재실행 시 중복 추가 없음")
+    void testOneToMany_JoinTable_AddsUniqueConstraintOnTarget_NoDuplicateOnReRun() {
+        VariableElement field = mockField("targets");
+        TypeElement ownerTypeElement = mockOwnerTypeElement(field);
+        mockOneToManyAnnotation(field);
+        mockCollectionFieldType(field, "com.example.Target");
+
+        // Owner 단일 PK
+        ColumnModel ownerPk = ColumnModel.builder().columnName("oid").javaType("Long").isPrimaryKey(true).build();
+        ownerEntity.getColumns().put("oid", ownerPk);
+        when(context.findAllPrimaryKeyColumns(ownerEntity)).thenReturn(List.of(ownerPk));
+
+        // Target 복합 PK 2개
+        ColumnModel targetPk1 = ColumnModel.builder().columnName("id2").javaType("Long").isPrimaryKey(true).build();
+        ColumnModel targetPk2 = ColumnModel.builder().columnName("id1").javaType("Long").isPrimaryKey(true).build(); // 순서 의도적으로 뒤섞음
+        targetEntity.getColumns().put("id1", targetPk2);
+        targetEntity.getColumns().put("id2", targetPk1);
+        when(context.findAllPrimaryKeyColumns(targetEntity)).thenReturn(List.of(targetPk2, targetPk1));
+
+        // @JoinTable 지정: owner/target 측 모두 비워 기본 네이밍 사용
+        mockJoinTableAnnotation(field, "owner_target_join", new String[]{}, new String[]{});
+
+        // uqName 모킹(정렬된 컬럼 목록을 받는다고 가정)
+        when(namingStrategy.uqName(eq("owner_target_join"), anyList()))
+                .thenReturn("uq_owner_target_join_target_sorted");
+
+        // When: 두 번 호출(중복 방지 검증)
+        handler.resolveRelationships(ownerTypeElement, ownerEntity);
+        handler.resolveRelationships(ownerTypeElement, ownerEntity);
+
+        assertTrue(entities.containsKey("owner_target_join"));
+        EntityModel join = entities.get("owner_target_join");
+
+        // constraints에 UNIQUE 하나만 존재해야 함
+        assertNotNull(join.getConstraints());
+        assertEquals(1, join.getConstraints().size(), "유니크 제약은 한 번만 추가되어야 함");
+
+        ConstraintModel uc = join.getConstraints().values().iterator().next();
+        assertEquals(ConstraintType.UNIQUE, uc.getType());
+
+        // 대상 컬럼은 target FK 컬럼들(정렬되어 있어야 함)
+        List<String> cols = new ArrayList<>(uc.getColumns());
+        List<String> expected = new ArrayList<>();
+        // 기본 네이밍: foreignKeyColumnName(target_table, pk)
+        expected.add(namingStrategy.foreignKeyColumnName(targetEntity.getTableName(), "id1"));
+        expected.add(namingStrategy.foreignKeyColumnName(targetEntity.getTableName(), "id2"));
+        expected.sort(Comparator.naturalOrder());
+        cols.sort(Comparator.naturalOrder());
+
+        assertEquals(expected, cols, "유니크 제약 컬럼 정렬/구성이 기대와 일치해야 함");
     }
 
 
