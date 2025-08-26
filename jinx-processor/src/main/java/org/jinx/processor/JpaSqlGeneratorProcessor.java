@@ -12,7 +12,10 @@ import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -70,13 +73,19 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 Converter converter = element.getAnnotation(Converter.class);
                 if (converter.autoApply()) {
                     TypeElement converterType = (TypeElement) element;
-                    // Extract target Java type from AttributeConverter interface
-                    TypeMirror superType = converterType.getInterfaces().stream()
-                            .filter(i -> i.toString().startsWith("jakarta.persistence.AttributeConverter"))
-                            .findFirst().orElse(null);
-                    if (superType instanceof DeclaredType declaredType) {
-                        TypeMirror targetType = declaredType.getTypeArguments().get(0);
-                        context.getAutoApplyConverters().put(targetType.toString(), converterType.getQualifiedName().toString());
+
+                    Optional<TypeMirror> attrTypeOpt = findAttributeConverterAttributeType(converterType);
+
+                    if (attrTypeOpt.isPresent()) {
+                        String targetTypeName = attrTypeOpt.get().toString();
+                        context.getAutoApplyConverters().put(targetTypeName, converterType.getQualifiedName().toString());
+                    } else {
+                        processingEnv.getMessager().printMessage(
+                                Diagnostic.Kind.WARNING,
+                                "@Converter(autoApply=true) cannot resolve AttributeConverter<T, ?> target type across hierarchy: "
+                                        + converterType.getQualifiedName(),
+                                converterType
+                        );
                     }
                 }
             }
@@ -124,13 +133,44 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 inheritanceHandler.resolveInheritance(typeElement, entityModel);
             }
             // 2. 관계 해석
-            for (EntityModel entityModel : context.getSchemaModel().getEntities().values()) {
-                if (!entityModel.isValid()) continue;
-                TypeElement typeElement = context.getElementUtils().getTypeElement(entityModel.getEntityName());
-                relationshipHandler.resolveRelationships(typeElement, entityModel);
+            for (EntityModel em : context.getSchemaModel().getEntities().values()) {
+                if (!em.isValid()) continue;
+                TypeElement te = context.getElementUtils().getTypeElement(em.getEntityName());
+                if (te == null) {
+                    // 증분 컴파일/다중 라운드에서 드물게 null 가능 → 스킵/경고 중 택1
+                    context.getMessager().printMessage(
+                            Diagnostic.Kind.WARNING,
+                            "Skip relationship resolution: cannot resolve TypeElement for " + em.getEntityName()
+                    );
+                    continue;
+                }
+                relationshipHandler.resolveRelationships(te, em);
             }
 
-            // 3. Deferred FK (JOINED 상속 관련) 처리
+            // 3. 최종 PK 검증 (2차 패스)
+            for (Map.Entry<String, EntityModel> e : context.getSchemaModel().getEntities().entrySet()) {
+                EntityModel em = e.getValue();
+                if (!em.isValid()) continue;
+                if (context.findAllPrimaryKeyColumns(em).isEmpty()) {
+                    // FQN을 사용하여 TypeElement 조회
+                    TypeElement te = context.getElementUtils().getTypeElement(e.getKey());
+                    if (te != null) {
+                        context.getMessager().printMessage(
+                                Diagnostic.Kind.ERROR,
+                                "Entity '" + e.getKey() + "' must have a primary key.",
+                                te
+                        );
+                    } else {
+                        context.getMessager().printMessage(
+                                Diagnostic.Kind.ERROR,
+                                "Entity '" + e.getKey() + "' must have a primary key."
+                        );
+                    }
+                    em.setValid(false);
+                }
+            }
+
+            // 4. Deferred FK (JOINED 상속 관련) 처리
             // 최대 5회 시도
             int maxPass = 5;
             for (int pass = 0; pass < maxPass && !context.getDeferredEntities().isEmpty(); pass++) {
@@ -148,5 +188,36 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
     public void processRetryTasks() {
         entityHandler.runDeferredJoinedFks();
 
+    }
+
+    private Optional<TypeMirror> findAttributeConverterAttributeType(TypeElement converterType) {
+        Types types = processingEnv.getTypeUtils();
+        Elements elements = processingEnv.getElementUtils();
+
+        TypeElement acElement = elements.getTypeElement("jakarta.persistence.AttributeConverter");
+        if (acElement == null) return Optional.empty();
+        TypeMirror acErasure = types.erasure(acElement.asType());
+
+        Deque<TypeMirror> q = new ArrayDeque<>();
+        TypeMirror root = converterType != null ? converterType.asType() : null;
+        if (root != null) q.add(root);
+
+        while (!q.isEmpty()) {
+            TypeMirror cur = q.poll();
+            if (!(cur instanceof DeclaredType dt)) continue;
+
+            if (types.isSameType(types.erasure(dt), acErasure)) {
+                List<? extends TypeMirror> args = dt.getTypeArguments();
+                if (args.size() == 2) return Optional.of(args.get(0));
+            }
+
+            Element el = dt.asElement();
+            if (el instanceof TypeElement te) {
+                for (TypeMirror itf : te.getInterfaces()) q.add(itf);
+                TypeMirror sc = te.getSuperclass();
+                if (sc != null && sc.getKind() != TypeKind.NONE) q.add(sc);
+            }
+        }
+        return Optional.empty();
     }
 }

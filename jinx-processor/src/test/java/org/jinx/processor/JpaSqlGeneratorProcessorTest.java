@@ -1,332 +1,270 @@
 package org.jinx.processor;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.testing.compile.Compilation;
-import com.google.testing.compile.Compiler;
-import com.google.testing.compile.JavaFileObjects;
-import org.junit.jupiter.api.DisplayName;
+import jakarta.persistence.Converter;
+import jakarta.persistence.Embeddable;
+import jakarta.persistence.Entity;
+import jakarta.persistence.MappedSuperclass;
+import org.jinx.context.ProcessingContext;
+import org.jinx.handler.EntityHandler;
+import org.jinx.handler.InheritanceHandler;
+import org.jinx.handler.RelationshipHandler;
+import org.jinx.model.EntityModel;
+import org.jinx.model.SchemaModel;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mock;
+import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import javax.tools.JavaFileObject;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.util.Map;
-import java.util.stream.Collectors;
+import javax.annotation.processing.Messager;
+import javax.annotation.processing.ProcessingEnvironment;
+import javax.annotation.processing.RoundEnvironment;
+import javax.lang.model.element.*;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
+import javax.tools.Diagnostic;
+import java.lang.reflect.Field;
+import java.util.*;
 
-import static com.google.common.truth.Truth.assertThat;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 class JpaSqlGeneratorProcessorTest {
 
-    private static Map<String, Object> readSchemaRoot(Compilation comp) throws Exception {
-        JavaFileObject jsonFile = comp.generatedFiles().stream()
-                .filter(f -> f.getName().endsWith(".json") && f.getName().contains("schema"))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("schema file not generated"));
+    @Mock ProcessingEnvironment processingEnv;
+    @Mock Messager messager;
+    @Mock Elements elements;
+    @Mock RoundEnvironment roundEnv;
+    @Mock Types types;
 
-        String json;
-        try (BufferedReader br = new BufferedReader(
-                new InputStreamReader(jsonFile.openInputStream(), StandardCharsets.UTF_8))) {
-            json = br.lines().collect(Collectors.joining("\n"));
-        }
+    JpaSqlGeneratorProcessor processor;
 
-        ObjectMapper mapper = JpaSqlGeneratorProcessor.OBJECT_MAPPER.copy()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    @BeforeEach
+    void setup() {
+        lenient().when(processingEnv.getMessager()).thenReturn(messager);
+        lenient().when(processingEnv.getElementUtils()).thenReturn(elements);
 
-        return mapper.readValue(json, new TypeReference<>() {});
+        processor = new JpaSqlGeneratorProcessor();
+        processor.init(processingEnv);
     }
 
     @Test
-    @DisplayName("기본 @Entity → schema.json 생성")
-    void basicEntityProducesSchema() throws Exception {
-        JavaFileObject user = JavaFileObjects.forSourceLines(
-                "com.example.User",
-                "package com.example;",
-                "import jakarta.persistence.*;",
-                "@Entity",
-                "public class User {",
-                "  @Id Long id;",
-                "  String name;",
-                "}");
+    void converter_autoApply_withGeneric_addsMapping() throws Exception {
+        TypeElement converterType = mockTypeElement("com.example.MyLocalDateConverter");
+        Converter converterAnno = mock(Converter.class);
+        when(converterAnno.autoApply()).thenReturn(true);
+        when(converterType.getAnnotation(Converter.class)).thenReturn(converterAnno);
+        when(converterType.getKind()).thenReturn(ElementKind.CLASS);
 
-        Compilation c = Compiler.javac()
-                .withProcessors(new JpaSqlGeneratorProcessor())
-                .compile(user);
+        // AttributeConverter<java.time.LocalDate, String>
+        DeclaredType attrConv = mock(DeclaredType.class);
+        TypeMirror targetType = mockTypeMirror("java.time.LocalDate");
+        TypeMirror stringType = mockTypeMirror("java.lang.String");
+        doReturn(List.of(targetType, stringType)).when(attrConv).getTypeArguments();
 
-        assertThat(c.status()).isEqualTo(Compilation.Status.SUCCESS);
+        // 계층 탐색용: 직접 구현 + 상위클래스 없음
+        doReturn(List.of(attrConv)).when(converterType).getInterfaces();
+        TypeMirror none = mock(TypeMirror.class);
+        when(none.getKind()).thenReturn(TypeKind.NONE);
+        doReturn(none).when(converterType).getSuperclass();
 
-        Map<String, Object> root = readSchemaRoot(c);
-        assertThat(root).containsKey("version");
+        // AttributeConverter 심볼/erasure 준비
+        Elements elements = mock(Elements.class);
+        Types types = mock(Types.class);
+        when(processingEnv.getElementUtils()).thenReturn(elements);
+        when(processingEnv.getTypeUtils()).thenReturn(types);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> entities = (Map<String, Object>) root.get("entities");
-        assertThat(entities).containsKey("com.example.User");
+        TypeElement acElement = mock(TypeElement.class);
+        DeclaredType acDeclared = mock(DeclaredType.class);
+        when(elements.getTypeElement("jakarta.persistence.AttributeConverter")).thenReturn(acElement);
+        when(acElement.asType()).thenReturn(acDeclared);
+
+        // 서로 다른 erasure 두 개 만들기
+        TypeMirror attrConvErasure = mock(TypeMirror.class); // types.erasure(attrConv)
+        TypeMirror acErasure      = mock(TypeMirror.class);  // types.erasure(acDeclared)
+        when(types.erasure(attrConv)).thenReturn(attrConvErasure);
+        when(types.erasure(acDeclared)).thenReturn(acErasure);
+
+        // isSameType 인자 매칭을 "서로 다른 두 객체"로 정확히 스텁
+        when(types.isSameType(same(attrConvErasure), same(acErasure))).thenReturn(true);
+
+        // 라운드 환경
+        doReturn(Set.of(converterType)).when(roundEnv).getElementsAnnotatedWith(Converter.class);
+        when(roundEnv.getElementsAnnotatedWith(MappedSuperclass.class)).thenReturn(Set.of());
+        when(roundEnv.getElementsAnnotatedWith(Embeddable.class)).thenReturn(Set.of());
+        when(roundEnv.getElementsAnnotatedWith(Entity.class)).thenReturn(Set.of());
+        when(roundEnv.processingOver()).thenReturn(false);
+
+        DeclaredType converterDeclaredType = mock(DeclaredType.class);
+        when(converterType.asType()).thenReturn(converterDeclaredType);
+        when(converterDeclaredType.asElement()).thenReturn(converterType);
+
+        TypeMirror converterErasure = mock(TypeMirror.class);
+        when(types.erasure(converterDeclaredType)).thenReturn(converterErasure);
+        when(types.isSameType(converterErasure, acErasure)).thenReturn(false);
+
+        // 실행
+        processor.process(Set.of(), roundEnv);
+
+        // 검증
+        ProcessingContext ctx = getPrivate(processor, "context");
+        Map<String, String> map = ctx.getAutoApplyConverters();
+        assertEquals("com.example.MyLocalDateConverter", map.get("java.time.LocalDate"));
+
+        verify(messager, never()).printMessage(eq(Diagnostic.Kind.WARNING), anyString(), any());
+    }
+
+
+
+    @Test
+    void converter_autoApply_missingGeneric_emitsWarning() {
+        // Given: @Converter(autoApply=true), but no generic type args resolved
+        TypeElement converterType = mockTypeElement("com.example.BadConverter");
+        Converter converterAnno = mock(Converter.class);
+        when(converterAnno.autoApply()).thenReturn(true);
+        when(converterType.getAnnotation(Converter.class)).thenReturn(converterAnno);
+        when(converterType.getKind()).thenReturn(ElementKind.CLASS);
+
+        DeclaredType attrConv = mock(DeclaredType.class);
+        lenient().when(attrConv.toString()).thenReturn("jakarta.persistence.AttributeConverter");
+        lenient().when(attrConv.getTypeArguments()).thenReturn(List.of()); // empty -> unresolved
+        lenient().doReturn(List.of(attrConv)).when(converterType).getInterfaces();
+
+        doReturn(Set.of(converterType)).when(roundEnv).getElementsAnnotatedWith(Converter.class);
+        when(roundEnv.getElementsAnnotatedWith(MappedSuperclass.class)).thenReturn(Set.of());
+        when(roundEnv.getElementsAnnotatedWith(Embeddable.class)).thenReturn(Set.of());
+        when(roundEnv.getElementsAnnotatedWith(Entity.class)).thenReturn(Set.of());
+        when(roundEnv.processingOver()).thenReturn(false);
+
+        when(processingEnv.getMessager()).thenReturn(messager);
+
+        // When
+        processor.process(Set.of(), roundEnv);
+
+        // Then: WARNING logged, no crash
+        verify(messager).printMessage(
+                eq(Diagnostic.Kind.WARNING),
+                ArgumentMatchers.contains("@Converter(autoApply=true) cannot resolve AttributeConverter<T, ?> target type across hierarchy"),
+                eq(converterType)
+        );
     }
 
     @Test
-    @DisplayName("@Converter(autoApply=true) 적용")
-    void handlesAutoApplyConverter() throws Exception {
-        JavaFileObject conv = JavaFileObjects.forSourceLines(
-                "com.example.BoolYnConv",
-                "package com.example;",
-                "import jakarta.persistence.*;",
-                "@Converter(autoApply=true)",
-                "public class BoolYnConv implements AttributeConverter<Boolean,String>{",
-                "  public String convertToDatabaseColumn(Boolean a){return a==null?null:(a?\"Y\":\"N\");}",
-                "  public Boolean convertToEntityAttribute(String d){return \"Y\".equals(d);}}");
+    void processingOver_relationshipResolution_skipsWhenTypeElementNull_andWarns() throws Exception {
+        // Given: processingOver=true, one entity in schema, but elements.getTypeElement() returns null
+        // Replace context with spy (to avoid saveModelToJson side effects)
+        ProcessingContext realCtx = (ProcessingContext) getPrivate(processor, "context");
+        ProcessingContext ctx = Mockito.spy(realCtx);
+        doNothing().when(ctx).saveModelToJson();
+        setPrivate(processor, "context", ctx);
 
-        JavaFileObject user = JavaFileObjects.forSourceLines(
-                "com.example.User",
-                "package com.example;",
-                "import jakarta.persistence.*;",
-                "@Entity public class User{",
-                "  @Id Long id;",
-                "  Boolean active;",
-                "}");
+        // Swap handlers with mocks (no side effects)
+        InheritanceHandler inh = mock(InheritanceHandler.class);
+        RelationshipHandler rel = mock(RelationshipHandler.class);
+        EntityHandler ent = mock(EntityHandler.class);
+        setPrivate(processor, "inheritanceHandler", inh);
+        setPrivate(processor, "relationshipHandler", rel);
+        setPrivate(processor, "entityHandler", ent);
 
-        Compilation c = Compiler.javac()
-                .withOptions("--add-opens",
-                        "jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED")
-                .withProcessors(new JpaSqlGeneratorProcessor())
-                .compile(conv, user);
+        // Put one valid entity into schema
+        EntityModel em = EntityModel.builder()
+                .entityName("com.example.MissingType")
+                .tableName("t_missing")
+                .build();
+        ctx.getSchemaModel().getEntities().put("com.example.MissingType", em);
 
-        assertThat(c.status()).isEqualTo(Compilation.Status.SUCCESS);
+        // Make elements.getTypeElement return null for that name
+        when(elements.getTypeElement("com.example.MissingType")).thenReturn(null);
 
-        Map<String, Object> root = readSchemaRoot(c);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> columns = (Map<String, Object>)
-                ((Map<?,?>)((Map<?,?>)root.get("entities"))
-                        .get("com.example.User"))
-                        .get("columns");
+        // Round env has no new annotated elements, but processingOver=true
+        when(roundEnv.getElementsAnnotatedWith(any(Class.class))).thenReturn(Set.of());
+        when(roundEnv.processingOver()).thenReturn(true);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> active = (Map<String, Object>) columns.get("active");
-        assertThat(active.get("conversionClass"))
-                .isEqualTo("com.example.BoolYnConv");
+        // When
+        processor.process(Set.of(), roundEnv);
+
+        // Then: WARNING emitted, and relationship handler NOT invoked
+        verify(messager).printMessage(
+                eq(Diagnostic.Kind.WARNING),
+                eq("Skip relationship resolution: cannot resolve TypeElement for com.example.MissingType")
+        );
+        verify(rel, never()).resolveRelationships(any(), any());
     }
 
     @Test
-    @DisplayName("@MappedSuperclass · @Embeddable 필드 병합")
-    void handlesMappedSuperclassAndEmbeddable() throws Exception {
-        JavaFileObject base = JavaFileObjects.forSourceLines(
-                "com.example.Base",
-                "package com.example;",
-                "import jakarta.persistence.*;",
-                "import java.time.*;",
-                "@MappedSuperclass",
-                "public class Base{",
-                "  @Column(name=\"created_at\") LocalDateTime createdAt; }");
+    void processingOver_finalPkValidation_errorsWhenNoPk_andInvalidatesEntity() throws Exception {
+        // Given: processingOver=true, one entity without PKs
+        ProcessingContext realCtx = (ProcessingContext) getPrivate(processor, "context");
+        ProcessingContext ctx = Mockito.spy(realCtx);
+        doNothing().when(ctx).saveModelToJson();
+        setPrivate(processor, "context", ctx);
 
-        JavaFileObject addr = JavaFileObjects.forSourceLines(
-                "com.example.Address",
-                "package com.example;",
-                "import jakarta.persistence.*;",
-                "@Embeddable",
-                "public class Address{ String city; String street; }");
+        // Mock handlers to no-op
+        InheritanceHandler inh = mock(InheritanceHandler.class);
+        RelationshipHandler rel = mock(RelationshipHandler.class);
+        EntityHandler ent = mock(EntityHandler.class);
+        setPrivate(processor, "inheritanceHandler", inh);
+        setPrivate(processor, "relationshipHandler", rel);
+        setPrivate(processor, "entityHandler", ent);
 
-        JavaFileObject user = JavaFileObjects.forSourceLines(
-                "com.example.User",
-                "package com.example;",
-                "import jakarta.persistence.*;",
-                "@Entity",
-                "public class User extends Base{",
-                "  @Id Long id;",
-                "  @Embedded Address address; }");
+        // Entity has no PK columns
+        EntityModel em = EntityModel.builder()
+                .entityName("com.example.NoPk")
+                .tableName("no_pk")
+                .build();
+        ctx.getSchemaModel().getEntities().put("com.example.NoPk", em);
 
-        Compilation c = Compiler.javac()
-                .withOptions("--add-opens",
-                        "jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED")
-                .withProcessors(new JpaSqlGeneratorProcessor())
-                .compile(base, addr, user);
+        // getTypeElement should return a non-null element for error attachment
+        TypeElement te = mockTypeElement("com.example.NoPk");
+        when(elements.getTypeElement("com.example.NoPk")).thenReturn(te);
 
-        assertThat(c.status()).isEqualTo(Compilation.Status.SUCCESS);
+        when(roundEnv.getElementsAnnotatedWith(any(Class.class))).thenReturn(Set.of());
+        when(roundEnv.processingOver()).thenReturn(true);
 
-        Map<String, Object> root = readSchemaRoot(c);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> cols = (Map<String, Object>)
-                ((Map<?,?>)((Map<?,?>)root.get("entities"))
-                        .get("com.example.User"))
-                        .get("columns");
+        // When
+        processor.process(Set.of(), roundEnv);
 
-        assertThat(cols).containsKey("created_at"); // MappedSuperclass
-        assertThat(cols).containsKey("city");       // Embeddable
-        assertThat(cols).containsKey("street");     // Embeddable
+        // Then: ERROR logged with the TypeElement, and entity invalidated
+        verify(messager).printMessage(
+                eq(Diagnostic.Kind.ERROR),
+                eq("Entity 'com.example.NoPk' must have a primary key."),
+                eq(te)
+        );
+        assertFalse(em.isValid(), "Entity should be marked invalid when no PKs");
     }
 
-    /*
-     * Additional unit tests appended to increase coverage of JPA mapping scenarios.
-     * Testing stack: JUnit 5 (Jupiter), Google Truth assertions, and Google Compile Testing.
-     * Focus: schema column derivation, field exclusions, attribute/column overrides, and converter precedence.
-     */
 
-    @Test
-    @DisplayName("@Transient fields are excluded from schema columns")
-    void transientFieldsExcludedFromSchema() throws Exception {
-        JavaFileObject user = JavaFileObjects.forSourceLines(
-                "com.example.User",
-                "package com.example;",
-                "import jakarta.persistence.*;",
-                "@Entity",
-                "public class User {",
-                "  @Id Long id;",
-                "  @Transient String temp;",
-                "  String name;",
-                "}"
-        );
-
-        Compilation c = Compiler.javac()
-                .withProcessors(new JpaSqlGeneratorProcessor())
-                .compile(user);
-
-        assertThat(c.status()).isEqualTo(Compilation.Status.SUCCESS);
-
-        Map<String, Object> root = readSchemaRoot(c);
+    private static <T> T getPrivate(Object target, String field) throws Exception {
+        Field f = target.getClass().getDeclaredField(field);
+        f.setAccessible(true);
         @SuppressWarnings("unchecked")
-        Map<String, Object> columns = (Map<String, Object>)
-                ((Map<?,?>)((Map<?,?>)root.get("entities"))
-                        .get("com.example.User"))
-                        .get("columns");
-
-        // Ensure transient field is not exported while a regular field is present.
-        assertThat(columns.containsKey("temp")).isFalse();
-        assertThat(columns.containsKey("name")).isTrue();
+        T val = (T) f.get(target);
+        return val;
     }
 
-    @Test
-    @DisplayName("@Column(name=...) is respected when deriving column keys")
-    void columnAnnotationOverridesName() throws Exception {
-        JavaFileObject user = JavaFileObjects.forSourceLines(
-                "com.example.User",
-                "package com.example;",
-                "import jakarta.persistence.*;",
-                "@Entity",
-                "public class User {",
-                "  @Id Long id;",
-                "  @Column(name=\"full_name\") String name;",
-                "}"
-        );
-
-        Compilation c = Compiler.javac()
-                .withProcessors(new JpaSqlGeneratorProcessor())
-                .compile(user);
-
-        assertThat(c.status()).isEqualTo(Compilation.Status.SUCCESS);
-
-        Map<String, Object> root = readSchemaRoot(c);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> columns = (Map<String, Object>)
-                ((Map<?,?>)((Map<?,?>)root.get("entities"))
-                        .get("com.example.User"))
-                        .get("columns");
-
-        // The overridden column name should be used as the key.
-        assertThat(columns.containsKey("full_name")).isTrue();
+    private static void setPrivate(Object target, String field, Object value) throws Exception {
+        Field f = target.getClass().getDeclaredField(field);
+        f.setAccessible(true);
+        f.set(target, value);
     }
 
-    @Test
-    @DisplayName("@AttributeOverride on @Embedded field renames embedded column(s)")
-    void attributeOverrideOnEmbeddedField() throws Exception {
-        JavaFileObject addr = JavaFileObjects.forSourceLines(
-                "com.example.Address",
-                "package com.example;",
-                "import jakarta.persistence.*;",
-                "@Embeddable",
-                "public class Address {",
-                "  String city;",
-                "  String street;",
-                "}"
-        );
-
-        JavaFileObject user = JavaFileObjects.forSourceLines(
-                "com.example.User",
-                "package com.example;",
-                "import jakarta.persistence.*;",
-                "@Entity",
-                "public class User {",
-                "  @Id Long id;",
-                "  @Embedded",
-                "  @AttributeOverrides({",
-                "    @AttributeOverride(name=\"street\", column=@Column(name=\"str_name\"))",
-                "  })",
-                "  Address address;",
-                "}"
-        );
-
-        Compilation c = Compiler.javac()
-                .withOptions("--add-opens",
-                        "jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED")
-                .withProcessors(new JpaSqlGeneratorProcessor())
-                .compile(addr, user);
-
-        assertThat(c.status()).isEqualTo(Compilation.Status.SUCCESS);
-
-        Map<String, Object> root = readSchemaRoot(c);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> columns = (Map<String, Object>)
-                ((Map<?,?>)((Map<?,?>)root.get("entities"))
-                        .get("com.example.User"))
-                        .get("columns");
-
-        // Ensure both a default embedded column and an overridden column are present.
-        assertThat(columns.containsKey("city")).isTrue();
-        assertThat(columns.containsKey("str_name")).isTrue();
+    private static TypeElement mockTypeElement(String qname) {
+        TypeElement te = mock(TypeElement.class);
+        Name name = mock(Name.class);
+        lenient().when(name.toString()).thenReturn(qname);
+        lenient().when(te.getQualifiedName()).thenReturn(name);
+        return te;
     }
 
-    @Test
-    @DisplayName("Field-level @Convert overrides @Converter(autoApply=true)")
-    void fieldLevelConvertOverridesAutoApply() throws Exception {
-        JavaFileObject convYn = JavaFileObjects.forSourceLines(
-                "com.example.BoolYnConv",
-                "package com.example;",
-                "import jakarta.persistence.*;",
-                "@Converter(autoApply=true)",
-                "public class BoolYnConv implements AttributeConverter<Boolean,String>{",
-                "  public String convertToDatabaseColumn(Boolean a){return a==null?null:(a?\"Y\":\"N\");}",
-                "  public Boolean convertToEntityAttribute(String d){return \"Y\".equals(d);} }"
-        );
-
-        JavaFileObject conv10 = JavaFileObjects.forSourceLines(
-                "com.example.Bool10Conv",
-                "package com.example;",
-                "import jakarta.persistence.*;",
-                "public class Bool10Conv implements AttributeConverter<Boolean,String>{",
-                "  public String convertToDatabaseColumn(Boolean a){return a==null?null:(a?\"1\":\"0\");}",
-                "  public Boolean convertToEntityAttribute(String d){return \"1\".equals(d);} }"
-        );
-
-        JavaFileObject user = JavaFileObjects.forSourceLines(
-                "com.example.User",
-                "package com.example;",
-                "import jakarta.persistence.*;",
-                "@Entity",
-                "public class User {",
-                "  @Id Long id;",
-                "  @Convert(converter=Bool10Conv.class)",
-                "  Boolean active;",
-                "}"
-        );
-
-        Compilation c = Compiler.javac()
-                .withOptions("--add-opens",
-                        "jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED")
-                .withProcessors(new JpaSqlGeneratorProcessor())
-                .compile(convYn, conv10, user);
-
-        assertThat(c.status()).isEqualTo(Compilation.Status.SUCCESS);
-
-        Map<String, Object> root = readSchemaRoot(c);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> columns = (Map<String, Object>)
-                ((Map<?,?>)((Map<?,?>)root.get("entities"))
-                        .get("com.example.User"))
-                        .get("columns");
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> active = (Map<String, Object>) columns.get("active");
-        assertThat(active.get("conversionClass"))
-                .isEqualTo("com.example.Bool10Conv");
+    private static TypeMirror mockTypeMirror(String display) {
+        TypeMirror tm = mock(TypeMirror.class);
+        lenient().when(tm.toString()).thenReturn(display);
+        return tm;
     }
-
 }

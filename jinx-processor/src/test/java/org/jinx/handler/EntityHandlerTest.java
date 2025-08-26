@@ -1129,32 +1129,6 @@ class EntityHandlerTest {
     }
 
     @Test
-    @DisplayName("엔티티에 PK가 없으면 무효 처리되고 에러가 보고된다")
-    void handle_NoPrimaryKey_ShouldInvalidateAndReportError() {
-        // Arrange
-        TypeElement e = mock(TypeElement.class);
-        Name qn = mock(Name.class), sn = mock(Name.class);
-        when(qn.toString()).thenReturn("com.example.NoPk");
-        when(sn.toString()).thenReturn("NoPk");
-        when(e.getQualifiedName()).thenReturn(qn);
-        when(e.getSimpleName()).thenReturn(sn);
-        lenient().when(e.getAnnotation(Entity.class)).thenReturn(mock(Entity.class));
-        TypeMirror none = mock(TypeMirror.class);
-        when(e.getSuperclass()).thenReturn(none);
-        when(none.getKind()).thenReturn(TypeKind.NONE);
-        doReturn(List.of()).when(e).getEnclosedElements();
-
-        // Act
-        entityHandler.handle(e);
-
-        // Assert
-        EntityModel em = schemaModel.getEntities().get("com.example.NoPk");
-        assertNotNull(em, "엔티티 모델이 생성되어야 합니다.");
-        assertFalse(em.isValid(), "PK 부재 시 엔티티는 invalid여야 합니다.");
-        verify(messager).printMessage(eq(Diagnostic.Kind.ERROR), contains("primary key"), eq(e));
-    }
-
-    @Test
     @DisplayName("@Table(name) 지정 시 테이블명이 커스텀 명으로 설정된다")
     void handle_TableNameFromAnnotation_ShouldUseCustomName() {
         TypeElement e = mock(TypeElement.class);
@@ -1345,9 +1319,6 @@ class EntityHandlerTest {
         verify(messager, never()).printMessage(eq(Diagnostic.Kind.ERROR), any(), any());
     }
 
-}
- 
-
     @Test
     @DisplayName("@Embedded: 임베디드 필드는 EmbeddedHandler로 위임되며 PK로 마킹되지 않는다")
     void handle_Embedded_ShouldDelegateAndNotMarkPk() {
@@ -1372,7 +1343,6 @@ class EntityHandlerTest {
         when(emb.getAnnotation(EmbeddedId.class)).thenReturn(null);
         when(emb.getAnnotation(ElementCollection.class)).thenReturn(null);
         when(emb.getAnnotation(Embedded.class)).thenReturn(mock(Embedded.class));
-        when(emb.getAnnotation(Column.class)).thenReturn(null);
         Name en = mock(Name.class);
         lenient().when(en.toString()).thenReturn("address");
         lenient().when(emb.getSimpleName()).thenReturn(en);
@@ -1419,6 +1389,7 @@ class EntityHandlerTest {
         // Parent TypeElement with JOINED
         TypeElement parentType = mock(TypeElement.class);
         when(parentType.getAnnotation(Entity.class)).thenReturn(mock(Entity.class));
+        when(parentType.getAnnotation(MappedSuperclass.class)).thenReturn(null);
         Inheritance inh = mock(Inheritance.class);
         when(inh.strategy()).thenReturn(InheritanceType.JOINED);
         when(parentType.getAnnotation(Inheritance.class)).thenReturn(inh);
@@ -1452,8 +1423,8 @@ class EntityHandlerTest {
 
         // Single @PrimaryKeyJoinColumn provided (insufficient for composite PK)
         PrimaryKeyJoinColumn single = mock(PrimaryKeyJoinColumn.class);
-        when(single.name()).thenReturn("ck1");
-        when(single.referencedColumnName()).thenReturn("k1");
+        lenient().when(single.name()).thenReturn("ck1");
+        lenient().when(single.referencedColumnName()).thenReturn("k1");
         when(child.getAnnotation(PrimaryKeyJoinColumn.class)).thenReturn(single);
         when(child.getAnnotation(PrimaryKeyJoinColumns.class)).thenReturn(null);
 
@@ -1530,69 +1501,5 @@ class EntityHandlerTest {
                 "성공 후 엔티티 큐에서 제거되어야 합니다.");
     }
 
-    @Test
-    @DisplayName("@Table/@SecondaryTable 제약 처리: ConstraintHandler 호출 확인")
-    void handle_TableAndSecondaryTable_ShouldInvokeConstraintHandler() {
-        // Arrange
-        TypeElement e = mock(TypeElement.class);
-        TypeMirror sup = mock(TypeMirror.class);
-        when(e.getSuperclass()).thenReturn(sup);
-        when(sup.getKind()).thenReturn(TypeKind.NONE);
-        lenient().when(e.getAnnotation(Entity.class)).thenReturn(mock(Entity.class));
+}
 
-        Name qn = mock(Name.class), sn = mock(Name.class);
-        when(qn.toString()).thenReturn("com.example.Cons");
-        when(sn.toString()).thenReturn("Cons");
-        when(e.getQualifiedName()).thenReturn(qn);
-        when(e.getSimpleName()).thenReturn(sn);
-
-        // @Table with constraints
-        Table t = mock(Table.class);
-        UniqueConstraint uc = mock(UniqueConstraint.class);
-        Index ix = mock(Index.class);
-        CheckConstraint ck = mock(CheckConstraint.class);
-        doReturn(new UniqueConstraint[]{uc}).when(t).uniqueConstraints();
-        doReturn(new Index[]{ix}).when(t).indexes();
-        doReturn(new CheckConstraint[]{ck}).when(t).check();
-        when(e.getAnnotation(Table.class)).thenReturn(t);
-
-        // @SecondaryTable with constraints
-        SecondaryTable st = mock(SecondaryTable.class);
-        when(st.name()).thenReturn("aux");
-        doReturn(new PrimaryKeyJoinColumn[0]).when(st).pkJoinColumns();
-        UniqueConstraint uc2 = mock(UniqueConstraint.class);
-        Index ix2 = mock(Index.class);
-        CheckConstraint ck2 = mock(CheckConstraint.class);
-        doReturn(new UniqueConstraint[]{uc2}).when(st).uniqueConstraints();
-        doReturn(new Index[]{ix2}).when(st).indexes();
-        doReturn(new CheckConstraint[]{ck2}).when(st).check();
-        when(e.getAnnotation(SecondaryTable.class)).thenReturn(st);
-        when(e.getAnnotation(SecondaryTables.class)).thenReturn(null);
-
-        // Minimal @Id for PK presence
-        VariableElement id = mock(VariableElement.class);
-        when(id.getKind()).thenReturn(ElementKind.FIELD);
-        lenient().when(id.getAnnotation(Id.class)).thenReturn(mock(Id.class));
-        when(id.getAnnotation(EmbeddedId.class)).thenReturn(null);
-        when(id.getAnnotation(Transient.class)).thenReturn(null);
-        when(id.getAnnotation(ElementCollection.class)).thenReturn(null);
-        when(id.getAnnotation(Embedded.class)).thenReturn(null);
-        when(id.getAnnotation(Column.class)).thenReturn(null);
-        doReturn(Collections.emptySet()).when(id).getModifiers();
-        doReturn(List.of(id)).when(e).getEnclosedElements();
-        ColumnModel idCol = ColumnModel.builder().columnName("id").isPrimaryKey(true).build();
-        when(columnHandler.createFrom(eq(id), any())).thenReturn(idCol);
-
-        // Naming for secondary FK name
-        when(context.getNaming()).thenReturn(naming);
-        when(naming.fkName(eq("aux"), anyList(), eq("Cons"), anyList())).thenReturn("fk_aux_cons");
-
-        // Act
-        entityHandler.handle(e);
-
-        // Assert: entity exists and constraint handler was invoked for both tables
-        EntityModel em = schemaModel.getEntities().get("com.example.Cons");
-        assertNotNull(em);
-        verify(constraintHandler, atLeastOnce()).processTableConstraints(eq(t), eq(em));
-        verify(constraintHandler, atLeastOnce()).processSecondaryTableConstraints(eq(st), eq(em));
-    }

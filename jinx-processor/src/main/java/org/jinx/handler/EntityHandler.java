@@ -63,15 +63,7 @@ public class EntityHandler {
         // 8. 보조 테이블 처리 및 상속 관계 처리 -> PK가 확정된 뒤에 FK 생성
         processJoinedTables(typeElement, entity);
 
-        // 9. 최종 PK 검증: JOINED/SecondaryTable 처리까지 끝난 후에도 PK가 없다면 invalid
-        if (context.findAllPrimaryKeyColumns(entity).isEmpty()) {
-            context.getMessager().printMessage(
-                    Diagnostic.Kind.ERROR,
-                    "Entity '" + entity.getEntityName() + "' must have a primary key.",
-                    typeElement
-            );
-            entity.setValid(false);
-        }
+        // @MapsId 기반 PK 승격 반영 이후(2차 패스)로 검증 시점(PK)을 지연
     }
 
     public void runDeferredJoinedFks() {
@@ -79,10 +71,16 @@ public class EntityHandler {
         for (int i = 0; i < size; i++) {
             EntityModel child = context.getDeferredEntities().poll();
             if (child == null) break;
-            processInheritanceJoin(
-                    context.getElementUtils().getTypeElement(child.getEntityName()),
-                    child
-            );
+            if (!child.isValid()) continue;
+
+            TypeElement te = context.getElementUtils().getTypeElement(child.getEntityName());
+            if (te == null) {
+                context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "Deferred JOINED: cannot resolve TypeElement for " + child.getEntityName() + " – re-queue");
+                context.getDeferredEntities().offer(child);
+                continue;
+            }
+            processInheritanceJoin(te, child);
             // 부모가 여전히 없으면 processInheritanceJoin 내부에서 다시 enqueue
             // 하지만 여기서는 '이번 라운드' 스냅샷만 처리해서 무한루프 방지
         }
