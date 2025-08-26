@@ -23,8 +23,10 @@ import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
 import java.lang.reflect.Field;
 import java.util.*;
@@ -39,6 +41,7 @@ class JpaSqlGeneratorProcessorTest {
     @Mock Messager messager;
     @Mock Elements elements;
     @Mock RoundEnvironment roundEnv;
+    @Mock Types types;
 
     JpaSqlGeneratorProcessor processor;
 
@@ -53,37 +56,71 @@ class JpaSqlGeneratorProcessorTest {
 
     @Test
     void converter_autoApply_withGeneric_addsMapping() throws Exception {
-        // Given: @Converter(autoApply=true) on a class implementing AttributeConverter<Target,String>
         TypeElement converterType = mockTypeElement("com.example.MyLocalDateConverter");
         Converter converterAnno = mock(Converter.class);
         when(converterAnno.autoApply()).thenReturn(true);
         when(converterType.getAnnotation(Converter.class)).thenReturn(converterAnno);
         when(converterType.getKind()).thenReturn(ElementKind.CLASS);
 
-        // DeclaredType: jakarta.persistence.AttributeConverter<java.time.LocalDate, java.lang.String>
+        // AttributeConverter<java.time.LocalDate, String>
         DeclaredType attrConv = mock(DeclaredType.class);
-        when(attrConv.toString())
-                .thenReturn("jakarta.persistence.AttributeConverter<java.time.LocalDate,java.lang.String>");
         TypeMirror targetType = mockTypeMirror("java.time.LocalDate");
-        doReturn(List.of(targetType)).when(attrConv).getTypeArguments();
-        doReturn(List.of(attrConv)).when(converterType).getInterfaces();
+        TypeMirror stringType = mockTypeMirror("java.lang.String");
+        doReturn(List.of(targetType, stringType)).when(attrConv).getTypeArguments();
 
-        // Round env returns just this converter; others empty; processingOver=false
+        // 계층 탐색용: 직접 구현 + 상위클래스 없음
+        doReturn(List.of(attrConv)).when(converterType).getInterfaces();
+        TypeMirror none = mock(TypeMirror.class);
+        when(none.getKind()).thenReturn(TypeKind.NONE);
+        doReturn(none).when(converterType).getSuperclass();
+
+        // AttributeConverter 심볼/erasure 준비
+        Elements elements = mock(Elements.class);
+        Types types = mock(Types.class);
+        when(processingEnv.getElementUtils()).thenReturn(elements);
+        when(processingEnv.getTypeUtils()).thenReturn(types);
+
+        TypeElement acElement = mock(TypeElement.class);
+        DeclaredType acDeclared = mock(DeclaredType.class);
+        when(elements.getTypeElement("jakarta.persistence.AttributeConverter")).thenReturn(acElement);
+        when(acElement.asType()).thenReturn(acDeclared);
+
+        // 서로 다른 erasure 두 개 만들기
+        TypeMirror attrConvErasure = mock(TypeMirror.class); // types.erasure(attrConv)
+        TypeMirror acErasure      = mock(TypeMirror.class);  // types.erasure(acDeclared)
+        when(types.erasure(attrConv)).thenReturn(attrConvErasure);
+        when(types.erasure(acDeclared)).thenReturn(acErasure);
+
+        // isSameType 인자 매칭을 "서로 다른 두 객체"로 정확히 스텁
+        when(types.isSameType(same(attrConvErasure), same(acErasure))).thenReturn(true);
+
+        // 라운드 환경
         doReturn(Set.of(converterType)).when(roundEnv).getElementsAnnotatedWith(Converter.class);
         when(roundEnv.getElementsAnnotatedWith(MappedSuperclass.class)).thenReturn(Set.of());
         when(roundEnv.getElementsAnnotatedWith(Embeddable.class)).thenReturn(Set.of());
         when(roundEnv.getElementsAnnotatedWith(Entity.class)).thenReturn(Set.of());
         when(roundEnv.processingOver()).thenReturn(false);
 
-        // When
+        DeclaredType converterDeclaredType = mock(DeclaredType.class);
+        when(converterType.asType()).thenReturn(converterDeclaredType);
+        when(converterDeclaredType.asElement()).thenReturn(converterType);
+
+        TypeMirror converterErasure = mock(TypeMirror.class);
+        when(types.erasure(converterDeclaredType)).thenReturn(converterErasure);
+        when(types.isSameType(converterErasure, acErasure)).thenReturn(false);
+
+        // 실행
         processor.process(Set.of(), roundEnv);
 
-        // Then: mapping added into ProcessingContext.autoApplyConverters
+        // 검증
         ProcessingContext ctx = getPrivate(processor, "context");
         Map<String, String> map = ctx.getAutoApplyConverters();
         assertEquals("com.example.MyLocalDateConverter", map.get("java.time.LocalDate"));
+
         verify(messager, never()).printMessage(eq(Diagnostic.Kind.WARNING), anyString(), any());
     }
+
+
 
     @Test
     void converter_autoApply_missingGeneric_emitsWarning() {
@@ -95,9 +132,9 @@ class JpaSqlGeneratorProcessorTest {
         when(converterType.getKind()).thenReturn(ElementKind.CLASS);
 
         DeclaredType attrConv = mock(DeclaredType.class);
-        when(attrConv.toString()).thenReturn("jakarta.persistence.AttributeConverter");
-        when(attrConv.getTypeArguments()).thenReturn(List.of()); // empty -> unresolved
-        doReturn(List.of(attrConv)).when(converterType).getInterfaces();
+        lenient().when(attrConv.toString()).thenReturn("jakarta.persistence.AttributeConverter");
+        lenient().when(attrConv.getTypeArguments()).thenReturn(List.of()); // empty -> unresolved
+        lenient().doReturn(List.of(attrConv)).when(converterType).getInterfaces();
 
         doReturn(Set.of(converterType)).when(roundEnv).getElementsAnnotatedWith(Converter.class);
         when(roundEnv.getElementsAnnotatedWith(MappedSuperclass.class)).thenReturn(Set.of());
@@ -113,7 +150,7 @@ class JpaSqlGeneratorProcessorTest {
         // Then: WARNING logged, no crash
         verify(messager).printMessage(
                 eq(Diagnostic.Kind.WARNING),
-                ArgumentMatchers.contains("@Converter(autoApply=true) generic target type unresolved"),
+                ArgumentMatchers.contains("@Converter(autoApply=true) cannot resolve AttributeConverter<T, ?> target type across hierarchy"),
                 eq(converterType)
         );
     }

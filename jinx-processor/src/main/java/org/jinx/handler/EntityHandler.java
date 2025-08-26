@@ -71,10 +71,16 @@ public class EntityHandler {
         for (int i = 0; i < size; i++) {
             EntityModel child = context.getDeferredEntities().poll();
             if (child == null) break;
-            processInheritanceJoin(
-                    context.getElementUtils().getTypeElement(child.getEntityName()),
-                    child
-            );
+            if (!child.isValid()) continue;
+
+            TypeElement te = context.getElementUtils().getTypeElement(child.getEntityName());
+            if (te == null) {
+                context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "Deferred JOINED: cannot resolve TypeElement for " + child.getEntityName() + " – re-queue");
+                context.getDeferredEntities().offer(child);
+                continue;
+            }
+            processInheritanceJoin(te, child);
             // 부모가 여전히 없으면 processInheritanceJoin 내부에서 다시 enqueue
             // 하지만 여기서는 '이번 라운드' 스냅샷만 처리해서 무한루프 방지
         }

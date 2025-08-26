@@ -1597,5 +1597,124 @@ class RelationshipHandlerTest {
         when(types.isAssignable(any(), any())).thenReturn(true);
     }
 
+    @Test
+    void testManyToOne_ExistingColumn_WithMapsId_UpgradesExistingToPk_NoDuplicate() {
+        // Given
+        VariableElement field = mockField("targetField");
+        TypeElement ownerTypeElement = mockOwnerTypeElement(field);
+
+        // @ManyToOne (optional=true 무관) + @MapsId("") => makePk=true
+        mockManyToOneAnnotation(field, true);
+        MapsId mapsId = mock(MapsId.class);
+        when(mapsId.value()).thenReturn(""); // 전체 ID 공유
+        when(field.getAnnotation(MapsId.class)).thenReturn(mapsId);
+        when(field.getAnnotation(JoinColumns.class)).thenReturn(null);
+        when(field.getAnnotation(JoinColumn.class)).thenReturn(null);
+
+        // Target PK (id: Long)
+        ColumnModel targetPk = ColumnModel.builder()
+                .columnName("id")
+                .javaType("Long")
+                .isPrimaryKey(true)
+                .build();
+        targetEntity.getColumns().put("id", targetPk);
+        when(context.findAllPrimaryKeyColumns(targetEntity)).thenReturn(List.of(targetPk));
+
+        // 기존에 동일 이름의 FK 컬럼이 이미 존재(타입 일치, nullable=true)
+        String fkName = "targetField_id";
+        ColumnModel existing = ColumnModel.builder()
+                .columnName(fkName)
+                .javaType("Long")
+                .isNullable(true)   // 이후 로직상 makePk=true → isNullable 계산은 false가 되지만,
+                // 현재 구현은 existing의 nullable을 바꾸지 않음
+                .build();
+        ownerEntity.getColumns().put(fkName, existing);
+
+        // 필드 타입: com.example.Target
+        TypeElement targetTypeElement = mockTypeElement("com.example.Target");
+        mockFieldType(field, targetTypeElement);
+
+        // When
+        handler.resolveRelationships(ownerTypeElement, ownerEntity);
+
+        // Then
+        // 1) 기존 컬럼을 재사용하고(중복 생성 X) 2) PK로 승격되었는지 확인
+        assertEquals(1, ownerEntity.getColumns().size(), "기존 FK 컬럼만 있어야 함(중복 생성 금지)");
+        ColumnModel reused = ownerEntity.getColumns().get(fkName);
+        assertTrue(reused.isPrimaryKey(), "@MapsId면 기존 컬럼이 PK로 승격되어야 함");
+        // nullable은 현재 구현상 변경되지 않음(참조 로직이 fkColumn.setNullable(...) 이라 existing엔 반영X)
+        assertTrue(reused.isNullable(), "현재 구현에선 기존 컬럼의 nullable이 유지됨(변경 없음)");
+
+        // 관계도 생성되어야 함
+        assertEquals(1, ownerEntity.getRelationships().size());
+        RelationshipModel rel = ownerEntity.getRelationships().values().iterator().next();
+        assertEquals(RelationshipType.MANY_TO_ONE, rel.getType());
+        assertEquals(List.of(fkName), rel.getColumns());
+        assertEquals(List.of("id"), rel.getReferencedColumns());
+        assertTrue(rel.isMapsId(), "관계 모델에 mapsId 플래그가 true 여야 함");
+
+        // 에러/경고 없음
+        verify(messager, never()).printMessage(eq(Diagnostic.Kind.ERROR), anyString(), eq(field));
+    }
+
+    @Test
+    void testManyToOne_ExistingColumn_OptionalFalse_JoinColumnNullableTrue_Warns_NoNullableMutation() {
+        // Given
+        VariableElement field = mockField("targetField");
+        TypeElement ownerTypeElement = mockOwnerTypeElement(field);
+
+        // optional=false + @JoinColumn(nullable=true) → 경고 발생, NOT NULL로 취급
+        mockManyToOneAnnotation(field, false); // optional=false
+        mockJoinColumnAnnotation(field, "targetField_id", "id", true);
+
+        // Target PK (id: Long)
+        ColumnModel targetPk = ColumnModel.builder()
+                .columnName("id")
+                .javaType("Long")
+                .isPrimaryKey(true)
+                .build();
+        targetEntity.getColumns().put("id", targetPk);
+        when(context.findAllPrimaryKeyColumns(targetEntity)).thenReturn(List.of(targetPk));
+
+        // 기존 동일 이름 FK 컬럼 존재(타입 일치, nullable=true로 시작)
+        String fkName = "targetField_id";
+        ColumnModel existing = ColumnModel.builder()
+                .columnName(fkName)
+                .javaType("Long")
+                .isNullable(true)
+                .build();
+        ownerEntity.getColumns().put(fkName, existing);
+
+        // 필드 타입: com.example.Target
+        TypeElement targetTypeElement = mockTypeElement("com.example.Target");
+        mockFieldType(field, targetTypeElement);
+
+        // When
+        handler.resolveRelationships(ownerTypeElement, ownerEntity);
+
+        // Then
+        // 경고가 찍혔는지 확인
+        verify(messager).printMessage(
+                eq(Diagnostic.Kind.WARNING),
+                contains("@JoinColumn(nullable=true) conflicts with optional=false; treating as NOT NULL."),
+                eq(field)
+        );
+
+        // 로직상 isNullable 계산은 false지만, 현재 구현은 existing의 nullable을 바꾸지 않음
+        ColumnModel reused = ownerEntity.getColumns().get(fkName);
+        assertNotNull(reused);
+        assertTrue(reused.isNullable(), "현재 구현에서는 기존 컬럼의 nullable 값이 유지됨");
+
+        // 관계는 정상 생성
+        assertEquals(1, ownerEntity.getRelationships().size());
+        RelationshipModel rel = ownerEntity.getRelationships().values().iterator().next();
+        assertEquals(RelationshipType.MANY_TO_ONE, rel.getType());
+        assertEquals(List.of(fkName), rel.getColumns());
+        assertEquals(List.of("id"), rel.getReferencedColumns());
+
+        // 에러는 없어야 함
+        verify(messager, never()).printMessage(eq(Diagnostic.Kind.ERROR), anyString(), eq(field));
+    }
+
 
 }

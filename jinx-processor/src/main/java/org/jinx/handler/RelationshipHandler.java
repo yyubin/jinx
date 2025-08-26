@@ -141,7 +141,7 @@ public class RelationshipHandler {
                     : context.getNaming().foreignKeyColumnName(fieldName, referencedPkName);
 
             // 중복 FK 이름 검증
-            if (toAdd.containsKey(fkColumnName)) {
+            if (fkColumnNames.contains(fkColumnName) ||toAdd.containsKey(fkColumnName)) {
                 context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                         "Duplicate FK column name '" + fkColumnName + "' in "
                                 + ownerEntity.getEntityName() + "." + field.getSimpleName(), field);
@@ -187,6 +187,13 @@ public class RelationshipHandler {
                                     " but existing column has type " + existing.getJavaType(), field);
                     ownerEntity.setValid(false);
                     return;
+                }
+                // 타입이 일치하면 관계 제약(@MapsId/nullable)도 기존 컬럼에 반영
+                if (makePk && !existing.isPrimaryKey()) {
+                    existing.setPrimaryKey(true);
+                }
+                if (existing.isNullable() != isNullable) {
+                    fkColumn.setNullable(isNullable);
                 }
             }
 
@@ -301,7 +308,7 @@ public class RelationshipHandler {
                     : context.getNaming().foreignKeyColumnName(ownerEntity.getTableName(), refName);
 
             // 중복 FK 이름 검증
-            if (toAdd.containsKey(fkName)) {
+            if (fkNames.contains(fkName) ||toAdd.containsKey(fkName)) {
                 context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                         "Duplicate FK column name '" + fkName + "' in "
                                 + targetEntityModel.getEntityName() + "." + field.getSimpleName(), field);

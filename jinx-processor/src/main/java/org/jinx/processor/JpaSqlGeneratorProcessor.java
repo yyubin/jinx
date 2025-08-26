@@ -12,7 +12,10 @@ import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -70,18 +73,17 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 Converter converter = element.getAnnotation(Converter.class);
                 if (converter.autoApply()) {
                     TypeElement converterType = (TypeElement) element;
-                    // Extract target Java type from AttributeConverter interface
-                    TypeMirror superType = converterType.getInterfaces().stream()
-                            .filter(i -> i.toString().startsWith("jakarta.persistence.AttributeConverter"))
-                            .findFirst().orElse(null);
 
-                    if (superType instanceof DeclaredType dt && !dt.getTypeArguments().isEmpty()) {
-                        TypeMirror targetType = dt.getTypeArguments().get(0);
-                        context.getAutoApplyConverters().put(targetType.toString(), converterType.getQualifiedName().toString());
+                    Optional<TypeMirror> attrTypeOpt = findAttributeConverterAttributeType(converterType);
+
+                    if (attrTypeOpt.isPresent()) {
+                        String targetTypeName = attrTypeOpt.get().toString();
+                        context.getAutoApplyConverters().put(targetTypeName, converterType.getQualifiedName().toString());
                     } else {
                         processingEnv.getMessager().printMessage(
                                 Diagnostic.Kind.WARNING,
-                                "@Converter(autoApply=true) generic target type unresolved: " + converterType.getQualifiedName(),
+                                "@Converter(autoApply=true) cannot resolve AttributeConverter<T, ?> target type across hierarchy: "
+                                        + converterType.getQualifiedName(),
                                 converterType
                         );
                     }
@@ -186,5 +188,36 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
     public void processRetryTasks() {
         entityHandler.runDeferredJoinedFks();
 
+    }
+
+    private Optional<TypeMirror> findAttributeConverterAttributeType(TypeElement converterType) {
+        Types types = processingEnv.getTypeUtils();
+        Elements elements = processingEnv.getElementUtils();
+
+        TypeElement acElement = elements.getTypeElement("jakarta.persistence.AttributeConverter");
+        if (acElement == null) return Optional.empty();
+        TypeMirror acErasure = types.erasure(acElement.asType());
+
+        Deque<TypeMirror> q = new ArrayDeque<>();
+        TypeMirror root = converterType != null ? converterType.asType() : null;
+        if (root != null) q.add(root);
+
+        while (!q.isEmpty()) {
+            TypeMirror cur = q.poll();
+            if (!(cur instanceof DeclaredType dt)) continue;
+
+            if (types.isSameType(types.erasure(dt), acErasure)) {
+                List<? extends TypeMirror> args = dt.getTypeArguments();
+                if (args.size() == 2) return Optional.of(args.get(0));
+            }
+
+            Element el = dt.asElement();
+            if (el instanceof TypeElement te) {
+                for (TypeMirror itf : te.getInterfaces()) q.add(itf);
+                TypeMirror sc = te.getSuperclass();
+                if (sc != null && sc.getKind() != TypeKind.NONE) q.add(sc);
+            }
+        }
+        return Optional.empty();
     }
 }
