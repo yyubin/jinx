@@ -354,8 +354,10 @@ class RelationshipHandlerTest {
         ColumnModel ownerFk = joinTable.getColumns().get("owner_id");
         ColumnModel targetFk = joinTable.getColumns().get("target_id");
 
-        assertTrue(ownerFk.isPrimaryKey());
-        assertTrue(targetFk.isPrimaryKey());
+        // (변경점) 더 이상 컬럼 플래그로 PK를 기대하지 않음
+        assertFalse(ownerFk.isPrimaryKey());
+        assertFalse(targetFk.isPrimaryKey());
+
         assertFalse(ownerFk.isNullable());
         assertFalse(targetFk.isNullable());
 
@@ -396,7 +398,7 @@ class RelationshipHandlerTest {
 
         // Then
         verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
-                contains("@OneToMany에 @JoinTable과 @JoinColumn(s)를 함께 사용할 수 없습니다"),
+                contains("Cannot use both @JoinTable and @JoinColumn(s) with @OneToMany."),
                 eq(field));
     }
 
@@ -446,8 +448,10 @@ class RelationshipHandlerTest {
         ColumnModel ownerFk = joinTable.getColumns().get("owner_id");
         ColumnModel targetFk = joinTable.getColumns().get("target_id");
 
-        assertTrue(ownerFk.isPrimaryKey());
-        assertTrue(targetFk.isPrimaryKey());
+        // (변경점) 더 이상 컬럼 플래그로 PK를 기대하지 않음
+        assertFalse(ownerFk.isPrimaryKey());
+        assertFalse(targetFk.isPrimaryKey());
+
         assertEquals("Long", ownerFk.getJavaType());
         assertEquals("Long", targetFk.getJavaType());
 
@@ -789,7 +793,7 @@ class RelationshipHandlerTest {
 
         // Then
         verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
-                contains("JoinTable.joinColumns 개수가 Owner PK 개수와 일치해야 합니다"), eq(field));
+                contains("JoinTable.joinColumns count must match owner primary key count"), eq(field));
     }
 
     @Test
@@ -822,7 +826,7 @@ class RelationshipHandlerTest {
 
         // Then
         verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
-                contains("JoinTable.inverseJoinColumns 개수가 Target PK 개수와 일치해야 합니다"), eq(field));
+                contains("JoinTable.inverseJoinColumns count must match target primary key count"), eq(field));
     }
 
     @Test
@@ -1165,8 +1169,10 @@ class RelationshipHandlerTest {
         ColumnModel ownerFk = joinTable.getColumns().get(ownerFkName);
         ColumnModel targetFk = joinTable.getColumns().get(targetFkName);
 
-        assertTrue(ownerFk.isPrimaryKey());
-        assertTrue(targetFk.isPrimaryKey());
+        // (변경점) 더 이상 컬럼 플래그로 PK를 기대하지 않음
+        assertFalse(ownerFk.isPrimaryKey());
+        assertFalse(targetFk.isPrimaryKey());
+
         assertFalse(ownerFk.isNullable());
         assertFalse(targetFk.isNullable());
         assertEquals(2, joinTable.getRelationships().size(), "Join table should have two FK relationships");
@@ -1275,7 +1281,7 @@ class RelationshipHandlerTest {
 
         // Then
         verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
-                contains("@OneToMany 필드의 제네릭 타입 파라미터를 확인할 수 없습니다"),
+                contains("Cannot resolve generic type parameter for @OneToMany field."),
                 eq(field));
         // FK/관계가 생성되지 않아야 함
         assertTrue(targetEntity.getColumns().isEmpty());
@@ -1298,7 +1304,7 @@ class RelationshipHandlerTest {
 
         // Then
         verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
-                contains("@OneToMany 필드의 제네릭 타입 파라미터를 확인할 수 없습니다"),
+                contains("Cannot resolve generic type parameter for @OneToMany field."),
                 eq(field));
         assertTrue(targetEntity.getColumns().isEmpty());
         assertTrue(targetEntity.getRelationships().isEmpty());
@@ -1319,7 +1325,7 @@ class RelationshipHandlerTest {
 
         // Then
         verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
-                        contains("@ManyToMany 필드의 제네릭 타입 파라미터를 확인할 수 없습니다"),
+                        contains("Cannot resolve generic type parameter for @ManyToMany field."),
                 eq(field));
         // 조인 테이블 생성 X
         assertEquals(2, schemaModel.getEntities().size()); // owner/target만
@@ -1436,7 +1442,7 @@ class RelationshipHandlerTest {
 
         // Then
         verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
-                contains("Duplicate FK column name 'dup_fk'"),
+                contains("Duplicate foreign key column name 'dup_fk'"),
                 eq(field));
 
         assertFalse(ownerEntity.isValid(), "중복 FK 이름이면 ownerEntity invalid");
@@ -1543,7 +1549,7 @@ class RelationshipHandlerTest {
 
         // Then
         verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
-                contains("Duplicate FK column name 'dup_fk'"),
+                contains("Duplicate foreign key column name 'dup_fk'"),
                 eq(field));
 
         assertFalse(targetEntity.isValid(), "중복 FK 이름이면 targetEntity invalid");
@@ -1643,8 +1649,9 @@ class RelationshipHandlerTest {
         assertEquals(1, ownerEntity.getColumns().size(), "기존 FK 컬럼만 있어야 함(중복 생성 금지)");
         ColumnModel reused = ownerEntity.getColumns().get(fkName);
         assertTrue(reused.isPrimaryKey(), "@MapsId면 기존 컬럼이 PK로 승격되어야 함");
-        // nullable은 현재 구현상 변경되지 않음(참조 로직이 fkColumn.setNullable(...) 이라 existing엔 반영X)
-        assertTrue(reused.isNullable(), "현재 구현에선 기존 컬럼의 nullable이 유지됨(변경 없음)");
+
+        // FIX: existing 컬럼의 nullable을 바꾸도록 수정함
+        assertFalse(reused.isNullable(), "existing 컬럼의 nullable을 바꾸도록 수정함");
 
         // 관계도 생성되어야 함
         assertEquals(1, ownerEntity.getRelationships().size());
@@ -1704,7 +1711,7 @@ class RelationshipHandlerTest {
         // 로직상 isNullable 계산은 false지만, 현재 구현은 existing의 nullable을 바꾸지 않음
         ColumnModel reused = ownerEntity.getColumns().get(fkName);
         assertNotNull(reused);
-        assertTrue(reused.isNullable(), "현재 구현에서는 기존 컬럼의 nullable 값이 유지됨");
+        assertFalse(reused.isNullable(), "existing 컬럼의 nullable을 바꾸도록 수정함");
 
         // 관계는 정상 생성
         assertEquals(1, ownerEntity.getRelationships().size());
@@ -1789,7 +1796,7 @@ class RelationshipHandlerTest {
         handler.resolveRelationships(ownerTypeElement, ownerEntity);
 
         verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
-                contains("Composite PK requires explicit referencedColumnName"),
+                contains("Composite primary key requires explicit referencedColumnName for all @owner JoinColumns"),
                 eq(field));
         assertFalse(entities.containsKey("jt_missing_ref"), "조인 테이블이 생성되면 안 됨");
     }
@@ -1823,7 +1830,7 @@ class RelationshipHandlerTest {
         handler.resolveRelationships(ownerTypeElement, ownerEntity);
 
         verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
-                contains("Duplicate FK column 'dup'"),
+                contains("Duplicate foreign key column 'dup' in join table mapping for owner_table"),
                 eq(field));
         assertFalse(entities.containsKey("jt_dup_owner"));
     }
@@ -1857,7 +1864,7 @@ class RelationshipHandlerTest {
         handler.resolveRelationships(ownerTypeElement, ownerEntity);
 
         verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
-                contains("Duplicate FK column 'dup'"),
+                contains("Duplicate foreign key column 'dup'"),
                 eq(field));
         assertFalse(entities.containsKey("jt_dup_target"));
     }
@@ -1894,7 +1901,7 @@ class RelationshipHandlerTest {
         handler.resolveRelationships(ownerTypeElement, ownerEntity);
 
         verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
-                contains("Duplicate FK column 'dup_fk'"),
+                contains("Duplicate foreign key column 'dup_fk'"),
                 eq(field));
         assertFalse(entities.containsKey("jt_default_dup"));
     }
@@ -1984,6 +1991,152 @@ class RelationshipHandlerTest {
         cols.sort(Comparator.naturalOrder());
 
         assertEquals(expected, cols, "유니크 제약 컬럼 정렬/구성이 기대와 일치해야 함");
+    }
+
+    @Test
+    @DisplayName("@ManyToMany 관계에서 조인테이블 생성 및 복합 PK 제약 생성")
+    void testManyToMany_createsJoinTable_withCompositePkConstraint() {
+        // Given
+        VariableElement field = mockField("targets");
+        TypeElement ownerTypeElement = mockOwnerTypeElement(field);
+        mockCollectionFieldType(field, "com.example.Target");
+
+        // @ManyToMany + @JoinTable(owner_fk, target_fk)
+        mockManyToManyAnnotation(field);
+        mockJoinTableAnnotation(field, "owner_target_join",
+                new String[]{"owner_id"}, new String[]{"target_id"});
+
+        // owner.id, target.id 단일 PK
+        setupSinglePrimaryKeys();
+
+        // When
+        handler.resolveRelationships(ownerTypeElement, ownerEntity);
+
+        // Then
+        assertTrue(entities.containsKey("owner_target_join"));
+        EntityModel jt = entities.get("owner_target_join");
+        assertEquals(EntityModel.TableType.JOIN_TABLE, jt.getTableType());
+
+        // 컬럼 존재 + NOT NULL 확인(컬럼 PK 플래그는 사용하지 않음)
+        ColumnModel ownerFk = jt.getColumns().get("owner_id");
+        ColumnModel targetFk = jt.getColumns().get("target_id");
+        assertNotNull(ownerFk);
+        assertNotNull(targetFk);
+        assertFalse(ownerFk.isNullable());
+        assertFalse(targetFk.isNullable());
+        assertFalse(ownerFk.isPrimaryKey());
+        assertFalse(targetFk.isPrimaryKey());
+
+        // FK 관계 2개(owner/target)
+        assertEquals(2, jt.getRelationships().size());
+
+        // 복합 PK 제약( owner_id + target_id ) 존재
+        boolean hasCompositePk = jt.getConstraints().values().stream()
+                .anyMatch(c -> c.getType() == ConstraintType.PRIMARY_KEY
+                        && sameColumns(c.getColumns(), List.of("owner_id", "target_id")));
+        assertTrue(hasCompositePk, "ManyToMany 조인테이블은 owner_id+target_id 복합 PK 제약이 있어야 함");
+    }
+
+    @Test
+    @DisplayName("기존 조인테이블에 @OneToMany JoinTable 관계 보강 및 UNIQUE 제약 추가")
+    void testOneToMany_JoinTable_mergesIntoExistingJoinTable() {
+        // Given: 조인테이블이 이미 존재(타 시스템/다른 핸들러가 먼저 생성했다고 가정)
+        String jtName = "owner_target_join";
+        EntityModel pre = EntityModel.builder()
+                .entityName(jtName)
+                .tableName(jtName)
+                .tableType(EntityModel.TableType.JOIN_TABLE)
+                .build();
+        // (의도적으로 비어있는 상태로 두고, 핸들러가 보강하도록)
+        entities.put(jtName, pre);
+
+        // @OneToMany + @JoinTable
+        VariableElement field = mockField("targetList");
+        TypeElement ownerTypeElement = mockOwnerTypeElement(field);
+        mockCollectionFieldType(field, "com.example.Target");
+        mockOneToManyAnnotation(field);
+        mockJoinTableAnnotation(field, jtName,
+                new String[]{"owner_id"}, new String[]{"target_id"});
+
+        setupSinglePrimaryKeys();
+
+        // When
+        handler.resolveRelationships(ownerTypeElement, ownerEntity);
+
+        // Then: 기존 엔티티를 보강(ensure*) 했는지 확인
+        EntityModel jt = entities.get(jtName);
+
+        // FK 컬럼 생성 + NOT NULL
+        ColumnModel ownerFk = jt.getColumns().get("owner_id");
+        ColumnModel targetFk = jt.getColumns().get("target_id");
+        assertNotNull(ownerFk);
+        assertNotNull(targetFk);
+        assertFalse(ownerFk.isNullable());
+        assertFalse(targetFk.isNullable());
+
+        // 관계(owner/target) 보강
+        assertEquals(2, jt.getRelationships().size());
+
+        // 1:N 의미 보장 — target FK 세트 UNIQUE 생성
+        boolean hasUniqueOnTarget = jt.getConstraints().values().stream()
+                .anyMatch(c -> c.getType() == ConstraintType.UNIQUE
+                        && sameColumns(c.getColumns(), List.of("target_id")));
+        assertTrue(hasUniqueOnTarget, "OneToMany JoinTable는 target FK 세트에 UNIQUE 제약을 추가해야 함");
+
+        // (선택) PK 제약이 없는지 확인 — 1:N에서는 PK 강제하지 않음
+        boolean hasPk = jt.getConstraints().values().stream()
+                .anyMatch(c -> c.getType() == ConstraintType.PRIMARY_KEY);
+        assertFalse(hasPk);
+    }
+
+    @Test
+    @DisplayName("기존 조인테이블에 @ManyToMany 관계 보강 및 복합 PK 제약 추가")
+    void testManyToMany_mergesPkConstraintIntoExistingJoinTable() {
+        // Given: 조인테이블만 먼저 존재(컬럼/관계/제약 미비 상태)
+        String jtName = "owner_target_join";
+        EntityModel pre = EntityModel.builder()
+                .entityName(jtName)
+                .tableName(jtName)
+                .tableType(EntityModel.TableType.JOIN_TABLE)
+                .build();
+        entities.put(jtName, pre);
+
+        // @ManyToMany + @JoinTable
+        VariableElement field = mockField("targets");
+        TypeElement ownerTypeElement = mockOwnerTypeElement(field);
+        mockCollectionFieldType(field, "com.example.Target");
+        mockManyToManyAnnotation(field);
+        mockJoinTableAnnotation(field, jtName,
+                new String[]{"owner_id"}, new String[]{"target_id"});
+
+        setupSinglePrimaryKeys();
+
+        // When
+        handler.resolveRelationships(ownerTypeElement, ownerEntity);
+
+        // Then: 기존 조인테이블에 보강되었는지 확인
+        EntityModel jt = entities.get(jtName);
+
+        // FK 컬럼 존재 + NOT NULL
+        ColumnModel ownerFk = jt.getColumns().get("owner_id");
+        ColumnModel targetFk = jt.getColumns().get("target_id");
+        assertNotNull(ownerFk);
+        assertNotNull(targetFk);
+        assertFalse(ownerFk.isNullable());
+        assertFalse(targetFk.isNullable());
+
+        // 관계 2개(owner/target)
+        assertEquals(2, jt.getRelationships().size());
+
+        // 복합 PK 제약( owner_id + target_id )가 병합되어 생성됨
+        boolean hasCompositePk = jt.getConstraints().values().stream()
+                .anyMatch(c -> c.getType() == ConstraintType.PRIMARY_KEY
+                        && sameColumns(c.getColumns(), List.of("owner_id", "target_id")));
+        assertTrue(hasCompositePk, "ManyToMany가 기존 조인테이블에 복합 PK를 병합해야 함");
+    }
+
+    private static boolean sameColumns(List<String> a, List<String> b) {
+        return new java.util.HashSet<>(a).equals(new java.util.HashSet<>(b));
     }
 
 
