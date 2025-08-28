@@ -1,5 +1,6 @@
 package org.jinx.model;
 
+import jakarta.persistence.EnumType;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.TemporalType;
 import lombok.Builder;
@@ -40,6 +41,7 @@ public class ColumnModel {
     @Builder.Default private boolean isVersion = false;
     @Builder.Default private String conversionClass = null;
     @Builder.Default private TemporalType temporalType = null;
+    @Builder.Default private EnumType enumerationType = null; // For @Enumerated
     @Builder.Default private boolean isMapKey = false; // Added for @MapKey*
     @Builder.Default private String mapKeyType = null; // e.g., "entity:fieldName" or null
     @Builder.Default private String[] mapKeyEnumValues = new String[]{}; // For @MapKeyEnumerated
