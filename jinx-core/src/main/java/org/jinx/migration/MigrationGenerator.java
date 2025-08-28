@@ -1,7 +1,10 @@
 package org.jinx.migration;
 
 import org.jinx.migration.spi.visitor.SqlGeneratingVisitor;
-import org.jinx.model.*;
+import org.jinx.descriptor.*;
+import org.jinx.model.DialectBundle;
+import org.jinx.model.DiffResult;
+import org.jinx.model.SchemaModel;
 
 public class MigrationGenerator {
     private final DialectBundle dialects;

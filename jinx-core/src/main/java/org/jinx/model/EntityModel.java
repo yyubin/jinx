@@ -10,8 +10,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 @Data
 @Builder
@@ -36,5 +34,38 @@ public class EntityModel {
 
     public enum TableType {
         ENTITY, JOIN_TABLE, COLLECTION_TABLE
+    }
+
+    public boolean isValidTableName(String tableNameToValidate) {
+        // An empty/null table name implies the default primary table, which is always valid.
+        if (tableNameToValidate == null || tableNameToValidate.isEmpty()) {
+            return true;
+        }
+
+        // Check if it matches the primary table name (case-insensitive).
+        if (tableNameToValidate.equalsIgnoreCase(this.tableName)) {
+            return true;
+        }
+
+        // Check if it matches any of the registered secondary table names (case-insensitive).
+        return secondaryTables.stream()
+                .anyMatch(st -> tableNameToValidate.equalsIgnoreCase(st.getName()));
+    }
+
+    private String colKey(String tableName, String columnName) {
+        String normalizedTableName = (tableName == null || tableName.isEmpty()) ? this.tableName : tableName;
+        return normalizedTableName + "::" + columnName;
+    }
+
+    public ColumnModel findColumn(String tableName, String columnName) {
+        return columns.get(colKey(tableName, columnName));
+    }
+
+    public void putColumn(ColumnModel column) {
+        columns.put(colKey(column.getTableName(), column.getColumnName()), column);
+    }
+
+    public boolean hasColumn(String tableName, String columnName) {
+        return columns.containsKey(colKey(tableName, columnName));
     }
 }

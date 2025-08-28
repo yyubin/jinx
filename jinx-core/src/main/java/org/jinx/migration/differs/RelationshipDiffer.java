@@ -8,8 +8,6 @@ import org.jinx.model.RelationshipModel;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
-import java.util.stream.Collectors;
 
 public class RelationshipDiffer implements EntityComponentDiffer {
     @Override

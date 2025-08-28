@@ -4,10 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.google.auto.service.AutoService;
 import jakarta.persistence.*;
-import org.jinx.annotation.*;
 import org.jinx.context.ProcessingContext;
 import org.jinx.handler.*;
-import org.jinx.model.*;
+import org.jinx.model.ClassInfoModel;
+import org.jinx.model.EntityModel;
+import org.jinx.model.SchemaModel;
+
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
@@ -56,11 +58,11 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         ColumnHandler columnHandler = new ColumnHandler(context, sequenceHandler);
         this.relationshipHandler = new RelationshipHandler(context);
         this.inheritanceHandler = new InheritanceHandler(context);
-        this.embeddedHandler = new EmbeddedHandler(context, columnHandler);
+        this.embeddedHandler = new EmbeddedHandler(context, columnHandler, relationshipHandler);
         this.constraintHandler = new ConstraintHandler(context);
         this.elementCollectionHandler = new ElementCollectionHandler(context, columnHandler, embeddedHandler);
         this.tableGeneratorHandler = new TableGeneratorHandler(context);
-        this.entityHandler = new EntityHandler(context, columnHandler, embeddedHandler, constraintHandler, sequenceHandler, elementCollectionHandler, tableGeneratorHandler);
+        this.entityHandler = new EntityHandler(context, columnHandler, embeddedHandler, constraintHandler, sequenceHandler, elementCollectionHandler, tableGeneratorHandler, relationshipHandler);
     }
 
     @Override
@@ -132,20 +134,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 TypeElement typeElement = context.getElementUtils().getTypeElement(entityModel.getEntityName());
                 inheritanceHandler.resolveInheritance(typeElement, entityModel);
             }
-            // 2. 관계 해석
-            for (EntityModel em : context.getSchemaModel().getEntities().values()) {
-                if (!em.isValid()) continue;
-                TypeElement te = context.getElementUtils().getTypeElement(em.getEntityName());
-                if (te == null) {
-                    // 증분 컴파일/다중 라운드에서 드물게 null 가능 → 스킵/경고 중 택1
-                    context.getMessager().printMessage(
-                            Diagnostic.Kind.WARNING,
-                            "Skip relationship resolution: cannot resolve TypeElement for " + em.getEntityName()
-                    );
-                    continue;
-                }
-                relationshipHandler.resolveRelationships(te, em);
-            }
+            // Relationships are now processed during entity handling via AttributeDescriptor
 
             // 3. 최종 PK 검증 (2차 패스)
             for (Map.Entry<String, EntityModel> e : context.getSchemaModel().getEntities().entrySet()) {

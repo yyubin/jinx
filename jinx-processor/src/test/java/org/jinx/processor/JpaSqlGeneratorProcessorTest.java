@@ -9,7 +9,6 @@ import org.jinx.handler.EntityHandler;
 import org.jinx.handler.InheritanceHandler;
 import org.jinx.handler.RelationshipHandler;
 import org.jinx.model.EntityModel;
-import org.jinx.model.SchemaModel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

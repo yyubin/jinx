@@ -1,7 +1,6 @@
 package org.jinx.migration.contributor.create;
 
 import org.jinx.migration.contributor.DdlContributor;
-import org.jinx.migration.contributor.SqlContributor;
 import org.jinx.migration.contributor.TableBodyContributor;
 import org.jinx.migration.spi.dialect.DdlDialect;
 import org.jinx.model.ColumnModel;

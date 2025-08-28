@@ -2,6 +2,7 @@ package org.jinx.migration.contributor;
 
 import org.jinx.migration.contributor.alter.*;
 import org.jinx.migration.contributor.create.PrimaryKeyAddContributor;
+import org.jinx.descriptor.*;
 import org.jinx.model.*;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

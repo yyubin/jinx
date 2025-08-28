@@ -2,6 +2,7 @@ package org.jinx.handler;
 
 import jakarta.persistence.*;
 import org.jinx.context.ProcessingContext;
+import org.jinx.descriptor.AttributeDescriptor;
 import org.jinx.handler.builtins.SecondaryTableAdapter;
 import org.jinx.handler.builtins.TableAdapter;
 import org.jinx.model.*;
@@ -21,10 +22,12 @@ public class EntityHandler {
     private final SequenceHandler sequenceHandler;
     private final ElementCollectionHandler elementCollectionHandler;
     private final TableGeneratorHandler tableGeneratorHandler;
+    private final RelationshipHandler relationshipHandler;
 
     public EntityHandler(ProcessingContext context, ColumnHandler columnHandler, EmbeddedHandler embeddedHandler,
                          ConstraintHandler constraintHandler, SequenceHandler sequenceHandler,
-                         ElementCollectionHandler elementCollectionHandler, TableGeneratorHandler tableGeneratorHandler) {
+                         ElementCollectionHandler elementCollectionHandler, TableGeneratorHandler tableGeneratorHandler,
+                         RelationshipHandler relationshipHandler) {
         this.context = context;
         this.columnHandler = columnHandler;
         this.embeddedHandler = embeddedHandler;
@@ -32,9 +35,13 @@ public class EntityHandler {
         this.sequenceHandler = sequenceHandler;
         this.elementCollectionHandler = elementCollectionHandler;
         this.tableGeneratorHandler = tableGeneratorHandler;
+        this.relationshipHandler = relationshipHandler;
     }
 
     public void handle(TypeElement typeElement) {
+        // Clear mappedBy visited set for each new entity to allow proper cycle detection
+        context.clearMappedByVisited();
+        
         // 1. 엔티티 기본 정보 설정
         EntityModel entity = createEntityModel(typeElement);
         if (entity == null) return;
@@ -51,19 +58,58 @@ public class EntityHandler {
         // 4. 제약조건 처리
         processEntityConstraints(typeElement, entity);
 
-        // 5. 상속 필드부터 주입 (PK 후보 포함 가능)
-        processMappedSuperclasses(typeElement, entity);
+        // 5. (REMOVED) 상속 필드 주입 - AttributeDescriptor 기반 처리에서 통합됨
 
-        // 6. 복합키 처리
+        // 6. 보조 테이블 이름 사전 등록 (검증용)
+        List<SecondaryTable> secondaryTableAnns = collectSecondaryTables(typeElement);
+        registerSecondaryTableNames(secondaryTableAnns, entity);
+
+        // 7. 복합키 처리 (@EmbeddedId)
         if (!processCompositeKeys(typeElement, entity)) return;
 
-        // 7. 필드 처리
-        processEntityFields(typeElement, entity);
+        // 8. 필드 처리 (AttributeDescriptor 기반)
+        processFieldsWithAttributeDescriptor(typeElement, entity);
 
-        // 8. 보조 테이블 처리 및 상속 관계 처리 -> PK가 확정된 뒤에 FK 생성
-        processJoinedTables(typeElement, entity);
+        // 9. 보조 테이블 조인 및 상속 관계 처리 (PK 확정 후)
+        processSecondaryTableJoins(secondaryTableAnns, typeElement, entity);
+        processInheritanceJoin(typeElement, entity);
+        
+        // 10. Check for @MapsId attributes requiring deferred processing
+        if (hasMapsIdAttributes(typeElement, entity)) {
+            context.getDeferredEntities().offer(entity);
+            context.getDeferredNames().add(entity.getEntityName());
+        }
+    }
 
-        // @MapsId 기반 PK 승격 반영 이후(2차 패스)로 검증 시점(PK)을 지연
+    // ... (runDeferredJoinedFks and other methods) ...
+
+    private void registerSecondaryTableNames(List<SecondaryTable> secondaryTablesAnns, EntityModel entity) {
+        for (SecondaryTable stAnn : secondaryTablesAnns) {
+            SecondaryTableModel stModel = SecondaryTableModel.builder()
+                    .name(stAnn.name())
+                    .build();
+            if (entity.getSecondaryTables().stream().noneMatch(s -> s.getName().equals(stModel.getName()))) {
+                entity.getSecondaryTables().add(stModel);
+            }
+        }
+    }
+
+    private void processSecondaryTableJoins(List<SecondaryTable> secondaryTables, TypeElement type, EntityModel entity) {
+        // This method now runs after the PK has been determined.
+        List<ColumnModel> primaryKeyColumns = context.findAllPrimaryKeyColumns(entity);
+        if (!secondaryTables.isEmpty() && primaryKeyColumns.isEmpty()) {
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "Entity with @SecondaryTable must have a primary key (@Id or @EmbeddedId).", type);
+            entity.setValid(false);
+            return;
+        }
+
+        for (SecondaryTable t : secondaryTables) {
+            // Process constraints and indexes from the @SecondaryTable annotation
+            processTableLike(new SecondaryTableAdapter(t, context), entity);
+            // Process the join columns to create foreign key relationships
+            processJoinTable(t.name(), Arrays.asList(t.pkJoinColumns()), type, entity, primaryKeyColumns, entity.getTableName(), RelationshipType.SECONDARY_TABLE);
+        }
     }
 
     public void runDeferredJoinedFks() {
@@ -76,21 +122,24 @@ public class EntityHandler {
             TypeElement te = context.getElementUtils().getTypeElement(child.getEntityName());
             if (te == null) {
                 context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "Deferred JOINED: cannot resolve TypeElement for " + child.getEntityName() + " – re-queue");
+                        "Deferred processing: cannot resolve TypeElement for " + child.getEntityName() + " – re-queue");
                 context.getDeferredEntities().offer(child);
                 continue;
             }
+            
+            // Process JOINED inheritance
             processInheritanceJoin(te, child);
+            
+            // Process @MapsId attributes if any
+            if (hasMapsIdAttributes(te, child)) {
+                processMapsIdAttributes(te, child);
+            }
+            
             // 부모가 여전히 없으면 processInheritanceJoin 내부에서 다시 enqueue
             // 하지만 여기서는 '이번 라운드' 스냅샷만 처리해서 무한루프 방지
         }
     }
 
-    private void processMappedSuperclasses(TypeElement typeElement, EntityModel entity) {
-        for (TypeElement ms : getMappedSuperclasses(typeElement)) {
-            processMappedSuperclass(ms, entity);
-        }
-    }
 
     private EntityModel createEntityModel(TypeElement typeElement) {
         Optional<Table> tableOpt = Optional.ofNullable(typeElement.getAnnotation(Table.class));
@@ -131,33 +180,7 @@ public class EntityHandler {
                 entity.getTableName());
     }
 
-    /**
-     * 보조 테이블(SecondaryTable)과 상속 관계(JOINED)의 조인 테이블을 통합 처리합니다.
-     */
-    private void processJoinedTables(TypeElement type, EntityModel entity) {
-        List<SecondaryTable> secondaryTables = collectSecondaryTables(type);
-
-        for (SecondaryTable t: secondaryTables) {
-            processTableLike(new SecondaryTableAdapter(t, context), entity);
-        }
-
-        processInheritanceJoin(type, entity);
-
-        List<ColumnModel> primaryKeyColumns = context.findAllPrimaryKeyColumns(entity);
-
-        // FIX: SecondaryTable을 처리하기 전에 주 테이블의 PK가 있는지 확인
-        if (!secondaryTables.isEmpty() && primaryKeyColumns.isEmpty()) {
-            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "Entity with @SecondaryTable must have a primary key (@Id or @EmbeddedId).", type);
-            entity.setValid(false);
-            return; // PK가 없으면 SecondaryTable 처리를 진행하지 않음
-        }
-
-        for (SecondaryTable t : secondaryTables) {
-            // 변수명을 parentPkCols에서 primaryKeyColumns로 명확하게 변경
-            processJoinTable(t.name(), Arrays.asList(t.pkJoinColumns()), type, entity, primaryKeyColumns, entity.getTableName(), RelationshipType.SECONDARY_TABLE);
-        }
-    }
+    
 
     private void processInheritanceJoin(TypeElement type, EntityModel childEntity) {
         TypeMirror superclass = type.getSuperclass();
@@ -252,12 +275,19 @@ public class EntityHandler {
             entity.setValid(false);
             return false;
         } else {
-            for (int i = 0; i < pkjcs.size(); i++) {
-                PrimaryKeyJoinColumn a = pkjcs.get(i);
-                ColumnModel parentRef = resolveParentRef(parentPkCols, a, i);
-                String childCol = a.name().isEmpty() ? parentRef.getColumnName() : a.name();
-                childCols.add(childCol);
-                refCols.add(parentRef.getColumnName());
+            try {
+                for (int i = 0; i < pkjcs.size(); i++) {
+                    PrimaryKeyJoinColumn a = pkjcs.get(i);
+                    ColumnModel parentRef = resolveParentRef(parentPkCols, a, i);
+                    String childCol = a.name().isEmpty() ? parentRef.getColumnName() : a.name();
+                    childCols.add(childCol);
+                    refCols.add(parentRef.getColumnName());
+                }
+            } catch (IllegalStateException ex) {
+                context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "Invalid @PrimaryKeyJoinColumn on " + type.getQualifiedName() + ": " + ex.getMessage(), type);
+                entity.setValid(false);
+                return false;
             }
         }
 
@@ -266,6 +296,7 @@ public class EntityHandler {
 
         RelationshipModel rel = RelationshipModel.builder()
                 .type(relType)
+                .tableName(tableName) // FK가 걸리는 테이블 명시
                 .columns(childCols)
                 .referencedTable(referencedTableName)
                 .referencedColumns(refCols)
@@ -275,6 +306,10 @@ public class EntityHandler {
 
         // 보조 테이블의 경우엔 일반적으로 자식(보조) 테이블 쪽 컬럼을 생성해야 함
         ensureChildPkColumnsExist(entity, tableName, childCols, parentPkCols);
+        
+        // FK 인덱스 생성 (PK/UNIQUE로 커버되지 않은 경우에만)
+        relationshipHandler.addForeignKeyIndex(entity, childCols, tableName);
+        
         return true;
     }
 
@@ -294,9 +329,6 @@ public class EntityHandler {
         }
     }
 
-    private void processElementCollection(VariableElement field, EntityModel ownerEntity) {
-        elementCollectionHandler.processElementCollection(field, ownerEntity);
-    }
 
     private void processConstraints(Element element, String fieldName, List<ConstraintModel> constraints, String tableName) {
         constraintHandler.processConstraints(element, fieldName, constraints, tableName);
@@ -311,117 +343,143 @@ public class EntityHandler {
         return secondaryTableList;
     }
 
-    private VariableElement getEmbeddedIdField(TypeElement typeElement) {
-        return typeElement.getEnclosedElements().stream()
-                .filter(e -> e.getKind() == ElementKind.FIELD && e.getAnnotation(EmbeddedId.class) != null)
-                .map(VariableElement.class::cast)
-                .findFirst().orElse(null);
-    }
+    
 
-    private void processEmbeddedId(VariableElement embeddedIdField, EntityModel entity) {
-        embeddedHandler.processEmbedded(embeddedIdField, entity, new HashSet<>());
-        TypeElement embeddableType = (TypeElement) ((DeclaredType) embeddedIdField.asType()).asElement();
-        for (Element enclosed : embeddableType.getEnclosedElements()) {
-            if (enclosed.getKind() == ElementKind.FIELD) {
-                VariableElement field = (VariableElement) enclosed;
-                String columnName = field.getSimpleName().toString();
-                ColumnModel column = entity.getColumns().get(columnName);
-                if (column != null) {
-                    column.setPrimaryKey(true);
-                }
-            }
-        }
-    }
-
-    private List<TypeElement> getMappedSuperclasses(TypeElement typeElement) {
-        List<TypeElement> superclasses = new ArrayList<>();
-        TypeMirror superclass = typeElement.getSuperclass();
-        while (superclass != null && superclass.getKind() == TypeKind.DECLARED) {
-            TypeElement superElement = (TypeElement) ((DeclaredType) superclass).asElement();
-            if (superElement.getAnnotation(MappedSuperclass.class) != null) {
-                superclasses.add(superElement);
-            }
-            superclass = superElement.getSuperclass();
-        }
-        Collections.reverse(superclasses);
-        return superclasses;
-    }
-
-    private void processMappedSuperclass(TypeElement superclass, EntityModel entity) {
-        for (Element enclosed : superclass.getEnclosedElements()) {
-            if (enclosed.getKind() == ElementKind.FIELD && enclosed.getAnnotation(Transient.class) == null) {
-                VariableElement field = (VariableElement) enclosed;
-                ColumnModel column = columnHandler.createFrom(field, Collections.emptyMap());
-                if (column != null) {
-                    entity.getColumns().putIfAbsent(column.getColumnName(), column);
-                }
-            }
-        }
-    }
 
     private boolean processCompositeKeys(TypeElement typeElement, EntityModel entity) {
         IdClass idClass = typeElement.getAnnotation(IdClass.class);
         if (idClass != null) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "IdClass is not supported. Use @EmbeddedId instead for composite primary keys.",
-                    typeElement);
+                "IdClass is not supported. Use @EmbeddedId instead for composite primary keys.",
+                typeElement);
             entity.setValid(false);
             return false;
         }
 
-        VariableElement embeddedIdField = getEmbeddedIdField(typeElement);
-        if (embeddedIdField != null) {
-            processEmbeddedId(embeddedIdField, entity);
+        // ✅ Descriptor 기반으로 EmbeddedId 탐색
+        AttributeDescriptor embeddedId = context.getCachedDescriptors(typeElement).stream()
+            .filter(d -> d.hasAnnotation(EmbeddedId.class))
+            .findFirst()
+            .orElse(null);
+
+        if (embeddedId != null) {
+            embeddedHandler.processEmbeddedId(embeddedId, entity, new HashSet<>());
         }
         return true;
     }
 
-    private void processEntityFields(TypeElement typeElement, EntityModel entity) {
+
+
+    // NEW: AttributeDescriptor-based field processing
+    public void processFieldsWithAttributeDescriptor(TypeElement typeElement, EntityModel entity) {
+        // Get cached AttributeDescriptor list based on Access strategy
+        List<AttributeDescriptor> descriptors = context.getCachedDescriptors(typeElement);
+        
         Map<String, SecondaryTable> tableMappings = buildTableMappings(entity, collectSecondaryTables(typeElement));
-        for (Element enclosed : typeElement.getEnclosedElements()) {
-            if (shouldSkipField(enclosed)) continue;
-            VariableElement field = (VariableElement) enclosed;
-            processField(field, entity, tableMappings);
+        
+        for (AttributeDescriptor descriptor : descriptors) {
+            processAttributeDescriptor(descriptor, entity, tableMappings);
         }
     }
-
-    private boolean shouldSkipField(Element element) {
-        if (element.getKind() != ElementKind.FIELD) return true;
-        Set<Modifier> mods = element.getModifiers();
-        if (mods.contains(Modifier.TRANSIENT) || mods.contains(Modifier.STATIC)) return true;
-        if (element.getAnnotation(Transient.class) != null) return true;
-        return false;
-    }
-
-    private void processField(VariableElement field, EntityModel entity, Map<String, SecondaryTable> tableMappings) {
-        if (field.getAnnotation(ElementCollection.class) != null) {
-            processElementCollection(field, entity);
-        } else if (field.getAnnotation(Embedded.class) != null) {
-            embeddedHandler.processEmbedded(field, entity, new HashSet<>());
-        } else if (field.getAnnotation(EmbeddedId.class) == null) {
-            processRegularField(field, entity, tableMappings);
+    
+    private void processAttributeDescriptor(AttributeDescriptor descriptor, EntityModel entity, Map<String, SecondaryTable> tableMappings) {
+        if (descriptor.hasAnnotation(ElementCollection.class)) {
+            // Use new AttributeDescriptor-based overload
+            elementCollectionHandler.processElementCollection(descriptor, entity);
+        } else if (descriptor.hasAnnotation(Embedded.class)) {
+            // Use new AttributeDescriptor-based overload
+            embeddedHandler.processEmbedded(descriptor, entity, new HashSet<>());
+        } else if (isRelationshipAttribute(descriptor)) {
+            processRelationshipAttribute(descriptor, entity);
+        } else if (!descriptor.hasAnnotation(EmbeddedId.class)) {
+            processRegularAttribute(descriptor, entity, tableMappings);
         }
     }
-
-    private void processRegularField(VariableElement field, EntityModel entity, Map<String, SecondaryTable> tableMappings) {
-        Column column = field.getAnnotation(Column.class);
-        String targetTable = determineTargetTable(column, tableMappings, entity.getTableName());
-        ColumnModel columnModel = columnHandler.createFrom(field, Collections.emptyMap());
+    
+    private void processRegularAttribute(AttributeDescriptor descriptor, EntityModel entity, Map<String, SecondaryTable> tableMappings) {
+        Column column = descriptor.getAnnotation(Column.class);
+        String targetTable = determineTargetTableFromDescriptor(column, tableMappings, entity.getTableName());
+        
+        // Create column with pre-determined target table to avoid validation conflicts
+        Map<String, String> overrides = Collections.singletonMap("tableName", targetTable);
+        ColumnModel columnModel = columnHandler.createFromAttribute(descriptor, entity, overrides);
         if (columnModel != null) {
-            columnModel.setTableName(targetTable);
-            entity.getColumns().putIfAbsent(columnModel.getColumnName(), columnModel);
+            // Use table-aware column storage to prevent primary/secondary table column conflicts
+            if (!entity.hasColumn(targetTable, columnModel.getColumnName())) {
+                entity.putColumn(columnModel);
+            }
         }
     }
-
-    private String determineTargetTable(Column column, Map<String, SecondaryTable> tableMappings, String defaultTable) {
+    
+    private String determineTargetTableFromDescriptor(Column column, Map<String, SecondaryTable> tableMappings, String defaultTable) {
         if (column == null || column.table().isEmpty()) return defaultTable;
-        SecondaryTable st = tableMappings.get(column.table());
+        
+        String requestedTable = column.table();
+        
+        // Check if the requested table is the primary table
+        if (defaultTable.equals(requestedTable)) {
+            return defaultTable;
+        }
+        
+        // Check if it's a known secondary table
+        SecondaryTable st = tableMappings.get(requestedTable);
         if (st == null) {
             context.getMessager().printMessage(Diagnostic.Kind.WARNING,
-                    "Unknown table '" + column.table() + "' in @Column.table; falling back to '" + defaultTable + "'");
+                    "Table '" + requestedTable + "' specified in @Column.table is not defined as a secondary table. " +
+                    "Falling back to primary table '" + defaultTable + "'");
             return defaultTable;
         }
         return st.name();
+    }
+    
+    private boolean isRelationshipAttribute(AttributeDescriptor descriptor) {
+        return descriptor.hasAnnotation(OneToOne.class) ||
+               descriptor.hasAnnotation(OneToMany.class) ||
+               descriptor.hasAnnotation(ManyToOne.class) ||
+               descriptor.hasAnnotation(ManyToMany.class);
+    }
+    
+    private void processRelationshipAttribute(AttributeDescriptor descriptor, EntityModel entity) {
+        relationshipHandler.resolve(descriptor, entity);
+    }
+
+
+    /**
+     * Check if the entity has any @MapsId attributes that require deferred processing
+     */
+    private boolean hasMapsIdAttributes(TypeElement typeElement, EntityModel entity) {
+        List<AttributeDescriptor> descriptors = context.getCachedDescriptors(typeElement);
+        
+        return descriptors.stream()
+                .anyMatch(desc -> desc.hasAnnotation(MapsId.class) && isRelationshipAttribute(desc));
+    }
+    
+    /**
+     * Process @MapsId attributes during deferred processing
+     */
+    public void processMapsIdAttributes(TypeElement typeElement, EntityModel entity) {
+        List<AttributeDescriptor> descriptors = context.getCachedDescriptors(typeElement);
+        
+        for (AttributeDescriptor descriptor : descriptors) {
+            if (descriptor.hasAnnotation(MapsId.class) && isRelationshipAttribute(descriptor)) {
+                processMapsIdAttribute(descriptor, entity);
+            }
+        }
+    }
+    
+    private void processMapsIdAttribute(AttributeDescriptor descriptor, EntityModel entity) {
+        MapsId mapsId = descriptor.getAnnotation(MapsId.class);
+        String mapsIdValue = (mapsId != null && !mapsId.value().isEmpty()) ? mapsId.value() : null;
+        
+        // Find FK columns created by the relationship
+        // Promote them to PK status based on @MapsId specification
+        // This logic would be similar to what's in RelationshipHandler.processToOneRelationship
+        
+        // TODO: Implement the PK promotion logic
+        // For now, just mark that this entity needs MapsId processing
+        context.getMessager().printMessage(Diagnostic.Kind.NOTE,
+                "Processing @MapsId for attribute: " + descriptor.name() + " (value=" + mapsIdValue + ")",
+                descriptor.elementForDiagnostics());
     }
 
     private ColumnModel resolveParentRef(List<ColumnModel> parentPkCols, PrimaryKeyJoinColumn a, int idx) {
@@ -429,7 +487,16 @@ public class EntityHandler {
             return parentPkCols.stream()
                     .filter(p -> p.getColumnName().equals(a.referencedColumnName()))
                     .findFirst()
-                    .orElseThrow(() -> new IllegalStateException("Bad referencedColumnName: " + a.referencedColumnName()));
+                    .orElseThrow(() -> {
+                        String availableColumns = parentPkCols.stream()
+                                .map(ColumnModel::getColumnName)
+                                .collect(java.util.stream.Collectors.joining(", "));
+                        return new IllegalStateException("referencedColumnName '" + a.referencedColumnName() + 
+                                "' not found in parent primary key columns: [" + availableColumns + "]");
+                    });
+        }
+        if (idx >= parentPkCols.size()) {
+            throw new IllegalStateException("@PrimaryKeyJoinColumn index " + idx + " exceeds parent PK column count " + parentPkCols.size());
         }
         return parentPkCols.get(idx);
     }
@@ -454,7 +521,7 @@ public class EntityHandler {
             String childColName = childCols.get(i);
             ColumnModel parentCol = parentPkCols.get(i);
 
-            ColumnModel existing = childEntity.getColumns().get(childColName);
+            ColumnModel existing = childEntity.findColumn(childTableName, childColName);
             if (existing == null) {
                 ColumnModel newCol = ColumnModel.builder()
                         .columnName(childColName)
@@ -468,7 +535,7 @@ public class EntityHandler {
                         .defaultValue(parentCol.getDefaultValue())
                         .comment(parentCol.getComment())
                         .build();
-                childEntity.getColumns().put(childColName, newCol);
+                childEntity.putColumn(newCol);
             } else {
                 existing.setPrimaryKey(true);
                 existing.setNullable(false);              // PK는 NOT NULL로 강제

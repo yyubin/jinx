@@ -1,20 +1,17 @@
 package org.jinx.handler;
 
 import jakarta.persistence.Column;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToOne;
 import org.jinx.annotation.Constraint;
 import org.jinx.annotation.Constraints;
 import org.jinx.context.ProcessingContext;
-import org.jinx.model.*;
+import org.jinx.model.ConstraintModel;
+import org.jinx.model.ConstraintType;
+import org.jinx.model.OnDeleteAction;
+import org.jinx.model.OnUpdateAction;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
-import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
-import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.TypeMirror;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;

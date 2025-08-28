@@ -1,9 +1,7 @@
 package org.jinx.migration.contributor.create;
 
-import org.jinx.migration.*;
 import org.jinx.migration.contributor.DdlContributor;
 import org.jinx.migration.contributor.PostCreateContributor;
-import org.jinx.migration.contributor.SqlContributor;
 import org.jinx.migration.spi.dialect.DdlDialect;
 import org.jinx.model.IndexModel;
 import java.util.List;

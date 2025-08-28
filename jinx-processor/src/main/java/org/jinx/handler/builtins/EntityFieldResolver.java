@@ -4,11 +4,9 @@ import jakarta.persistence.*;
 import org.jinx.annotation.Identity;
 import org.jinx.context.ProcessingContext;
 import org.jinx.handler.AbstractColumnResolver;
-import org.jinx.handler.ColumnResolver;
 import org.jinx.handler.SequenceHandler;
 import org.jinx.model.ColumnModel;
 import org.jinx.model.GenerationStrategy;
-import org.jinx.model.JdbcType;
 import org.jinx.util.ColumnBuilderFactory;
 
 import javax.lang.model.element.VariableElement;

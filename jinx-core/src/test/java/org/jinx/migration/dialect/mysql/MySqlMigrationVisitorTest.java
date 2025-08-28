@@ -1,6 +1,6 @@
 package org.jinx.migration.dialect.mysql;
 
-import org.jinx.migration.*;
+import org.jinx.descriptor.*;
 import org.jinx.model.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

@@ -1,8 +1,6 @@
 package org.jinx.handler;
 
-import org.jinx.context.ProcessingContext;
 import org.jinx.model.ConstraintModel;
-import org.jinx.model.ConstraintType;
 import org.jinx.model.IndexModel;
 
 import java.util.List;

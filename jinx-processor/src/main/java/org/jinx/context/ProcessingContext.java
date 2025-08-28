@@ -1,17 +1,16 @@
 package org.jinx.context;
 
 import lombok.Getter;
+import org.jinx.descriptor.AttributeDescriptor;
+import org.jinx.descriptor.AttributeDescriptorFactory;
 import org.jinx.model.ColumnModel;
-import org.jinx.model.ConstraintType;
 import org.jinx.model.EntityModel;
 import org.jinx.model.SchemaModel;
 import org.jinx.processor.JpaSqlGeneratorProcessor;
 
 import javax.annotation.processing.Messager;
 import javax.annotation.processing.ProcessingEnvironment;
-import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
-import javax.lang.model.type.DeclaredType;
+import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
@@ -32,6 +31,13 @@ public class ProcessingContext {
     private final Naming naming;
     private final Queue<EntityModel> deferredEntities = new ArrayDeque<>();
     private final Set<String> deferredNames = new HashSet<>();
+    private final AttributeDescriptorFactory attributeDescriptorFactory;
+    
+    // AttributeDescriptor caching to avoid re-computation during bidirectional relationship resolution
+    private final Map<TypeElement, List<AttributeDescriptor>> descriptorCache = new HashMap<>();
+    
+    // MappedBy cycle detection: (ownerType, attributeName) -> inverse visited set
+    private final Set<String> mappedByVisitedSet = new HashSet<>();
 
     public ProcessingContext(ProcessingEnvironment processingEnv, SchemaModel schemaModel) {
         this.processingEnv = processingEnv;
@@ -44,6 +50,7 @@ public class ProcessingContext {
                     "Invalid jinx.naming.maxLength: " + maxLenOpt + " (use default " + maxLength + ")");
         }
         this.naming = new DefaultNaming(maxLength);
+        this.attributeDescriptorFactory = new AttributeDescriptorFactory(processingEnv.getTypeUtils(), processingEnv.getElementUtils(), this);
     }
 
 
@@ -102,5 +109,38 @@ public class ProcessingContext {
         }
         TypeMirror supertypeMirror = supertypeElement.asType();
         return types.isSubtype(type, supertypeMirror);
+    }
+    
+    /**
+     * Get cached AttributeDescriptors for a TypeElement, creating and caching them if necessary.
+     * This prevents re-computation during bidirectional relationship resolution.
+     */
+    public List<AttributeDescriptor> getCachedDescriptors(TypeElement typeElement) {
+        return descriptorCache.computeIfAbsent(typeElement, 
+                te -> attributeDescriptorFactory.createDescriptors(te));
+    }
+    
+    /**
+     * Check if a mappedBy relationship has been visited to prevent infinite recursion.
+     * Key format: "ownerEntityName.attributeName"
+     */
+    public boolean isMappedByVisited(String ownerEntityName, String attributeName) {
+        String key = ownerEntityName + "." + attributeName;
+        return mappedByVisitedSet.contains(key);
+    }
+    
+    /**
+     * Mark a mappedBy relationship as visited to prevent cycles.
+     */
+    public void markMappedByVisited(String ownerEntityName, String attributeName) {
+        String key = ownerEntityName + "." + attributeName;
+        mappedByVisitedSet.add(key);
+    }
+    
+    /**
+     * Clear the mappedBy visited set (typically called when starting a new entity processing round).
+     */
+    public void clearMappedByVisited() {
+        mappedByVisitedSet.clear();
     }
 }

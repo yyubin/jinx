@@ -2,6 +2,7 @@ package org.jinx.migration.differs;
 
 import jakarta.persistence.FetchType;
 import jakarta.persistence.TemporalType;
+import org.jinx.descriptor.*;
 import org.jinx.model.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

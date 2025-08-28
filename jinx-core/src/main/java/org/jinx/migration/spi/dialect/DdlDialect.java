@@ -1,5 +1,6 @@
 package org.jinx.migration.spi.dialect;
 
+import org.jinx.descriptor.*;
 import org.jinx.model.*;
 
 import java.util.Collection;

@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.jinx.migration.liquibase.model.*;
 import org.jinx.migration.spi.visitor.*;
+import org.jinx.descriptor.*;
 import org.jinx.model.*;
 import org.jinx.model.DiffResult.*;
 

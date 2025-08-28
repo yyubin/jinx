@@ -155,6 +155,11 @@ public class InheritanceHandler {
     private List<JoinPair> resolvePrimaryKeyJoinPairs(TypeElement childType, List<ColumnModel> parentPkCols) {
         List<PrimaryKeyJoinColumn> annotations = collectPrimaryKeyJoinColumns(childType);
         if (annotations.isEmpty()) {
+            context.getMessager().printMessage(Diagnostic.Kind.WARNING,
+                    String.format("Jinx is creating a default foreign key for the JOINED inheritance of entity '%s'. " +
+                        "To disable this constraint, you must explicitly use @PrimaryKeyJoinColumn along with @JoinColumn and @ForeignKey(ConstraintMode.NO_CONSTRAINT).",
+                        childType.getQualifiedName()),
+                    childType);
             return parentPkCols.stream()
                     .map(col -> new JoinPair(col, col.getColumnName()))
                     .toList();
@@ -169,11 +174,17 @@ public class InheritanceHandler {
         }
 
         List<JoinPair> result = new ArrayList<>();
-        for (int i = 0; i < annotations.size(); i++) {
-            PrimaryKeyJoinColumn anno = annotations.get(i);
-            ColumnModel parentRef = resolveParentReference(parentPkCols, anno, i);
-            String childName = anno.name().isEmpty() ? parentRef.getColumnName() : anno.name();
-            result.add(new JoinPair(parentRef, childName));
+        try {
+            for (int i = 0; i < annotations.size(); i++) {
+                PrimaryKeyJoinColumn anno = annotations.get(i);
+                ColumnModel parentRef = resolveParentReference(parentPkCols, anno, i);
+                String childName = anno.name().isEmpty() ? parentRef.getColumnName() : anno.name();
+                result.add(new JoinPair(parentRef, childName));
+            }
+        } catch (IllegalStateException ex) {
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "Invalid @PrimaryKeyJoinColumn on " + childType.getQualifiedName() + ": " + ex.getMessage(), childType);
+            throw ex; // Re-throw to maintain existing behavior for now
         }
         return result;
     }

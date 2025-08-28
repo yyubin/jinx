@@ -11,6 +11,7 @@ import org.jinx.migration.spi.ValueTransformer;
 import org.jinx.migration.spi.dialect.IdentityDialect;
 import org.jinx.migration.spi.dialect.TableGeneratorDialect;
 import org.jinx.migration.spi.visitor.SqlGeneratingVisitor;
+import org.jinx.descriptor.*;
 import org.jinx.model.*;
 
 import java.util.Collection;

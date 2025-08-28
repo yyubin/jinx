@@ -1,6 +1,5 @@
 package org.jinx.handler;
 
-import jakarta.persistence.Column;
 import jakarta.persistence.Id;
 import org.jinx.context.ProcessingContext;
 import org.jinx.model.ColumnModel;
@@ -8,9 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
 
 import javax.lang.model.element.Name;

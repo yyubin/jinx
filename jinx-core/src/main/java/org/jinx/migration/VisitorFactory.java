@@ -2,7 +2,6 @@ package org.jinx.migration;
 
 import org.jinx.migration.dialect.mysql.MySqlMigrationVisitor;
 import org.jinx.migration.dialect.mysql.MySqlTableGeneratorVisitor;
-import org.jinx.migration.spi.dialect.Dialect;
 import org.jinx.migration.spi.visitor.SequenceVisitor;
 import org.jinx.migration.spi.visitor.TableContentVisitor;
 import org.jinx.migration.spi.visitor.TableGeneratorVisitor;
@@ -14,8 +13,6 @@ import org.jinx.model.VisitorProviders;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
-
-import static org.jinx.migration.DatabaseType.MYSQL;
 
 public final class VisitorFactory {
     public static VisitorProviders forBundle(DialectBundle bundle) {

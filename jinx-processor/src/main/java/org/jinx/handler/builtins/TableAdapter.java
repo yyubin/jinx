@@ -4,7 +4,6 @@ import jakarta.persistence.CheckConstraint;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
-import org.jinx.context.Naming;
 import org.jinx.context.ProcessingContext;
 import org.jinx.handler.TableLike;
 import org.jinx.model.ConstraintModel;
