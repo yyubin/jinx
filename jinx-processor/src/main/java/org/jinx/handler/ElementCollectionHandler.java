@@ -59,48 +59,14 @@ public class ElementCollectionHandler {
                 .tableType(EntityModel.TableType.COLLECTION_TABLE)
                 .build();
 
-        // 2. 소유자 엔티티의 PK 정보 수집
-        List<ColumnModel> ownerPkColumns = context.findAllPrimaryKeyColumns(ownerEntity);
-        if (ownerPkColumns.isEmpty()) {
-            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "Owner entity " + ownerEntity.getEntityName() + " must have a primary key for @ElementCollection",
-                    attribute.elementForDiagnostics());
-            return;
-        }
-
-        // 3. @CollectionTable의 joinColumns 설정 또는 기본값으로 FK 컬럼 생성
-        JoinColumn[] joinColumns = (collectionTable != null) ? collectionTable.joinColumns() : new JoinColumn[0];
-
-        if (joinColumns.length > 0 && joinColumns.length != ownerPkColumns.size()) {
-            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "@CollectionTable joinColumns size mismatch: expected " + ownerPkColumns.size() 
-                    + " but got " + joinColumns.length + " on " + ownerEntity.getEntityName() + "." + attribute.name(),
-                    attribute.elementForDiagnostics());
-            return;
-        }
-
-        // FK 컬럼들 생성
-        for (int i = 0; i < ownerPkColumns.size(); i++) {
-            ColumnModel ownerPkCol = ownerPkColumns.get(i);
-            JoinColumn jc = (joinColumns.length > 0) ? joinColumns[i] : null;
-
-            String fkColumnName = (jc != null && !jc.name().isEmpty()) 
-                ? jc.name()
-                : ownerEntity.getTableName() + "_" + ownerPkCol.getColumnName();
-
-            ColumnModel fkColumn = ColumnModel.builder()
-                    .columnName(fkColumnName)
-                    .tableName(tableName)
-                    .javaType(ownerPkCol.getJavaType())
-                    .isPrimaryKey(true) // 컬렉션 테이블에서는 FK가 PK의 일부가 됨
-                    .isNullable(false)
-                    .build();
-            collectionEntity.putColumn(fkColumn);
-        }
-
-        // 4. 컬렉션의 제네릭 타입 분석 (Map vs Collection)
+        // 2. 컬렉션의 제네릭 타입 분석 (Map vs Collection) - FK 생성 전 검증
         TypeMirror attributeType = attribute.type();
-        if (!(attributeType instanceof DeclaredType declaredType)) return;
+        if (!(attributeType instanceof DeclaredType declaredType)) {
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "Cannot determine collection type for @ElementCollection",
+                    attribute.elementForDiagnostics());
+            return;
+        }
 
         boolean isMap = context.isSubtype(declaredType, "java.util.Map");
         List<? extends TypeMirror> typeArguments = declaredType.getTypeArguments();
@@ -119,6 +85,51 @@ public class ElementCollectionHandler {
             return;
         }
 
+        // 3. 소유자 엔티티의 PK 정보 수집
+        List<ColumnModel> ownerPkColumns = context.findAllPrimaryKeyColumns(ownerEntity);
+        if (ownerPkColumns.isEmpty()) {
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "Owner entity " + ownerEntity.getEntityName() + " must have a primary key for @ElementCollection",
+                    attribute.elementForDiagnostics());
+            return;
+        }
+
+        // 4. @CollectionTable의 joinColumns 설정 또는 기본값으로 FK 컬럼 생성
+        JoinColumn[] joinColumns = (collectionTable != null) ? collectionTable.joinColumns() : new JoinColumn[0];
+
+        if (joinColumns.length > 0 && joinColumns.length != ownerPkColumns.size()) {
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "@CollectionTable joinColumns size mismatch: expected " + ownerPkColumns.size() 
+                    + " but got " + joinColumns.length + " on " + ownerEntity.getEntityName() + "." + attribute.name(),
+                    attribute.elementForDiagnostics());
+            return;
+        }
+
+        // FK 컬럼들 생성 (referencedColumnName 우선 매핑)
+        java.util.List<String> fkColumnNames = new java.util.ArrayList<>();
+        java.util.Map<String, ColumnModel> ownerPkByName = new java.util.HashMap<>();
+        for (ColumnModel pk : ownerPkColumns) ownerPkByName.put(pk.getColumnName(), pk);
+        for (int i = 0; i < ownerPkColumns.size(); i++) {
+            JoinColumn jc = (joinColumns.length > 0) ? joinColumns[i] : null;
+            ColumnModel ownerPkCol =
+                (jc != null && !jc.referencedColumnName().isEmpty())
+                    ? java.util.Objects.requireNonNull(ownerPkByName.get(jc.referencedColumnName()),
+                        "referencedColumnName not found in owner PKs: " + jc.referencedColumnName())
+                    : ownerPkColumns.get(i);
+            String fkColumnName = (jc != null && !jc.name().isEmpty())
+                ? jc.name()
+                : ownerEntity.getTableName() + "_" + ownerPkCol.getColumnName();
+            ColumnModel fkColumn = ColumnModel.builder()
+                    .columnName(fkColumnName)
+                    .tableName(tableName)
+                    .javaType(ownerPkCol.getJavaType())
+                    .isPrimaryKey(true) // 컬렉션 테이블에서는 FK가 PK의 일부가 됨
+                    .isNullable(false)
+                    .build();
+            collectionEntity.putColumn(fkColumn);
+            fkColumnNames.add(fkColumnName);
+        }
+
         // 5. Map Key 컬럼 처리
         if (isMap && keyType != null) {
             MapKeyColumn mapKeyColumn = attribute.getAnnotation(MapKeyColumn.class);
@@ -130,6 +141,7 @@ public class ElementCollectionHandler {
             if (keyColumn != null) {
                 keyColumn.setPrimaryKey(true);
                 keyColumn.setMapKey(true);
+                keyColumn.setNullable(false);
 
                 // Map Key 특수 어노테이션 처리
                 MapKeyEnumerated mapKeyEnumerated = attribute.getAnnotation(MapKeyEnumerated.class);
@@ -150,10 +162,13 @@ public class ElementCollectionHandler {
         }
 
         // 6. Element (Value) 컬럼 처리
+        boolean isList = context.isSubtype(declaredType, "java.util.List");
+        
         Element valueElement = typeUtils.asElement(valueType);
         if (valueElement != null && valueElement.getAnnotation(Embeddable.class) != null) {
             // 값이 Embeddable 타입인 경우
             embeddedHandler.processEmbeddableFields((TypeElement) valueElement, collectionEntity, new HashSet<>(), null, null);
+            // TODO: Embeddable 필드들의 PK 승격 처리 필요 (Set의 경우)
         } else {
             // 값이 기본 타입인 경우
             Column columnAnnotation = attribute.getAnnotation(Column.class);
@@ -163,13 +178,14 @@ public class ElementCollectionHandler {
 
             ColumnModel elementColumn = createColumnFromType(valueType, elementColumnName, tableName);
             if (elementColumn != null) {
-                elementColumn.setPrimaryKey(true); // Set의 중복 방지를 위해 PK로 설정
+                boolean isSetPk = !isList && !isMap; // Set/Collection의 값은 PK에 포함
+                elementColumn.setPrimaryKey(isSetPk);
+                if (isSetPk) elementColumn.setNullable(false);
                 collectionEntity.putColumn(elementColumn);
             }
         }
 
         // 7. @OrderColumn 처리 (List인 경우)
-        boolean isList = context.isSubtype(declaredType, "java.util.List");
         if (isList) {
             OrderColumn orderColumn = attribute.getAnnotation(OrderColumn.class);
             if (orderColumn != null) {
@@ -180,25 +196,14 @@ public class ElementCollectionHandler {
                         .columnName(orderColumnName)
                         .tableName(tableName)
                         .javaType("java.lang.Integer")
-                        .isPrimaryKey(true)
-                        .isNullable(orderColumn.nullable())
+                        .isPrimaryKey(true)            // (owner PK + order) = PK
+                        .isNullable(false)             // PK는 NULL 불가
                         .build();
                 collectionEntity.putColumn(orderCol);
             }
         }
 
-        // 8. 외래 키 관계 모델 생성
-        List<String> fkColumnNames = ownerPkColumns.stream().map(pk -> {
-            for (int i = 0; i < ownerPkColumns.size(); i++) {
-                if (ownerPkColumns.get(i).equals(pk)) {
-                    JoinColumn jc = (joinColumns.length > 0) ? joinColumns[i] : null;
-                    return (jc != null && !jc.name().isEmpty()) 
-                        ? jc.name()
-                        : ownerEntity.getTableName() + "_" + pk.getColumnName();
-                }
-            }
-            return ownerEntity.getTableName() + "_" + pk.getColumnName();
-        }).toList();
+        // 8. 외래 키 관계 모델 생성 (위 루프에서 확정한 fkColumnNames 사용)
 
         List<String> ownerPkNames = ownerPkColumns.stream().map(ColumnModel::getColumnName).toList();
 

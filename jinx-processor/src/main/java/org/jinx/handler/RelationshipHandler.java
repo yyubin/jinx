@@ -3,6 +3,7 @@ package org.jinx.handler;
 import jakarta.persistence.*;
 import org.jinx.context.ProcessingContext;
 import org.jinx.descriptor.FieldAttributeDescriptor;
+import org.jinx.descriptor.PropertyAttributeDescriptor;
 import org.jinx.model.*;
 
 import org.jinx.descriptor.AttributeDescriptor;
@@ -20,6 +21,44 @@ public class RelationshipHandler {
     public RelationshipHandler(ProcessingContext context) {
         this.context = context;
     }
+
+    public void resolveRelationships(TypeElement ownerType, EntityModel ownerEntity) {
+        // 1) 우선 디스크립터 캐시가 있다면 그대로 사용
+        try {
+            java.util.List<AttributeDescriptor> descriptors = context.getCachedDescriptors(ownerType);
+            if (descriptors != null && !descriptors.isEmpty()) {
+                for (AttributeDescriptor d : descriptors) {
+                    resolve(d, ownerEntity);
+                }
+                return;
+            }
+        } catch (Exception ignore) {
+            // 캐시 미구현/예외 시 필드 스캔으로 폴백
+        }
+
+        // 2) 폴백: 타입의 멤버를 직접 스캔(예전 테스트 유지)
+        for (Element e : ownerType.getEnclosedElements()) {
+            if (e.getKind() == ElementKind.FIELD && e instanceof VariableElement ve) {
+                // 기존 테스트가 필드 애노테이션을 목킹하므로 그대로 재사용
+                resolve(ve, ownerEntity); // 기존 호환 오버로드 사용
+            } else if (e.getKind() == ElementKind.METHOD && e instanceof ExecutableElement ex) {
+                // (선택) 게터에 관계 애노가 붙어있다면 프로퍼티 디스크립터로 처리
+                if (hasRelationshipAnnotation(ex)) {
+                    AttributeDescriptor pd = new PropertyAttributeDescriptor(
+                            ex, context.getTypeUtils(), context.getElementUtils());
+                    resolve(pd, ownerEntity);
+                }
+            }
+        }
+    }
+
+    private boolean hasRelationshipAnnotation(ExecutableElement ex) {
+        return ex.getAnnotation(ManyToOne.class) != null ||
+                ex.getAnnotation(OneToOne.class)  != null ||
+                ex.getAnnotation(OneToMany.class) != null ||
+                ex.getAnnotation(ManyToMany.class)!= null;
+    }
+
 
     public void resolve(AttributeDescriptor descriptor, EntityModel entityModel) {
         ManyToOne manyToOne = descriptor.getAnnotation(ManyToOne.class);
@@ -299,9 +338,11 @@ public class RelationshipHandler {
 
         ownerEntity.getRelationships().put(relationship.getConstraintName(), relationship);
         
-        // @JoinColumn(unique=true) 처리 - 1:1 관계에서 DB 유니크 제약 추가
-        boolean anyUnique = joinColumns.stream().anyMatch(JoinColumn::unique);
-        if (anyUnique) {
+        // 1:1(단일 FK)이며 @MapsId가 아니고, @JoinColumn 생략이거나(unique=true 지정)인 경우 UNIQUE 제약 추가
+        boolean isSingleFk = fkColumnNames.size() == 1;
+        boolean shouldAddUnique = (oneToOne != null) && (mapsId == null) && isSingleFk
+                && (joinColumns.isEmpty() || joinColumns.get(0).unique());
+        if (shouldAddUnique) {
             String uqName = context.getNaming().uqName(fkBaseTable, fkColumnNames);
             if (!ownerEntity.getConstraints().containsKey(uqName)) {
                 ownerEntity.getConstraints().put(uqName, ConstraintModel.builder()
@@ -991,7 +1032,7 @@ public class RelationshipHandler {
         ensureJoinTableRelationships(joinTableEntity, details);
         
         // Process @JoinTable.uniqueConstraints
-        if (joinTable != null && joinTable.uniqueConstraints().length > 0) {
+        if (joinTable != null && joinTable.uniqueConstraints() != null && joinTable.uniqueConstraints().length > 0) {
             addJoinTableUniqueConstraints(joinTableEntity, joinTable.uniqueConstraints(), attr);
         }
 

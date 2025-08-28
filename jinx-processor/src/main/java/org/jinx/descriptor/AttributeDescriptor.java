@@ -1,5 +1,6 @@
 package org.jinx.descriptor;
 
+import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
@@ -18,4 +19,15 @@ public interface AttributeDescriptor {
     Element elementForDiagnostics();        // 에러 표시 위치
     AccessKind accessKind();                // FIELD or PROPERTY
     enum AccessKind { FIELD, PROPERTY }
+
+    // Optional helpers for mirror-based lookup (no Class loading)
+    default Optional<AnnotationMirror> findAnnotationMirror(String fqcn) {
+        return elementForDiagnostics().getAnnotationMirrors().stream()
+                .filter(am -> am.getAnnotationType().toString().equals(fqcn))
+                .findFirst();
+    }
+
+    default boolean hasAnnotation(String fqcn) {
+        return findAnnotationMirror(fqcn).isPresent();
+    }
 }

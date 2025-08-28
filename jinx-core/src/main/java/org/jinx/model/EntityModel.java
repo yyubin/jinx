@@ -49,7 +49,9 @@ public class EntityModel {
 
         // Check if it matches any of the registered secondary table names (case-insensitive).
         return secondaryTables.stream()
-                .anyMatch(st -> tableNameToValidate.equalsIgnoreCase(st.getName()));
+                .map(SecondaryTableModel::getName)
+                .filter(name -> name != null && !name.isEmpty())
+                .anyMatch(name -> tableNameToValidate.equalsIgnoreCase(name));
     }
 
     private String colKey(String tableName, String columnName) {

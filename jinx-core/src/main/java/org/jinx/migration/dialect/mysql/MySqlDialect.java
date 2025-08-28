@@ -9,9 +9,9 @@ import org.jinx.migration.contributor.drop.DropTableStatementContributor;
 import org.jinx.migration.spi.JavaTypeMapper;
 import org.jinx.migration.spi.ValueTransformer;
 import org.jinx.migration.spi.dialect.IdentityDialect;
+import org.jinx.migration.spi.dialect.LiquibaseDialect;
 import org.jinx.migration.spi.dialect.TableGeneratorDialect;
 import org.jinx.migration.spi.visitor.SqlGeneratingVisitor;
-import org.jinx.descriptor.*;
 import org.jinx.model.*;
 
 import java.util.Collection;
@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 public class MySqlDialect extends AbstractDialect
-        implements IdentityDialect, TableGeneratorDialect {
+        implements IdentityDialect, TableGeneratorDialect, LiquibaseDialect {
 
     public MySqlDialect() {
         super();
@@ -408,6 +408,16 @@ public class MySqlDialect extends AbstractDialect
     @Override
     public String getAlterTableGeneratorSql(TableGeneratorModel newTg, TableGeneratorModel oldTg) {
         return "";
+    }
+
+    @Override
+    public boolean shouldUseAutoIncrement(GenerationStrategy strategy) {
+        return strategy == GenerationStrategy.IDENTITY || strategy == GenerationStrategy.AUTO;
+    }
+
+    @Override
+    public String getUuidDefaultValue() {
+        return "UUID()";
     }
 
     // Liquibase helper

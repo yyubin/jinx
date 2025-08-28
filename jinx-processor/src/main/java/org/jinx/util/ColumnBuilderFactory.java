@@ -65,26 +65,26 @@ public class ColumnBuilderFactory {
 
     /**
      * Determine column name using priority-based resolution
-     * Priority: explicit columnName > overrides > @Column.name() > attribute.name()
+     * Priority: overrides > @Column.name() > explicit columnName > attribute.name()
      */
     private static String determineColumnName(AttributeDescriptor attribute, String columnName, Column column, Map<String, String> overrides) {
-        // Priority 1: Explicit parameter columnName (highest priority)
-        if (isNotBlank(columnName)) {
-            return columnName;
-        }
-        
-        // Priority 2: Overrides map for this attribute  
+        // Priority 1: Overrides map for this attribute
         String attributeName = attribute.name();
         String overrideName = overrides.get(attributeName);
         if (isNotBlank(overrideName)) {
             return overrideName;
         }
         
-        // Priority 3: @Column.name() annotation
+        // Priority 2: @Column.name() annotation
         if (column != null && isNotBlank(column.name())) {
             return column.name();
         }
         
+        // Priority 3: Explicit parameter columnName
+        if (isNotBlank(columnName)) {
+            return columnName;
+        }
+
         // Priority 4: Attribute name (fallback)
         return attributeName;
     }

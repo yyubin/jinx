@@ -39,10 +39,18 @@ public record PropertyAttributeDescriptor(
             throw new IllegalArgumentException("getClass() is not a valid property getter: " + getter);
         }
         
+        // Must start with getXxx or isXxx (getClass 제외)
+        boolean isGet = methodName.startsWith("get") && methodName.length() > 3;
+        boolean isIs  = methodName.startsWith("is")  && methodName.length() > 2;
+        if (!isGet && !isIs) {
+            throw new IllegalArgumentException("Method is not a valid JavaBeans getter: " + getter);
+        }
+        
         // Validate isXxx methods must return boolean/Boolean
         if (methodName.startsWith("is") && methodName.length() > 2) {
+            TypeKind rk = getter.getReturnType().getKind();
             String returnTypeName = getter.getReturnType().toString();
-            if (!"boolean".equals(returnTypeName) && !"java.lang.Boolean".equals(returnTypeName)) {
+            if (!(rk == TypeKind.BOOLEAN || "java.lang.Boolean".equals(returnTypeName))) {
                 throw new IllegalArgumentException("isXxx getter must return boolean or Boolean, but returns " + 
                     returnTypeName + ": " + getter);
             }

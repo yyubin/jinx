@@ -4,7 +4,6 @@ import lombok.Getter;
 import lombok.Setter;
 import org.jinx.migration.liquibase.model.*;
 import org.jinx.migration.spi.visitor.*;
-import org.jinx.descriptor.*;
 import org.jinx.model.*;
 import org.jinx.model.DiffResult.*;
 
@@ -42,8 +41,8 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                         .config(ColumnConfig.builder()
                                 .name(col.getColumnName())
                                 .type(getLiquibaseTypeName(col))
-                                .defaultValue(col.getDefaultValue()) // 필요시 타입별 defaultValueXxx로 분기 고려
-                                .autoIncrement(col.getGenerationStrategy() == GenerationStrategy.IDENTITY ? true : null)
+                                .autoIncrement(shouldUseAutoIncrement(col.getGenerationStrategy()))
+                                .defaultValue(getEffectiveDefaultValue(col))
                                 .constraints(LiquibaseUtils.buildConstraintsWithoutPK(col, currentTableName)) // ← PK 제외
                                 .build())
                         .build())
@@ -215,14 +214,14 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                             .columns(List.of(
                                     ColumnWrapper.builder()
                                             .config(ColumnConfig.builder()
-                                                    .name("pk_column")
+                                                    .name(newTableGenerator.getPkColumnName())
                                                     .type("varchar(255)")
                                                     .constraints(Constraints.builder().primaryKey(true).build())
                                                     .build())
                                             .build(),
                                     ColumnWrapper.builder()
                                             .config(ColumnConfig.builder()
-                                                    .name("value_column")
+                                                    .name(newTableGenerator.getValueColumnName())
                                                     .type("bigint")
                                                     .build())
                                             .build()))
@@ -243,8 +242,8 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                                 .config(ColumnConfig.builder()
                                         .name(column.getColumnName())
                                         .type(getLiquibaseTypeName(column))
-                                        .defaultValue(column.getDefaultValue())
-                                        .autoIncrement(column.getGenerationStrategy() == GenerationStrategy.IDENTITY ? true : null)
+                                        .defaultValue(getEffectiveDefaultValue(column))
+                                        .autoIncrement(shouldUseAutoIncrement(column.getGenerationStrategy()))
                                         .constraints(LiquibaseUtils.buildConstraints(column, currentTableName))
                                         .build())
                                 .build()))
@@ -298,7 +297,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         CreateIndexChange createIndex = CreateIndexChange.builder()
                 .config(CreateIndexConfig.builder()
                         .indexName(index.getIndexName())
-                        .tableName(currentTableName)
+                        .tableName(index.getTableName() != null ? index.getTableName() : currentTableName)
                         .unique(index.isUnique())
                         .columns(indexColumns)
                         .build())
@@ -311,7 +310,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         DropIndexChange dropIndex = DropIndexChange.builder()
                 .config(DropIndexConfig.builder()
                         .indexName(index.getIndexName())
-                        .tableName(currentTableName)
+                        .tableName(index.getTableName() != null ? index.getTableName() : currentTableName)
                         .build())
                 .build();
         changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropIndex)));
@@ -322,13 +321,13 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         DropIndexChange dropOldIndex = DropIndexChange.builder()
                 .config(DropIndexConfig.builder()
                         .indexName(oldIndex.getIndexName())
-                        .tableName(currentTableName)
+                        .tableName(oldIndex.getTableName() != null ? oldIndex.getTableName() : currentTableName)
                         .build())
                 .build();
         CreateIndexChange createNewIndex = CreateIndexChange.builder()
                 .config(CreateIndexConfig.builder()
                         .indexName(newIndex.getIndexName())
-                        .tableName(currentTableName)
+                        .tableName(newIndex.getTableName() != null ? newIndex.getTableName() : currentTableName)
                         .unique(newIndex.isUnique())
                         .columns(newIndex.getColumnNames().stream()
                                 .map(colName -> ColumnWrapper.builder()
@@ -393,14 +392,19 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
 
     @Override
     public void visitAddedRelationship(RelationshipModel relationship) {
+        if (relationship.isNoConstraint()) {
+            return; // NO_CONSTRAINT인 경우 FK 생성 생략
+        }
+        String baseTable = relationship.getTableName() != null
+                ? relationship.getTableName()
+                : currentTableName;
         AddForeignKeyConstraintChange fkChange = AddForeignKeyConstraintChange.builder()
                 .config(AddForeignKeyConstraintConfig.builder()
                         .constraintName(relationship.getConstraintName())
-                        .baseTableName(currentTableName)
-                        // FIX: 컬럼 이름이 여러 개일 수 있으므로, 처리해야함 이미 모델 바뀜
-                        // .baseColumnNames(relationship.getColumn())
+                        .baseTableName(baseTable)
+                        .baseColumnNames(String.join(",", relationship.getColumns()))
                         .referencedTableName(relationship.getReferencedTable())
-                        // .referencedColumnNames(relationship.getReferencedColumn())
+                        .referencedColumnNames(String.join(",", relationship.getReferencedColumns()))
                         .onDelete(relationship.getOnDelete() != null ? relationship.getOnDelete().name().replace('_',' ') : null)
                         .onUpdate(relationship.getOnUpdate() != null ? relationship.getOnUpdate().name().replace('_',' ') : null)
                         .build())
@@ -410,10 +414,14 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
 
     @Override
     public void visitDroppedRelationship(RelationshipModel relationship) {
+        if (relationship.isNoConstraint()) {
+            return;
+        }
+        String baseTable = relationship.getTableName() != null ? relationship.getTableName() : currentTableName;
         DropForeignKeyConstraintChange dropFk = DropForeignKeyConstraintChange.builder()
                 .config(DropForeignKeyConstraintConfig.builder()
                         .constraintName(relationship.getConstraintName())
-                        .baseTableName(currentTableName)
+                        .baseTableName(baseTable)
                         .build())
                 .build();
         changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropFk)));
@@ -468,6 +476,39 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                             c.getConversionClass() != null ? c.getConversionClass() : c.getJavaType());
                     return jt.getSqlType(c.getLength(), c.getPrecision(), c.getScale());
                 });
+    }
+
+    /**
+     * Determines whether a column should use autoIncrement based on generation strategy
+     */
+    private Boolean shouldUseAutoIncrement(GenerationStrategy strategy) {
+        if (strategy == null || strategy == GenerationStrategy.NONE) {
+            return null;
+        }
+        
+        return dialectBundle.liquibase()
+                .map(lb -> lb.shouldUseAutoIncrement(strategy))
+                .orElse(strategy == GenerationStrategy.IDENTITY); // Fallback to original logic
+    }
+
+    /**
+     * Gets the effective default value considering generation strategy
+     */
+    private String getEffectiveDefaultValue(ColumnModel column) {
+        GenerationStrategy strategy = column.getGenerationStrategy();
+        
+        // UUID generation strategy
+        if (strategy == GenerationStrategy.UUID) {
+            String uuidDefault = dialectBundle.liquibase()
+                    .map(lb -> lb.getUuidDefaultValue())
+                    .orElse(null);
+            if (uuidDefault != null) {
+                return uuidDefault;
+            }
+        }
+        
+        // Return original default value for other cases
+        return column.getDefaultValue();
     }
 
 }

@@ -140,9 +140,11 @@ public class AttributeBasedEntityResolver implements AttributeColumnResolver {
 
         // Set DDL mapping hint based on enum type, but preserve original javaType
         if (enumType == EnumType.STRING) {
-            // STRING: Map to VARCHAR with sufficient length
-            builder.enumStringMapping(true)
-                   .length(Math.max(255, findMaxEnumNameLength(actualType))); // Ensure sufficient length
+            builder.enumStringMapping(true);
+            int requiredMin = Math.max(255, findMaxEnumNameLength(actualType));
+            jakarta.persistence.Column colAnn = attribute.getAnnotation(jakarta.persistence.Column.class);
+            int userLen = (colAnn != null) ? colAnn.length() : 255;
+            builder.length(Math.max(userLen, requiredMin));
         } else {
             // ORDINAL: Map to INTEGER
             builder.enumStringMapping(false);

@@ -96,7 +96,10 @@ public class EmbeddedHandler {
 
                 processEmbeddedInternal(embeddedDescriptor, ownerCollectionTable, processedTypes, false, effectivePrefix, childNameOverrides, childTableOverrides, childAssocOverrides);
             } else if (embeddedDescriptor.hasAnnotation(ManyToOne.class) || embeddedDescriptor.hasAnnotation(OneToOne.class)) {
-                processEmbeddedRelationship(embeddedDescriptor, ownerCollectionTable, assocOverrides, effectivePrefix);
+                String childPrefix = attributeName + ".";
+                Map<String, List<JoinColumn>> childAssocOverrides =
+                        filterAndRemapAssocOverrides(assocOverrides, childPrefix);
+                processEmbeddedRelationship(embeddedDescriptor, ownerCollectionTable, childAssocOverrides, effectivePrefix);
             } else {
                 ColumnModel column = columnHandler.createFromAttribute(embeddedDescriptor, ownerCollectionTable, attrNameOverrides);
                 if (column != null) {
@@ -170,7 +173,10 @@ public class EmbeddedHandler {
 
                 processEmbeddedInternal(embeddedDescriptor, ownerEntity, processedTypes, isPrimaryKey, prefix, childNameOverrides, childTableOverrides, childAssocOverrides);
             } else if (embeddedDescriptor.hasAnnotation(ManyToOne.class) || embeddedDescriptor.hasAnnotation(OneToOne.class)) {
-                processEmbeddedRelationship(embeddedDescriptor, ownerEntity, assocOverrides, prefix);
+                String childPrefix = attrName + ".";
+                Map<String, List<JoinColumn>> childAssocOverrides =
+                        filterAndRemapAssocOverrides(assocOverrides, childPrefix);
+                processEmbeddedRelationship(embeddedDescriptor, ownerEntity, childAssocOverrides, prefix);
             } else {
                 ColumnModel column = columnHandler.createFromAttribute(embeddedDescriptor, ownerEntity, nameOverrides);
                 if (column != null) {
@@ -291,6 +297,10 @@ public class EmbeddedHandler {
         boolean noConstraint = !joinColumns.isEmpty() &&
                 joinColumns.get(0).foreignKey().value() == ConstraintMode.NO_CONSTRAINT;
 
+        // 1) 검증 단계: FK 컬럼들을 미리 생성하고 검증
+        List<ColumnModel> pendingFkColumns = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+        
         for (int i = 0; i < (joinColumns.isEmpty() ? refPkList.size() : joinColumns.size()); i++) {
             JoinColumn jc = joinColumns.isEmpty() ? null : joinColumns.get(i);
 
@@ -301,10 +311,8 @@ public class EmbeddedHandler {
                 pkCol = refPkList.get(i);
             }
             if (pkCol == null) {
-                context.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                        "referencedColumnName not found among parent PKs on " + attribute.name(),
-                        attribute.elementForDiagnostics());
-                return;
+                errors.add("referencedColumnName not found among parent PKs on " + attribute.name());
+                continue;
             }
 
             String fkName = (jc != null && !jc.name().isEmpty())
@@ -329,10 +337,8 @@ public class EmbeddedHandler {
             if (fkTableName == null) {
                 fkTableName = fkTable;
             } else if (!fkTableName.equals(fkTable)) {
-                context.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                        "All @JoinColumn annotations in composite key must target the same table for embedded relationship " + attribute.name() + ". Found: '" + fkTableName + "' and '" + fkTable + "'.",
-                        attribute.elementForDiagnostics());
-                return;
+                errors.add("All @JoinColumn annotations in composite key must target the same table for embedded relationship " + attribute.name() + ". Found: '" + fkTableName + "' and '" + fkTable + "'.");
+                continue;
             }
 
             ColumnModel existing = ownerEntity.findColumn(fkTable, fkName);
@@ -342,26 +348,31 @@ public class EmbeddedHandler {
                     .javaType(pkCol.getJavaType())
                     .isPrimaryKey(makePk)
                     .isNullable(!makePk && colNullable)
-                    .isUnique(colUnique)
+                    // 컬럼 레벨 unique 제거 - 제약 기반으로만 처리
                     .generationStrategy(GenerationStrategy.NONE)
                     .build();
 
             if (existing == null) {
-                ownerEntity.putColumn(fkColumn);
+                pendingFkColumns.add(fkColumn);
             } else {
                 if (!Objects.equals(existing.getJavaType(), pkCol.getJavaType())
                         || (existing.isPrimaryKey() != fkColumn.isPrimaryKey())
                         || (existing.isNullable() != fkColumn.isNullable())) {
-                    context.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                            "FK column mismatch on " + ownerEntity.getEntityName() + "." + fkName,
-                            attribute.elementForDiagnostics());
-                    return;
+                    errors.add("FK column mismatch on " + ownerEntity.getEntityName() + "." + fkName);
+                    continue;
                 }
             }
 
             fkColumnNames.add(fkName);
             referencedPkNamesInOrder.add(pkCol.getColumnName());
         }
+
+        // 2) 커밋 단계: 오류가 없을 때만 실제 ownerEntity에 추가
+        if (!errors.isEmpty()) {
+            errors.forEach(msg -> context.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR, msg, attribute.elementForDiagnostics()));
+            return;
+        }
+        pendingFkColumns.forEach(ownerEntity::putColumn);
 
         final String fkTableBase = (fkTableName != null) ? fkTableName : ownerEntity.getTableName();
 

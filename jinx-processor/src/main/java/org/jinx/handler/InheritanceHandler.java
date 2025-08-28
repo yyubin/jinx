@@ -34,13 +34,15 @@ public class InheritanceHandler {
                             .isNullable(false)
                             .generationStrategy(GenerationStrategy.NONE)
                             .build();
-                    if (entityModel.getColumns().containsKey(dColumn.getColumnName())) {
+                    if (entityModel.hasColumn(null, dColumn.getColumnName())) {
                         context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                                 "Duplicate column name '" + dColumn.getColumnName() + "' for discriminator in entity " + entityModel.getEntityName(), typeElement);
                         entityModel.setValid(false);
                         return;
                     }
-                    entityModel.getColumns().putIfAbsent(dColumn.getColumnName(), dColumn);
+                    if (!entityModel.hasColumn(null, dColumn.getColumnName())) {
+                        entityModel.putColumn(dColumn);
+                    }
                 }
                 DiscriminatorValue discriminatorValue = typeElement.getAnnotation(DiscriminatorValue.class);
                 if (discriminatorValue != null) {
@@ -86,7 +88,7 @@ public class InheritanceHandler {
             return;
         }
         String parentPkColumnName = optParentPkColumnName.get();
-        ColumnModel parentPkColumn = parentEntity.getColumns().get(parentPkColumnName);
+        ColumnModel parentPkColumn = parentEntity.findColumn(null, parentPkColumnName);
         if (parentPkColumn == null) return;
 
         context.getSchemaModel().getEntities().values().stream()
@@ -111,29 +113,33 @@ public class InheritanceHandler {
 
         List<JoinPair> joinPairs = resolvePrimaryKeyJoinPairs(childType, parentPkCols);
 
+        // 1) 검증 단계: 기존 컬럼과 타입/PK/nullable 조건을 모두 점검하고 추가될 컬럼은 pending 목록에만 만든다.
+        List<ColumnModel> pendingAdds = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
         for (JoinPair jp : joinPairs) {
             ColumnModel parentPk = jp.parent;
             String childColName = jp.childName;
-            ColumnModel existing = childEntity.getColumns().get(childColName);
+            ColumnModel existing = childEntity.findColumn(null, childColName);
             if (existing != null) {
-                if (!existing.getJavaType().equals(parentPk.getJavaType())
-                        || !existing.isPrimaryKey()
-                        || existing.isNullable()) {
-                    context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                            "JOINED inheritance column mismatch for '" + childColName + "' in " + childEntity.getEntityName());
-                    childEntity.setValid(false);
-                    return;
+                if (!existing.getJavaType().equals(parentPk.getJavaType()) || !existing.isPrimaryKey() || existing.isNullable()) {
+                    errors.add("JOINED inheritance column mismatch for '" + childColName + "' in " + childEntity.getEntityName());
                 }
             } else {
-                ColumnModel idAsFk = ColumnModel.builder()
+                pendingAdds.add(ColumnModel.builder()
                         .columnName(childColName)
                         .javaType(parentPk.getJavaType())
                         .isPrimaryKey(true)
                         .isNullable(false)
-                        .build();
-                childEntity.getColumns().put(childColName, idAsFk);
+                        .build());
             }
         }
+        // 2) 커밋 단계: 오류가 없을 때만 실제 childEntity에 put
+        if (!errors.isEmpty()) {
+            errors.forEach(msg -> context.getMessager().printMessage(Diagnostic.Kind.ERROR, msg));
+            childEntity.setValid(false);
+            return;
+        }
+        pendingAdds.forEach(childEntity::putColumn);
 
         RelationshipModel relationship = RelationshipModel.builder()
                 .type(RelationshipType.JOINED_INHERITANCE)
@@ -182,9 +188,9 @@ public class InheritanceHandler {
                 result.add(new JoinPair(parentRef, childName));
             }
         } catch (IllegalStateException ex) {
-            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "Invalid @PrimaryKeyJoinColumn on " + childType.getQualifiedName() + ": " + ex.getMessage(), childType);
-            throw ex; // Re-throw to maintain existing behavior for now
+            context.getMessager().printMessage(Diagnostic.Kind.NOTE,
+                    "JOINED inheritance PK mapping error context (" + childType.getQualifiedName() + "): " + ex.getMessage(), childType);
+            throw ex; // Preserve behavior; avoid duplicate ERROR logs
         }
         return result;
     }
@@ -236,7 +242,7 @@ public class InheritanceHandler {
         childEntity.setInheritance(InheritanceType.TABLE_PER_CLASS);
 
         parentEntity.getColumns().forEach((name, column) -> {
-            if (!childEntity.getColumns().containsKey(name)) {
+            if (!childEntity.hasColumn(null, name)) {
                 ColumnModel copiedColumn = ColumnModel.builder()
                         .columnName(column.getColumnName())
                         .javaType(column.getJavaType())
@@ -258,7 +264,7 @@ public class InheritanceHandler {
                         .conversionClass(column.getConversionClass())
                         .temporalType(column.getTemporalType())
                         .build();
-                childEntity.getColumns().put(name, copiedColumn);
+                childEntity.putColumn(copiedColumn);
             }
         });
 

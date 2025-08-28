@@ -1021,7 +1021,7 @@ class EntityHandlerTest {
             ColumnModel embeddedColumn = ColumnModel.builder().columnName("embedded_col").build();
             entity.getColumns().put("embedded_col", embeddedColumn);
             return null; // void 메서드이므로 null 반환
-        }).when(embeddedHandler).processEmbedded(any(), any(EntityModel.class), anySet());
+        }).when(embeddedHandler).processEmbedded(any(VariableElement.class), any(EntityModel.class), anySet());
 
 
         // --- ACT ---

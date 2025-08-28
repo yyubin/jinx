@@ -48,6 +48,7 @@ public class ColumnModel {
     @Builder.Default private TemporalType mapKeyTemporalType = null; // For @MapKeyTemporal
 
     public long getAttributeHash() {
-        return Objects.hash(columnName, javaType, length, precision, scale, isNullable, isUnique, defaultValue);
+        return Objects.hash(columnName, javaType, length, precision, scale, isNullable, isUnique, defaultValue,
+                temporalType, enumerationType);
     }
 }

@@ -5,6 +5,8 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.TypeVariable;
+import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import java.lang.annotation.Annotation;
@@ -40,14 +42,20 @@ public record FieldAttributeDescriptor(VariableElement field, Types typeUtils, E
     @Override
     public Optional<DeclaredType> genericArg(int idx) {
         TypeMirror type = field.asType();
-        if (!(type instanceof DeclaredType declaredType)) {
-            return Optional.empty();
-        }
+        if (!(type instanceof DeclaredType declaredType)) return Optional.empty();
         List<? extends TypeMirror> typeArgs = declaredType.getTypeArguments();
-        if (typeArgs == null || typeArgs.size() <= idx || !(typeArgs.get(idx) instanceof DeclaredType argType)) {
-            return Optional.empty();
+        if (typeArgs == null || typeArgs.size() <= idx) return Optional.empty();
+
+        TypeMirror arg = typeArgs.get(idx);
+        if (arg instanceof WildcardType wt) {
+            TypeMirror bound = wt.getExtendsBound() != null ? wt.getExtendsBound() : wt.getSuperBound();
+            return (bound instanceof DeclaredType bdt) ? Optional.of(bdt) : Optional.empty();
         }
-        return Optional.of(argType);
+        if (arg instanceof TypeVariable tv) {
+            TypeMirror upper = tv.getUpperBound();
+            return (upper instanceof DeclaredType bdt) ? Optional.of(bdt) : Optional.empty();
+        }
+        return (arg instanceof DeclaredType adt) ? Optional.of(adt) : Optional.empty();
     }
 
     @Override

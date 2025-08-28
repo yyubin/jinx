@@ -38,6 +38,9 @@ public class ColumnHandler {
 
     public ColumnModel createFromAttribute(AttributeDescriptor attribute, EntityModel entity, Map<String, String> overrides) {
         ColumnModel column = attributeBasedResolver.resolve(attribute, null, null, overrides);
+        if (column == null) {
+            return null;
+        }
         String tableOverride = overrides.get("tableName");
         if (tableOverride != null && !tableOverride.isEmpty()) {
             column.setTableName(tableOverride);
@@ -48,6 +51,9 @@ public class ColumnHandler {
 
     public ColumnModel createFromAttributeType(AttributeDescriptor attribute, EntityModel entity, TypeMirror type, String columnName) {
         ColumnModel column = attributeBasedResolver.resolve(attribute, type, columnName, Map.of());
+        if (column == null) {
+            return null;
+        }
         validateAndCorrectTableName(column, attribute, entity);
         return column;
     }
