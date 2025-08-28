@@ -82,14 +82,10 @@ public class InheritanceHandler {
     }
 
     private void findAndProcessJoinedChildren(EntityModel parentEntity, TypeElement parentType) {
-        Optional<String> optParentPkColumnName = context.findPrimaryKeyColumnName(parentEntity);
-        if (optParentPkColumnName.isEmpty()) {
+        if (context.findAllPrimaryKeyColumns(parentEntity).isEmpty()) {
             parentEntity.setValid(false);
             return;
         }
-        String parentPkColumnName = optParentPkColumnName.get();
-        ColumnModel parentPkColumn = parentEntity.findColumn(null, parentPkColumnName);
-        if (parentPkColumn == null) return;
 
         context.getSchemaModel().getEntities().values().stream()
                 .filter(childCandidate -> !childCandidate.getEntityName().equals(parentEntity.getEntityName()))
@@ -103,6 +99,31 @@ public class InheritanceHandler {
     }
 
     public record JoinPair(ColumnModel parent, String childName) {}
+    
+    /**
+     * 타입명을 정규화하여 비교할 수 있도록 합니다.
+     * 예: "java.lang.Long" -> "Long", 박스됨 타입 처리 등
+     */
+    private String normalizeType(String javaType) {
+        if (javaType == null) return null;
+        
+        // 기본 타입 정규화
+        return switch (javaType) {
+            case "java.lang.Boolean" -> "boolean";
+            case "java.lang.Byte" -> "byte";
+            case "java.lang.Short" -> "short";
+            case "java.lang.Integer" -> "int";
+            case "java.lang.Long" -> "long";
+            case "java.lang.Float" -> "float";
+            case "java.lang.Double" -> "double";
+            case "java.lang.Character" -> "char";
+            default -> {
+                // 패키지명 제거
+                int lastDot = javaType.lastIndexOf('.');
+                yield lastDot >= 0 ? javaType.substring(lastDot + 1) : javaType;
+            }
+        };
+    }
 
     private void processSingleJoinedChild(EntityModel childEntity, EntityModel parentEntity, TypeElement childType) {
         List<ColumnModel> parentPkCols = context.findAllPrimaryKeyColumns(parentEntity);
@@ -116,29 +137,54 @@ public class InheritanceHandler {
         // 1) 검증 단계: 기존 컬럼과 타입/PK/nullable 조건을 모두 점검하고 추가될 컬럼은 pending 목록에만 만든다.
         List<ColumnModel> pendingAdds = new ArrayList<>();
         List<String> errors = new ArrayList<>();
+        String childTable = childEntity.getTableName();
+        
         for (JoinPair jp : joinPairs) {
-            ColumnModel parentPk = jp.parent;
-            String childColName = jp.childName;
-            ColumnModel existing = childEntity.findColumn(null, childColName);
+            ColumnModel parentPk = jp.parent();
+            String childCol = jp.childName();
+            
+            ColumnModel existing = childEntity.findColumn(childTable, childCol);
             if (existing != null) {
-                if (!existing.getJavaType().equals(parentPk.getJavaType()) || !existing.isPrimaryKey() || existing.isNullable()) {
-                    errors.add("JOINED inheritance column mismatch for '" + childColName + "' in " + childEntity.getEntityName());
+                String wantType = parentPk.getJavaType();
+                String haveType = existing.getJavaType();
+                
+                boolean typeMismatch = !normalizeType(haveType).equals(normalizeType(wantType));
+                boolean pkMismatch = !existing.isPrimaryKey();
+                boolean nullMismatch = existing.isNullable();
+                
+                if (typeMismatch || pkMismatch || nullMismatch) {
+                    errors.add(
+                        "JOINED column mismatch: child='" + childEntity.getEntityName() + "', column='" + childCol +
+                        "' expected{type=" + wantType + ", pk=true, nullable=false} " +
+                        "actual{type=" + haveType + ", pk=" + existing.isPrimaryKey() + ", nullable=" + existing.isNullable() + "}"
+                    );
                 }
-            } else {
-                pendingAdds.add(ColumnModel.builder()
-                        .columnName(childColName)
-                        .javaType(parentPk.getJavaType())
-                        .isPrimaryKey(true)
-                        .isNullable(false)
-                        .build());
+                continue;
             }
+            
+            ColumnModel add = ColumnModel.builder()
+                    .columnName(childCol)
+                    .tableName(childTable)
+                    .javaType(parentPk.getJavaType())
+                    .length(parentPk.getLength())
+                    .precision(parentPk.getPrecision())
+                    .scale(parentPk.getScale())
+                    .defaultValue(parentPk.getDefaultValue())
+                    .comment(parentPk.getComment())
+                    .isPrimaryKey(true)
+                    .isNullable(false)
+                    .build();
+            
+            pendingAdds.add(add);
         }
+        
         // 2) 커밋 단계: 오류가 없을 때만 실제 childEntity에 put
         if (!errors.isEmpty()) {
-            errors.forEach(msg -> context.getMessager().printMessage(Diagnostic.Kind.ERROR, msg));
+            errors.forEach(msg -> context.getMessager().printMessage(Diagnostic.Kind.ERROR, msg, childType));
             childEntity.setValid(false);
             return;
         }
+        
         pendingAdds.forEach(childEntity::putColumn);
 
         RelationshipModel relationship = RelationshipModel.builder()

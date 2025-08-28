@@ -11,6 +11,7 @@ public interface LiquibaseDialect extends BaseDialect{
      * based on its generation strategy and database capabilities
      */
     default boolean shouldUseAutoIncrement(GenerationStrategy strategy) {
+        if (strategy == null) return false;
         return switch (strategy) {
             case IDENTITY -> true;
             case AUTO -> supportsIdentity(); // AUTO maps to IDENTITY if supported

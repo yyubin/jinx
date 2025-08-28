@@ -143,4 +143,14 @@ public class ProcessingContext {
     public void clearMappedByVisited() {
         mappedByVisitedSet.clear();
     }
+    
+    /**
+     * Initialize context state at the beginning of an annotation processing round.
+     * This prevents cross-round contamination of deferred queues and visit tracking.
+     */
+    public void beginRound() {
+        clearMappedByVisited();
+        deferredEntities.clear();
+        deferredNames.clear();
+    }
 }

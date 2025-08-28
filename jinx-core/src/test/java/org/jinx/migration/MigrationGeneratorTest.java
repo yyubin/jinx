@@ -16,7 +16,7 @@ import static org.mockito.Mockito.*;
 class MigrationGeneratorTest {
 
     @Mock
-    private Dialect dialect;
+    private DdlDialect dialect;
     @Mock
     private SchemaModel newSchema;
 
@@ -26,8 +26,9 @@ class MigrationGeneratorTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        migrationGenerator = new MigrationGenerator(dialect, newSchema, false);
-        migrationReverseGenerator = new MigrationGenerator(dialect, newSchema, true);
+        DialectBundle dialectBundle = DialectBundle.builder(dialect, DatabaseType.MySQL).build();
+        migrationGenerator = new MigrationGenerator(dialectBundle, newSchema, false);
+        migrationReverseGenerator = new MigrationGenerator(dialectBundle, newSchema, true);
     }
 
     private EntityModel createDummyEntity(String name) {

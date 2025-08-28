@@ -84,7 +84,7 @@ public class MySqlDialect extends AbstractDialect
 
     @Override
     public String getRenameTableSql(String oldTableName, String newTableName) {
-        return "ALTER TABLE " + quoteIdentifier(oldTableName) + " RENAME TO " + quoteIdentifier(newTableName) + ";\n";
+        return "RENAME TABLE " + quoteIdentifier(oldTableName) + " TO " + quoteIdentifier(newTableName) + ";\n";
     }
 
     @Override
@@ -185,6 +185,9 @@ public class MySqlDialect extends AbstractDialect
 
         if (c.getDefaultValue() != null) {
             sb.append(" DEFAULT ").append(valueTransformer.quote(c.getDefaultValue(), javaTypeMapped));
+        } else if (c.getGenerationStrategy() == GenerationStrategy.UUID && getUuidDefaultValue() != null) {
+            // 함수형 기본값은 따옴표 없이 그대로 사용
+            sb.append(" DEFAULT ").append(getUuidDefaultValue());
         } else if (javaTypeMapped.getDefaultValue() != null) {
             sb.append(" DEFAULT ").append(valueTransformer.quote(javaTypeMapped.getDefaultValue(), javaTypeMapped));
         }
@@ -329,9 +332,16 @@ public class MySqlDialect extends AbstractDialect
 
     @Override
     public String getAddRelationshipSql(String table, RelationshipModel rel) {
+        if (rel.isNoConstraint()) {
+            return ""; // NO_CONSTRAINT인 경우 FK 생성 생략
+        }
+        
+        // tableName이 지정된 경우 우선 사용
+        String targetTable = rel.getTableName() != null ? rel.getTableName() : table;
+        
         // 제약 조건 이름 생성: 복합 컬럼을 고려
         String constraintName = rel.getConstraintName() != null ? rel.getConstraintName() :
-                "fk_" + table + "_" + String.join("_", rel.getColumns() != null ? rel.getColumns() : List.of());
+                "fk_" + targetTable + "_" + String.join("_", rel.getColumns() != null ? rel.getColumns() : List.of());
         StringBuilder sb = new StringBuilder();
 
         // 복합 외래 키 컬럼 처리
@@ -342,7 +352,7 @@ public class MySqlDialect extends AbstractDialect
                 ? rel.getReferencedColumns().stream().map(this::quoteIdentifier).collect(Collectors.joining(","))
                 : "";
 
-        sb.append("ALTER TABLE ").append(quoteIdentifier(table))
+        sb.append("ALTER TABLE ").append(quoteIdentifier(targetTable))
                 .append(" ADD CONSTRAINT ").append(quoteIdentifier(constraintName))
                 .append(" FOREIGN KEY (").append(fkColumns).append(")")
                 .append(" REFERENCES ").append(quoteIdentifier(rel.getReferencedTable()))
@@ -360,10 +370,17 @@ public class MySqlDialect extends AbstractDialect
 
     @Override
     public String getDropRelationshipSql(String table, RelationshipModel rel) {
+        if (rel.isNoConstraint()) {
+            return ""; // NO_CONSTRAINT인 경우 FK 제거 생략
+        }
+        
+        // tableName이 지정된 경우 우선 사용
+        String targetTable = rel.getTableName() != null ? rel.getTableName() : table;
+        
         // 제약 조건 이름 생성: 복합 컬럼을 고려
         String constraintName = rel.getConstraintName() != null ? rel.getConstraintName() :
-                "fk_" + table + "_" + String.join("_", rel.getColumns() != null ? rel.getColumns() : List.of());
-        return "ALTER TABLE " + quoteIdentifier(table)
+                "fk_" + targetTable + "_" + String.join("_", rel.getColumns() != null ? rel.getColumns() : List.of());
+        return "ALTER TABLE " + quoteIdentifier(targetTable)
                 + " DROP FOREIGN KEY " + quoteIdentifier(constraintName) + ";\n";
     }
 
@@ -432,6 +449,11 @@ public class MySqlDialect extends AbstractDialect
             return "BLOB";
         }
 
+        // Enum 타입 처리 (getEnumValues 길이 기반)
+        if (column.getEnumValues() != null && column.getEnumValues().length > 0) {
+            return column.isEnumStringMapping() ? "VARCHAR(" + length + ")" : "INT";
+        }
+        
         return switch (javaType) {
             case "java.lang.String" -> "VARCHAR(" + length + ")";
             case "int", "java.lang.Integer" -> "INT";
@@ -451,7 +473,6 @@ public class MySqlDialect extends AbstractDialect
             }
             case "byte[]" -> "VARBINARY(" + length + ")";
             case "java.util.UUID" -> "CHAR(36)";
-            case "java.lang.Enum" -> column.isEnumStringMapping() ? "VARCHAR(" + length + ")" : "INT";
             default -> "VARCHAR(" + length + ")";
         };
     }

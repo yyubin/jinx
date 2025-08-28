@@ -342,7 +342,7 @@ public class RelationshipHandler {
         boolean isSingleFk = fkColumnNames.size() == 1;
         boolean shouldAddUnique = (oneToOne != null) && (mapsId == null) && isSingleFk
                 && (joinColumns.isEmpty() || joinColumns.get(0).unique());
-        if (shouldAddUnique) {
+        if (shouldAddUnique && !coveredByPkOrUnique(ownerEntity, fkBaseTable, fkColumnNames)) {
             String uqName = context.getNaming().uqName(fkBaseTable, fkColumnNames);
             if (!ownerEntity.getConstraints().containsKey(uqName)) {
                 ownerEntity.getConstraints().put(uqName, ConstraintModel.builder()
@@ -1154,21 +1154,20 @@ public class RelationshipHandler {
 
     private Optional<TypeElement> resolveTargetEntity(AttributeDescriptor attr,
             ManyToOne m2o, OneToOne o2o, OneToMany o2m, ManyToMany m2m) {
-        Class<?> te = null;
-        if (m2o != null && m2o.targetEntity() != void.class) te = m2o.targetEntity();
-        else if (o2o != null && o2o.targetEntity() != void.class) te = o2o.targetEntity();
-        else if (o2m != null && o2m.targetEntity() != void.class) te = o2m.targetEntity();
-        else if (m2m != null && m2m.targetEntity() != void.class) te = m2m.targetEntity();
+        // 1) 명시적 targetEntity 우선 (APT 안전)
+        TypeElement explicit = null;
+        if (m2o != null) explicit = classValToTypeElement(() -> m2o.targetEntity());
+        else if (o2o != null) explicit = classValToTypeElement(() -> o2o.targetEntity());
+        else if (o2m != null) explicit = classValToTypeElement(() -> o2m.targetEntity());
+        else if (m2m != null) explicit = classValToTypeElement(() -> m2m.targetEntity());
+        if (explicit != null) return Optional.of(explicit);
 
-        if (te != null) {
-            return Optional.ofNullable(context.getElementUtils().getTypeElement(te.getName()));
-        }
-        // 컬렉션이면 genericArg(0), 아니면 attr.type()
+        // 2) 컬렉션이면 제네릭 인자 사용
         if ((o2m != null) || (m2m != null)) {
             return attr.genericArg(0).map(dt -> (TypeElement) dt.asElement());
         }
-        TypeElement ref = getReferencedTypeElement(attr.type());
-        return Optional.ofNullable(ref);
+        // 3) 필드/프로퍼티 타입으로 추론
+        return Optional.ofNullable(getReferencedTypeElement(attr.type()));
     }
 
     private String resolveJoinColumnTable(JoinColumn jc, EntityModel owner) {
@@ -1248,6 +1247,22 @@ public class RelationshipHandler {
             return (TypeElement) declaredType.asElement();
         }
         return null;
+    }
+    
+    /**
+     * 클래스값(annotation)에서 TypeElement를 안전하게 추출합니다.
+     * APT 환경에서 MirroredTypeException을 적절히 처리합니다.
+     */
+    private TypeElement classValToTypeElement(java.util.function.Supplier<Class<?>> getter) {
+        try {
+            Class<?> clz = getter.get();
+            if (clz == void.class) return null;
+            return context.getElementUtils().getTypeElement(clz.getName());
+        } catch (javax.lang.model.type.MirroredTypeException mte) {
+            return getReferencedTypeElement(mte.getTypeMirror());
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     private List<CascadeType> toCascadeList(jakarta.persistence.CascadeType[] arr) {
@@ -1445,6 +1460,12 @@ public class RelationshipHandler {
             
             // Get cached descriptors to avoid re-computation
             List<AttributeDescriptor> targetDescriptors = context.getCachedDescriptors(targetTypeElement);
+            if (targetDescriptors == null) {
+                context.getMessager().printMessage(Diagnostic.Kind.WARNING,
+                        "Descriptor cache miss for target entity " + targetEntityName +
+                        " while resolving mappedBy '" + mappedByAttributeName + "'. Skipping.");
+                return null;
+            }
             
             // Find attribute with matching name using the same naming convention
             return targetDescriptors.stream()
@@ -1478,5 +1499,27 @@ public class RelationshipHandler {
             if (jc.foreignKey().value() != first) return false;
         }
         return true;
+    }
+    
+    /**
+     * 지정된 컬럼들이 이미 PK나 UNIQUE 제약으로 커버되는지 확인합니다.
+     * 중복 UNIQUE 제약 생성을 방지하기 위해 사용됩니다.
+     */
+    private boolean coveredByPkOrUnique(EntityModel entity, String tableName, List<String> columns) {
+        // PK로 커버되는지 확인
+        List<String> pkColumns = context.findAllPrimaryKeyColumns(entity);
+        if (!pkColumns.isEmpty() && entity.getTableName().equals(tableName)) {
+            if (pkColumns.size() == columns.size() && pkColumns.containsAll(columns)) {
+                return true;
+            }
+        }
+        
+        // 기존 UNIQUE 제약으로 커버되는지 확인
+        return entity.getConstraints().values().stream()
+                .filter(c -> c.getType() == ConstraintType.UNIQUE)
+                .filter(c -> tableName.equals(c.getTableName()))
+                .anyMatch(c -> c.getColumns() != null 
+                        && c.getColumns().size() == columns.size() 
+                        && c.getColumns().containsAll(columns));
     }
 }

@@ -46,7 +46,12 @@ public class AttributeDescriptorFactory {
         jakarta.persistence.AssociationOverride.class,
         jakarta.persistence.AssociationOverrides.class,
         jakarta.persistence.AttributeOverride.class,
-        jakarta.persistence.AttributeOverrides.class
+        jakarta.persistence.AttributeOverrides.class,
+        jakarta.persistence.Convert.class,
+        jakarta.persistence.Enumerated.class,
+        jakarta.persistence.Temporal.class,
+        jakarta.persistence.GeneratedValue.class,
+        jakarta.persistence.Version.class
     );
 
     public AttributeDescriptorFactory(Types typeUtils, Elements elements, ProcessingContext context) {

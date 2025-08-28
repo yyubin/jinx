@@ -40,17 +40,31 @@ public class ColumnBuilderFactory {
         // Use same priority-based column name resolution as AttributeBasedEntityResolver
         String finalColumnName = determineColumnName(attribute, columnName, column, overrides);
 
+        boolean isPk = attribute.hasAnnotation(Id.class) || attribute.hasAnnotation(EmbeddedId.class);
+        TypeMirror effectiveType = (type != null) ? type : attribute.type();
+        GenerationStrategy genStrategy = GenerationStrategy.NONE;
+        GeneratedValue gv = attribute.getAnnotation(GeneratedValue.class);
+        if (gv != null) {
+            switch (gv.strategy()) {
+                case IDENTITY -> genStrategy = GenerationStrategy.IDENTITY;
+                case AUTO -> genStrategy = GenerationStrategy.AUTO;
+                case SEQUENCE -> genStrategy = GenerationStrategy.SEQUENCE;
+                case TABLE -> genStrategy = GenerationStrategy.TABLE;
+                default -> genStrategy = GenerationStrategy.NONE;
+            }
+        }
+
         ColumnModel.ColumnModelBuilder builder = ColumnModel.builder()
                 .columnName(finalColumnName)
-                .javaType(type.toString())
-                .isPrimaryKey(attribute.hasAnnotation(Id.class) || attribute.hasAnnotation(EmbeddedId.class))
-                .isNullable(column == null || column.nullable())
+                .javaType(effectiveType.toString())
+                .isPrimaryKey(isPk)
+                .isNullable((column == null || column.nullable()) && !isPk)
                 .isUnique(column != null && column.unique())
                 .length(column != null ? column.length() : 255)
                 .precision(column != null ? column.precision() : 0)
                 .scale(column != null ? column.scale() : 0)
                 .defaultValue(column != null && !column.columnDefinition().isEmpty() ? column.columnDefinition() : null)
-                .generationStrategy(GenerationStrategy.NONE);
+                .generationStrategy(genStrategy);
         
         // Apply table name override if provided
         String tableNameOverride = overrides.get("tableName");

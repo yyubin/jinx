@@ -49,6 +49,6 @@ public class ColumnModel {
 
     public long getAttributeHash() {
         return Objects.hash(columnName, javaType, length, precision, scale, isNullable, isUnique, defaultValue,
-                temporalType, enumerationType);
+                temporalType, enumerationType, enumStringMapping);
     }
 }

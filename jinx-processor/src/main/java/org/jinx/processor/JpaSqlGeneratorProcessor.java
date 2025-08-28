@@ -67,6 +67,10 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+        if (!roundEnv.processingOver()) {
+            context.beginRound(); // 라운드 시작 시 컨텍스트 상태 초기화
+        }
+        
         processRetryTasks();
 
         // Process @Converter with autoApply=true
@@ -132,6 +136,14 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
             for (EntityModel entityModel : context.getSchemaModel().getEntities().values()) {
                 if (!entityModel.isValid()) continue;
                 TypeElement typeElement = context.getElementUtils().getTypeElement(entityModel.getEntityName());
+                if (typeElement == null) {
+                    context.getMessager().printMessage(
+                        Diagnostic.Kind.ERROR,
+                        "Cannot resolve TypeElement for entity '" + entityModel.getEntityName() + "'."
+                    );
+                    entityModel.setValid(false);
+                    continue;
+                }
                 inheritanceHandler.resolveInheritance(typeElement, entityModel);
             }
             // Relationships are now processed during entity handling via AttributeDescriptor
@@ -169,6 +181,30 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                         "Unresolved JOINED inheritance: " + context.getDeferredEntities());
             }
+            
+            // 5. JOINED 상속 처리 완료 후 최종 PK 검증
+            for (Map.Entry<String, EntityModel> e : context.getSchemaModel().getEntities().entrySet()) {
+                EntityModel em = e.getValue();
+                if (!em.isValid()) continue;
+                if (context.findAllPrimaryKeyColumns(em).isEmpty()) {
+                    // FQN을 사용하여 TypeElement 조회
+                    TypeElement te = context.getElementUtils().getTypeElement(e.getKey());
+                    if (te != null) {
+                        context.getMessager().printMessage(
+                                Diagnostic.Kind.ERROR,
+                                "Entity '" + e.getKey() + "' must have a primary key after JOINED inheritance processing.",
+                                te
+                        );
+                    } else {
+                        context.getMessager().printMessage(
+                                Diagnostic.Kind.ERROR,
+                                "Entity '" + e.getKey() + "' must have a primary key after JOINED inheritance processing."
+                        );
+                    }
+                    em.setValid(false);
+                }
+            }
+            
             context.saveModelToJson();
         }
         return true;

@@ -242,7 +242,8 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                                 .config(ColumnConfig.builder()
                                         .name(column.getColumnName())
                                         .type(getLiquibaseTypeName(column))
-                                        .defaultValue(getEffectiveDefaultValue(column))
+                                        .defaultValueComputed(getUuidComputedDefaultOrNull(column))
+                                        .defaultValue(getNonComputedDefaultOrNull(column))
                                         .autoIncrement(shouldUseAutoIncrement(column.getGenerationStrategy()))
                                         .constraints(LiquibaseUtils.buildConstraints(column, currentTableName))
                                         .build())
@@ -508,6 +509,28 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         }
         
         // Return original default value for other cases
+        return column.getDefaultValue();
+    }
+    
+    /**
+     * UUID 전략인 경우 computed default 값을 반환, 그렇지 않으면 null
+     */
+    private String getUuidComputedDefaultOrNull(ColumnModel column) {
+        if (column.getGenerationStrategy() == GenerationStrategy.UUID) {
+            return dialectBundle.liquibase()
+                    .map(lb -> lb.getUuidDefaultValue())
+                    .orElse(null);
+        }
+        return null;
+    }
+    
+    /**
+     * UUID 전략이 아닌 경우 일반 default 값을 반환, UUID 전략이면 null
+     */
+    private String getNonComputedDefaultOrNull(ColumnModel column) {
+        if (column.getGenerationStrategy() == GenerationStrategy.UUID) {
+            return null;
+        }
         return column.getDefaultValue();
     }
 
