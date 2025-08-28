@@ -11,6 +11,7 @@ public class ColumnConfig {
     private String type;
     private String defaultValue;
     private String defaultValueSequenceNext;
+    private String defaultValueComputed;
     private Constraints constraints;
     private Boolean autoIncrement;
 }
