@@ -36,6 +36,16 @@ public class EntityModel {
         ENTITY, JOIN_TABLE, COLLECTION_TABLE
     }
 
+    /**
+     * Determines whether a given table name is valid for this entity.
+     *
+     * A null or empty name is treated as the entity's primary table and is considered valid.
+     * Comparison is case-insensitive: the name is valid if it equals the primary table name
+     * or matches any secondary table name registered on this entity.
+     *
+     * @param tableNameToValidate the table name to validate; may be null or empty to denote the primary table
+     * @return true if the name refers to the primary table or any secondary table for this entity, otherwise false
+     */
     public boolean isValidTableName(String tableNameToValidate) {
         // An empty/null table name implies the default primary table, which is always valid.
         if (tableNameToValidate == null || tableNameToValidate.isEmpty()) {
@@ -52,19 +62,58 @@ public class EntityModel {
                 .anyMatch(st -> tableNameToValidate.equalsIgnoreCase(st.getName()));
     }
 
+    /**
+     * Build a composite key for column lookup by combining a table name and column name.
+     *
+     * If {@code tableName} is null or empty, the entity's primary {@code tableName} is used.
+     *
+     * @param tableName the table name to use (may be null or empty to indicate the primary table)
+     * @param columnName the column name
+     * @return the composite key in the format "<table>::<column>"
+     */
     private String colKey(String tableName, String columnName) {
         String normalizedTableName = (tableName == null || tableName.isEmpty()) ? this.tableName : tableName;
         return normalizedTableName + "::" + columnName;
     }
 
+    /**
+     * Returns the ColumnModel for the given table and column name, or null if none is found.
+     *
+     * If tableName is null or empty, the entity's primary table name is used. Table name matching
+     * is case-insensitive with respect to how column keys are stored.
+     *
+     * @param tableName   the table that contains the column, or null/empty to use the primary table
+     * @param columnName  the name of the column to look up
+     * @return the ColumnModel for the specified table and column, or null if not present
+     */
     public ColumnModel findColumn(String tableName, String columnName) {
         return columns.get(colKey(tableName, columnName));
     }
 
+    /**
+     * Adds or replaces metadata for a column in this entity.
+     *
+     * The entry is keyed by the column's table name and column name. If the
+     * provided ColumnModel has a null or empty table name, the entity's primary
+     * table name is used. If an entry already exists for the same table+column,
+     * it will be overwritten.
+     *
+     * @param column the ColumnModel to store (table name may be null/empty to target the primary table)
+     */
     public void putColumn(ColumnModel column) {
         columns.put(colKey(column.getTableName(), column.getColumnName()), column);
     }
 
+    /**
+     * Returns true if a column with the given name exists for the specified table.
+     *
+     * If {@code tableName} is null or empty the entity's primary table is used. Table name matching is performed
+     * via the internal table/column composite key logic, so secondary table names are supported.
+     *
+     * @param tableName   the table name to look up, or null/empty to use the primary table
+     * @param columnName  the column name to check for
+     * @return            {@code true} if the column exists for the resolved table, otherwise {@code false}
+     */
     public boolean hasColumn(String tableName, String columnName) {
         return columns.containsKey(colKey(tableName, columnName));
     }

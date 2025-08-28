@@ -7,6 +7,19 @@ import org.jinx.model.DiffResult.*;
 import org.jinx.model.SchemaModel;
 
 public class LiquibaseYamlGenerator {
+    /**
+     * Generates a Liquibase DatabaseChangeLog representing the schema differences.
+     *
+     * Processes differences in a deterministic order (sequences, table generators,
+     * dropped objects, renames, additions, alterations, then foreign-key additions)
+     * and collects resulting change sets into a DatabaseChangeLog.
+     *
+     * @param diff the DiffResult containing detected schema differences to convert into change sets
+     * @param oldSchema unused; accepted for API compatibility but not referenced by this implementation
+     * @param newSchema unused; accepted for API compatibility but not referenced by this implementation
+     * @param dialectBundle supplies dialect-specific behavior used when generating change sets
+     * @return a DatabaseChangeLog containing change sets produced from the provided diff
+     */
     public DatabaseChangeLog generate(DiffResult diff, SchemaModel oldSchema, SchemaModel newSchema, DialectBundle dialectBundle) {
         ChangeSetIdGenerator idGenerator = new ChangeSetIdGenerator();
         LiquibaseVisitor visitor = new LiquibaseVisitor(dialectBundle, idGenerator);

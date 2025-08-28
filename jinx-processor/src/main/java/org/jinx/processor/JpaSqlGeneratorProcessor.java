@@ -46,6 +46,14 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
     private ElementCollectionHandler elementCollectionHandler;
     private TableGeneratorHandler tableGeneratorHandler;
 
+    /**
+     * Initializes the annotation processor: creates a timestamped SchemaModel, builds a ProcessingContext,
+     * and instantiates/wires all handler components (sequence, column, relationship, inheritance, embedded,
+     * constraint, element collection, table generator, and entity handlers).
+     *
+     * <p>The method is synchronized and delegates to {@code super.init(processingEnv)} before creating
+     * the model and handlers so the processor is ready to handle annotations in subsequent processing rounds.
+     */
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {
         super.init(processingEnv);
@@ -65,6 +73,21 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         this.entityHandler = new EntityHandler(context, columnHandler, embeddedHandler, constraintHandler, sequenceHandler, elementCollectionHandler, tableGeneratorHandler, relationshipHandler);
     }
 
+    /**
+     * Main annotation processing entry point for this processor.
+     *
+     * <p>Handles several compile-time tasks each round:
+     * <ul>
+     *   <li>Registers auto-apply AttributeConverters (from {@code @Converter(autoApply=true)}), emitting a warning if the converter's domain type cannot be resolved.</li>
+     *   <li>Collects {@code @MappedSuperclass} and {@code @Embeddable} types into transient processing maps and JSON-serializable DTO maps.</li>
+     *   <li>Delegates {@code @Entity} handling to the {@code EntityHandler} (which also processes relationships via attribute descriptors).</li>
+     *   <li>When processing is complete, resolves inheritance for valid entities, validates that each entity has at least one primary key column (emitting an error diagnostic if not), attempts deferred JOINED inheritance foreign-key resolution (up to 5 passes), emits an error if unresolved deferred entities remain, and persists the final schema model to JSON.</li>
+     * </ul>
+     *
+     * @param annotations the annotation types requested to be processed
+     * @param roundEnv environment for information about the current and prior round
+     * @return {@code true} to claim the annotations (no further processing by other processors)
+     */
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         processRetryTasks();

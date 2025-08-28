@@ -24,6 +24,13 @@ public class EntityHandler {
     private final TableGeneratorHandler tableGeneratorHandler;
     private final RelationshipHandler relationshipHandler;
 
+    /**
+     * Creates an EntityHandler with the required processing context and collaborator handlers.
+     *
+     * <p>All dependencies are injected to enable entity metadata extraction and coordination of
+     * specialized processing (columns, embeds, constraints, generators, element collections and
+     * relationships).</p>
+     */
     public EntityHandler(ProcessingContext context, ColumnHandler columnHandler, EmbeddedHandler embeddedHandler,
                          ConstraintHandler constraintHandler, SequenceHandler sequenceHandler,
                          ElementCollectionHandler elementCollectionHandler, TableGeneratorHandler tableGeneratorHandler,
@@ -38,6 +45,21 @@ public class EntityHandler {
         this.relationshipHandler = relationshipHandler;
     }
 
+    /**
+     * Orchestrates building an EntityModel from a TypeElement and registers it in the processing schema.
+     *
+     * Performs end-to-end processing of an entity declaration: clears per-entity mappedBy state, creates and
+     * registers the EntityModel, applies table metadata, generators, and constraints, registers secondary table
+     * names, processes composite keys and all attributes (via AttributeDescriptor-driven handlers), establishes
+     * secondary-table and JOINED-inheritance joins once primary keys are known, and enqueues the entity for
+     * deferred MapsId/join processing when necessary.
+     *
+     * The method mutates the global ProcessingContext and the schema model (it may add the entity and related
+     * metadata, or place the entity on the deferred queue). It may return early (no entity created) if validation
+     * fails during creation or composite-key processing.
+     *
+     * @param typeElement the TypeElement representing the entity class to process
+     */
     public void handle(TypeElement typeElement) {
         // Clear mappedBy visited set for each new entity to allow proper cycle detection
         context.clearMappedByVisited();
@@ -81,7 +103,15 @@ public class EntityHandler {
         }
     }
 
-    // ... (runDeferredJoinedFks and other methods) ...
+    /**
+     * Registers secondary table names from the provided @SecondaryTable annotations on the given entity.
+     *
+     * For each annotation a SecondaryTableModel is created using only the annotation's `name` and added
+     * to the entity's secondary table list if a table with the same name is not already present.
+     *
+     * @param secondaryTablesAnns list of @SecondaryTable annotations to register
+     * @param entity the EntityModel to which secondary table entries will be added (modified in place)
+     */
 
     private void registerSecondaryTableNames(List<SecondaryTable> secondaryTablesAnns, EntityModel entity) {
         for (SecondaryTable stAnn : secondaryTablesAnns) {
@@ -94,6 +124,18 @@ public class EntityHandler {
         }
     }
 
+    /**
+     * Processes @SecondaryTable annotations for an entity: applies table-level metadata (schema/catalog/comment/constraints/indexes)
+     * and creates the foreign-key joins from each secondary table to the entity's primary table.
+     *
+     * <p>If any secondary tables are present but the entity has no primary key columns, this method emits a compilation
+     * error and marks the entity invalid. For each secondary table it applies the annotation's constraints/indexes and
+     * invokes join processing to create the corresponding relationship of type SECONDARY_TABLE.</p>
+     *
+     * @param secondaryTables list of @SecondaryTable annotations collected for the entity
+     * @param type the element being processed (used for diagnostic reporting)
+     * @param entity the EntityModel being populated; may be marked invalid on error and will receive relationships/columns
+     */
     private void processSecondaryTableJoins(List<SecondaryTable> secondaryTables, TypeElement type, EntityModel entity) {
         // This method now runs after the PK has been determined.
         List<ColumnModel> primaryKeyColumns = context.findAllPrimaryKeyColumns(entity);
@@ -112,6 +154,22 @@ public class EntityHandler {
         }
     }
 
+    /**
+     * Processes a bounded snapshot of entities deferred for post-processing of JOINED-inheritance foreign keys and MapsId mappings.
+     *
+     * <p>This method iterates over the current size of the deferred-entity queue and for each entity:
+     * - polls the entity from the queue (stops early if the queue becomes empty),
+     * - skips entities already marked invalid,
+     * - attempts to resolve the corresponding TypeElement and, if unresolved, logs an error and re-queues the entity,
+     * - invokes processing of JOINED inheritance joins, and
+     * - invokes processing of any {@code @MapsId} relationship attributes for the entity.</p>
+     *
+     * <p>Behavioral notes:
+     * - Only a snapshot number of entities (the queue size at method entry) are processed to avoid unbounded re-processing
+     *   and potential infinite loops; entities re-queued here will be retried in a later round.
+     * - The method emits diagnostics when a TypeElement cannot be resolved and may re-enqueue entities for later processing.
+     * - No value is returned; processing and side effects occur on the shared ProcessingContext and EntityModel instances.</p>
+     */
     public void runDeferredJoinedFks() {
         int size = context.getDeferredEntities().size();
         for (int i = 0; i < size; i++) {
@@ -141,6 +199,20 @@ public class EntityHandler {
     }
 
 
+    /**
+     * Create an EntityModel for the given type element, using the @Table name when provided.
+     *
+     * The entity name is the type's fully-qualified name. If the type is annotated with
+     * {@code @Table} and a non-empty name is provided, that name is used as the table name;
+     * otherwise the type's simple name is used.
+     *
+     * If an entity with the same fully-qualified name already exists in the current schema,
+     * a compilation error is reported and this method returns {@code null} to indicate
+     * creation was aborted (the existing entity is preserved).
+     *
+     * @return a new, valid EntityModel populated with entity and table names, or {@code null}
+     *         if a duplicate entity was found and creation was aborted
+     */
     private EntityModel createEntityModel(TypeElement typeElement) {
         Optional<Table> tableOpt = Optional.ofNullable(typeElement.getAnnotation(Table.class));
         String tableName = tableOpt.map(Table::name).filter(n -> !n.isEmpty())
@@ -174,6 +246,13 @@ public class EntityHandler {
         tableGeneratorHandler.processTableGenerators(typeElement);
     }
 
+    /**
+     * Processes all constraint annotations declared on the given entity and applies them to the
+     * entity's primary table.
+     *
+     * Delegates to processConstraints using the element that declared the entity and the entity's
+     * collected ConstraintModel instances scoped to the entity's table.
+     */
     private void processEntityConstraints(TypeElement typeElement, EntityModel entity) {
         processConstraints(typeElement, null,
                 entity.getConstraints().values().stream().toList(),
@@ -182,6 +261,18 @@ public class EntityHandler {
 
     
 
+    /**
+     * Processes JOINED-inheritance primary-key join from the nearest joined parent entity to the given child entity.
+     *
+     * <p>If the nearest superclass annotated with {@code @Entity} uses {@code InheritanceType.JOINED}, this
+     * method resolves the parent entity model and primary key columns and delegates creation of the
+     * corresponding primary-key join relationship. If the parent entity model is not yet available the
+     * child entity is queued for deferred processing. If validation fails (missing parent PKs or invalid
+     * parent entity), the child entity is marked invalid and a compile-time error is emitted.</p>
+     *
+     * @param type the element representing the child entity type
+     * @param childEntity the child entity model to augment with the inheritance join
+     */
     private void processInheritanceJoin(TypeElement type, EntityModel childEntity) {
         TypeMirror superclass = type.getSuperclass();
         if (superclass.getKind() != TypeKind.DECLARED) return;
@@ -257,6 +348,30 @@ public class EntityHandler {
         return Optional.empty();
     }
 
+    /**
+     * Processes a join from this entity to another table by building and registering a foreign-key
+     * RelationshipModel and ensuring the corresponding child primary-key columns exist.
+     *
+     * If `pkjcs` is empty, the parent's PK column names are used for both child and referenced columns.
+     * If `pkjcs` is provided, it must match the number of parent PK columns; each entry's
+     * `name()` becomes the child column or, when empty, the corresponding parent PK column name is used.
+     * On validation failure the entity is marked invalid and the method returns false.
+     *
+     * Side effects:
+     * - Adds a RelationshipModel to `entity.getRelationships()`.
+     * - May create or update child table columns on the entity via ensureChildPkColumnsExist.
+     * - Requests creation of a foreign-key index via the RelationshipHandler.
+     * - Emits error messages through the processing context and may set `entity` invalid.
+     *
+     * @param tableName the name of the child table that will hold the foreign key
+     * @param pkjcs the list of @PrimaryKeyJoinColumn annotations (may be empty)
+     * @param type the element being processed (used for diagnostics)
+     * @param entity the EntityModel to update with the created relationship and any new columns
+     * @param parentPkCols the ordered list of parent primary-key ColumnModel instances referenced by the join
+     * @param referencedTableName the name of the referenced (parent) table
+     * @param relType the relationship type to record on the RelationshipModel
+     * @return true if the join was successfully processed and registered; false on validation errors
+     */
     private boolean processJoinTable(String tableName, List<PrimaryKeyJoinColumn> pkjcs,
                                   TypeElement type, EntityModel entity, List<ColumnModel> parentPkCols, String referencedTableName, RelationshipType relType) {
         List<String> childCols = new ArrayList<>();
@@ -313,7 +428,16 @@ public class EntityHandler {
         return true;
     }
 
-    // 기존 private 메서드들 (변경 없음)
+    /**
+     * Applies metadata from a TableLike source onto the given EntityModel.
+     *
+     * Copies schema, catalog, and comment when present. Imports constraint definitions,
+     * overwriting any entity constraint with the same name. Imports index definitions but
+     * skips any index whose name already exists on the entity (preserving the existing index).
+     *
+     * @param tableLike source of table-like metadata (e.g., @Table or secondary-table adapter)
+     * @param entity target entity model to receive the metadata
+     */
     private void processTableLike(TableLike tableLike, EntityModel entity) {
         tableLike.getSchema().ifPresent(entity::setSchema);
         tableLike.getCatalog().ifPresent(entity::setCatalog);
@@ -330,10 +454,27 @@ public class EntityHandler {
     }
 
 
+    /**
+     * Delegate to the ConstraintHandler to process and register constraints declared on an element or its field for a specific table.
+     *
+     * @param element the element that declares the constraints (type or field)
+     * @param fieldName the name of the field on the element these constraints apply to, or null/empty for element-level constraints
+     * @param constraints the constraint models to process
+     * @param tableName the target table name the constraints apply to (may be null to indicate the primary table)
+     */
     private void processConstraints(Element element, String fieldName, List<ConstraintModel> constraints, String tableName) {
         constraintHandler.processConstraints(element, fieldName, constraints, tableName);
     }
 
+    /**
+     * Collects all @SecondaryTable annotations present on the given type.
+     *
+     * <p>Supports both a single {@code @SecondaryTable} and the container {@code @SecondaryTables};
+     * returns an empty list if none are present.</p>
+     *
+     * @param typeElement the type element to inspect for {@code SecondaryTable} annotations
+     * @return a list of {@code SecondaryTable} annotations found on the element (never {@code null})
+     */
     private List<SecondaryTable> collectSecondaryTables(TypeElement typeElement) {
         List<SecondaryTable> secondaryTableList = new ArrayList<>();
         SecondaryTable secondaryTable = typeElement.getAnnotation(SecondaryTable.class);
@@ -346,6 +487,19 @@ public class EntityHandler {
     
 
 
+    /**
+     * Validates and processes composite primary key definitions for the given entity.
+     *
+     * <p>If an {@code @IdClass} annotation is present this method emits a compilation
+     * error, marks the entity invalid, and returns {@code false}. Otherwise it
+     * looks for an {@code @EmbeddedId} attribute (via cached AttributeDescriptor
+     * data) and delegates its processing to the embedded handler. Returns {@code true}
+     * when processing completes (even if no {@code @EmbeddedId} is found).
+     *
+     * @param typeElement the source element being processed
+     * @param entity the EntityModel to update (may be marked invalid or modified by embedded processing)
+     * @return {@code true} when composite key processing succeeded or was not needed; {@code false} when an unsupported {@code @IdClass} was found
+     */
     private boolean processCompositeKeys(TypeElement typeElement, EntityModel entity) {
         IdClass idClass = typeElement.getAnnotation(IdClass.class);
         if (idClass != null) {
@@ -370,7 +524,19 @@ public class EntityHandler {
 
 
 
-    // NEW: AttributeDescriptor-based field processing
+    /**
+     * Processes all mapped attributes of the given entity using cached AttributeDescriptor metadata.
+     *
+     * For the element's access strategy this method retrieves the cached descriptors, builds a map
+     * of primary/secondary table names, and dispatches each descriptor to the appropriate handler
+     * (column, embedded, element-collection, or relationship) via processAttributeDescriptor.
+     *
+     * The provided EntityModel is mutated: columns, relationships, embedded mappings, and related
+     * metadata may be added or updated as a result of processing.
+     *
+     * @param typeElement the source type element whose attributes are being processed
+     * @param entity the EntityModel to populate; modified in place
+     */
     public void processFieldsWithAttributeDescriptor(TypeElement typeElement, EntityModel entity) {
         // Get cached AttributeDescriptor list based on Access strategy
         List<AttributeDescriptor> descriptors = context.getCachedDescriptors(typeElement);
@@ -382,6 +548,20 @@ public class EntityHandler {
         }
     }
     
+    /**
+     * Dispatches processing for a single attribute based on its JPA annotations.
+     *
+     * <p>Routes to the appropriate handler:
+     * - ElementCollection -> elementCollectionHandler.processElementCollection
+     * - Embedded -> embeddedHandler.processEmbedded
+     * - Relationship (OneToOne/OneToMany/ManyToOne/ManyToMany) -> processRelationshipAttribute
+     * - EmbeddedId -> intentionally ignored here (handled elsewhere)
+     * - otherwise -> processRegularAttribute
+     *
+     * @param descriptor a descriptor describing the attribute and its annotations
+     * @param entity the entity model being populated
+     * @param tableMappings map of table name to SecondaryTable annotation (primary table name maps to null); used when determining the target table for regular column mappings
+     */
     private void processAttributeDescriptor(AttributeDescriptor descriptor, EntityModel entity, Map<String, SecondaryTable> tableMappings) {
         if (descriptor.hasAnnotation(ElementCollection.class)) {
             // Use new AttributeDescriptor-based overload
@@ -396,6 +576,19 @@ public class EntityHandler {
         }
     }
     
+    /**
+     * Process a non-relationship, non-embedded attribute: create a ColumnModel for the attribute
+     * targeted at the appropriate table and add it to the entity if not already present.
+     *
+     * The target table is resolved from the attribute's @Column.table (falling back to the
+     * entity's primary table and validating against known secondary tables). A ColumnModel is
+     * built with an explicit table override to avoid validation conflicts, and stored in the
+     * entity using table-aware column storage.
+     *
+     * @param descriptor   attribute metadata (annotations and element information) describing the field/column
+     * @param entity       entity model to which the created ColumnModel will be added
+     * @param tableMappings mapping of table names (primary and secondary) to their SecondaryTable annotations; used to validate/resolve the target table
+     */
     private void processRegularAttribute(AttributeDescriptor descriptor, EntityModel entity, Map<String, SecondaryTable> tableMappings) {
         Column column = descriptor.getAnnotation(Column.class);
         String targetTable = determineTargetTableFromDescriptor(column, tableMappings, entity.getTableName());
@@ -411,6 +604,19 @@ public class EntityHandler {
         }
     }
     
+    /**
+     * Determine which table name a column should target (primary or a named secondary table).
+     *
+     * If the Column annotation is null or its table name is empty, the primary table (defaultTable)
+     * is returned. If the Column.table equals the primary table name, defaultTable is returned.
+     * If Column.table names a known secondary table, that secondary table's declared name is returned.
+     * If Column.table names an unknown table, a warning is emitted and the primary table is returned.
+     *
+     * @param column the @Column annotation instance for the attribute (may be null)
+     * @param tableMappings map of declared table names to their SecondaryTable annotation (includes primary mapped to null)
+     * @param defaultTable the primary table name to use as a fallback
+     * @return the resolved table name (either defaultTable or the declared secondary table name)
+     */
     private String determineTargetTableFromDescriptor(Column column, Map<String, SecondaryTable> tableMappings, String defaultTable) {
         if (column == null || column.table().isEmpty()) return defaultTable;
         
@@ -432,6 +638,13 @@ public class EntityHandler {
         return st.name();
     }
     
+    /**
+     * Returns true when the given attribute descriptor represents a JPA relationship
+     * (OneToOne, OneToMany, ManyToOne, or ManyToMany).
+     *
+     * @param descriptor the attribute descriptor to inspect
+     * @return true if the descriptor is annotated with a JPA relationship annotation, false otherwise
+     */
     private boolean isRelationshipAttribute(AttributeDescriptor descriptor) {
         return descriptor.hasAnnotation(OneToOne.class) ||
                descriptor.hasAnnotation(OneToMany.class) ||
@@ -439,13 +652,27 @@ public class EntityHandler {
                descriptor.hasAnnotation(ManyToMany.class);
     }
     
+    /**
+     * Processes a relationship attribute descriptor by delegating resolution and registration to the RelationshipHandler.
+     *
+     * @param descriptor descriptor describing the attribute (relationship) to resolve
+     * @param entity the entity model to which the resolved relationship should be applied
+     */
     private void processRelationshipAttribute(AttributeDescriptor descriptor, EntityModel entity) {
         relationshipHandler.resolve(descriptor, entity);
     }
 
 
     /**
-     * Check if the entity has any @MapsId attributes that require deferred processing
+     * Returns true if the given entity contains any relationship attributes annotated with {@link MapsId}
+     * that require deferred processing.
+     *
+     * Looks up cached attribute descriptors for the element and checks whether any descriptor both
+     * has a {@code @MapsId} annotation and represents a relationship (OneToOne/OneToMany/ManyToOne/ManyToMany).
+     *
+     * @param typeElement the element representing the entity type
+     * @param entity the EntityModel being processed
+     * @return {@code true} if at least one relationship attribute is annotated with {@code @MapsId}; {@code false} otherwise
      */
     private boolean hasMapsIdAttributes(TypeElement typeElement, EntityModel entity) {
         List<AttributeDescriptor> descriptors = context.getCachedDescriptors(typeElement);
@@ -455,7 +682,15 @@ public class EntityHandler {
     }
     
     /**
-     * Process @MapsId attributes during deferred processing
+     * Performs deferred processing of any relationship attributes annotated with {@link MapsId}.
+     *
+     * Scans the cached AttributeDescriptor list for the given type and invokes
+     * {@link #processMapsIdAttribute(AttributeDescriptor, EntityModel)} for each
+     * relationship attribute annotated with {@link MapsId}. This is intended to
+     * be run after primary keys and join metadata have been established.
+     *
+     * @param typeElement the entity element whose attributes are being inspected
+     * @param entity the EntityModel being updated as MapsId attributes are processed
      */
     public void processMapsIdAttributes(TypeElement typeElement, EntityModel entity) {
         List<AttributeDescriptor> descriptors = context.getCachedDescriptors(typeElement);
@@ -467,6 +702,19 @@ public class EntityHandler {
         }
     }
     
+    /**
+     * Processes a single relationship attribute annotated with @MapsId, resolving the
+     * MapsId value and (eventually) promoting the relationship's foreign key columns to
+     * primary-key status on the owning entity.
+     *
+     * <p>Current implementation only resolves the annotation value and emits a NOTE via
+     * the processing messager. The actual PK-promotion logic is TODO and will mirror the
+     * behavior used when establishing to-one relationships (promoting FK columns to PKs
+     * and adjusting nullability/metadata accordingly).</p>
+     *
+     * @param descriptor the attribute descriptor for the relationship (should represent a relationship attribute that carries @MapsId)
+     * @param entity the entity model that owns the attribute and whose schema may be modified when MapsId processing is implemented
+     */
     private void processMapsIdAttribute(AttributeDescriptor descriptor, EntityModel entity) {
         MapsId mapsId = descriptor.getAnnotation(MapsId.class);
         String mapsIdValue = (mapsId != null && !mapsId.value().isEmpty()) ? mapsId.value() : null;
@@ -482,6 +730,20 @@ public class EntityHandler {
                 descriptor.elementForDiagnostics());
     }
 
+    /**
+     * Resolve a parent primary-key column referenced by a {@code @PrimaryKeyJoinColumn}.
+     *
+     * <p>If the {@code referencedColumnName} is present on the annotation, this method looks up
+     * the matching column in {@code parentPkCols} by column name. Otherwise it uses {@code idx}
+     * as a positional index into {@code parentPkCols}.</p>
+     *
+     * @param parentPkCols the list of parent primary-key columns to resolve from
+     * @param a the {@code PrimaryKeyJoinColumn} annotation providing either a referenced column name
+     * @param idx the fallback positional index to use when no referenced column name is specified
+     * @return the matching parent {@code ColumnModel}
+     * @throws IllegalStateException if a named referenced column is not found or if {@code idx}
+     *         is out of range for {@code parentPkCols}
+     */
     private ColumnModel resolveParentRef(List<ColumnModel> parentPkCols, PrimaryKeyJoinColumn a, int idx) {
         if (!a.referencedColumnName().isEmpty()) {
             return parentPkCols.stream()
@@ -510,6 +772,25 @@ public class EntityHandler {
         return tableMappings;
     }
 
+    /**
+     * Ensures the given child table has primary-key columns corresponding to the provided child column names,
+     * creating missing columns or updating existing ones to be primary, non-null, and to inherit type/size/metadata
+     * from the corresponding parent primary-key columns.
+     *
+     * <p>The lists childCols and parentPkCols are positional: each entry in childCols corresponds to the parent
+     * primary-key ColumnModel at the same index in parentPkCols. For each pair the method either:
+     * - creates a new ColumnModel on the child entity with PK=true, NOT NULL, table set to childTableName, and
+     *   copied type/length/precision/scale/default/comment from the parent column; or
+     * - updates an existing column to set it as primary, non-null, assign the table name if missing, and fill any
+     *   missing type/size/default/comment metadata from the parent column.</p>
+     *
+     * <p>Side effects: mutates the provided childEntity by adding or updating ColumnModel instances.</p>
+     *
+     * @param childEntity   the entity model to modify
+     * @param childTableName the name of the table on the child side where the PK columns must exist
+     * @param childCols     ordered list of child column names that should act as PKs (these are typically FK columns)
+     * @param parentPkCols  ordered list of parent primary-key ColumnModel entries; must align positionally with childCols
+     */
     private void ensureChildPkColumnsExist(
             EntityModel childEntity,
             String childTableName,

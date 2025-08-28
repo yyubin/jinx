@@ -152,6 +152,24 @@ public class InheritanceHandler {
         childEntity.setInheritance(InheritanceType.JOINED);
     }
 
+    /**
+     * Resolves how the parent's primary key columns map to the child's columns for JOINED inheritance.
+     *
+     * If the child type has no @PrimaryKeyJoinColumn annotations, returns a default 1:1 mapping
+     * (each parent PK column maps to a child column with the same name) and emits a WARNING
+     * describing that a default foreign key will be created.
+     *
+     * If annotations are present, validates that the number of annotations matches the number
+     * of parent PK columns, resolves each annotation to the corresponding parent PK column,
+     * and returns a list of JoinPair entries describing (parentColumn, childColumnName) mappings.
+     *
+     * @param childType     the child's TypeElement (used for diagnostics and reading annotations)
+     * @param parentPkCols  ordered list of the parent's primary key ColumnModel entries
+     * @return              list of JoinPair mapping each referenced parent PK column to the child column name
+     * @throws IllegalStateException if the number of @PrimaryKeyJoinColumn annotations does not match
+     *                               the number of parent PK columns or if a referencedColumnName in an
+     *                               annotation does not match any parent PK column
+     */
     private List<JoinPair> resolvePrimaryKeyJoinPairs(TypeElement childType, List<ColumnModel> parentPkCols) {
         List<PrimaryKeyJoinColumn> annotations = collectPrimaryKeyJoinColumns(childType);
         if (annotations.isEmpty()) {

@@ -17,10 +17,35 @@ import java.util.stream.Collectors;
 public class RelationshipHandler {
     private final ProcessingContext context;
 
+    /**
+     * Creates a RelationshipHandler tied to the given processing context.
+     *
+     * The provided ProcessingContext is used for schema access, messaging (diagnostics),
+     * and naming utilities throughout relationship resolution.
+     */
     public RelationshipHandler(ProcessingContext context) {
         this.context = context;
     }
 
+    /**
+     * Resolves JPA-like relationship annotations placed on an attribute and registers the resulting
+     * relationship model and any required DDL artifacts on the provided entity model.
+     *
+     * <p>Inspects the attribute descriptor for relationship annotations in the following priority:
+     * ManyToOne / OneToOne, OneToMany, ManyToMany. For to-one annotations (ManyToOne or OneToOne)
+     * it delegates to processing for to-one relationships. For OneToMany and ManyToMany it distinguishes
+     * between owning (no `mappedBy`) and inverse (with `mappedBy`) sides and delegates to the
+     * appropriate handlers to create foreign keys, join tables, or record inverse-side logical
+     * relationships without emitting DDL.</p>
+     *
+     * <p>Side effects:
+     * - May add columns, relationships, constraints, and indexes to the given EntityModel.
+     * - May emit diagnostics (errors/warnings/notes) via the processing context.</p>
+     *
+     * @param descriptor   attribute descriptor containing the element and its relationship annotations
+     *                     (used to determine relationship type and for diagnostic locations)
+     * @param entityModel  the owning entity model to update with relationship and DDL artifacts
+     */
     public void resolve(AttributeDescriptor descriptor, EntityModel entityModel) {
         ManyToOne manyToOne = descriptor.getAnnotation(ManyToOne.class);
         OneToOne oneToOne = descriptor.getAnnotation(OneToOne.class);
@@ -70,8 +95,10 @@ public class RelationshipHandler {
     }
 
     /**
-     * 호환성을 위한 VariableElement 오버로드
-     * VariableElement를 AttributeDescriptor로 래핑해서 처리
+     * Compatibility overload that wraps a VariableElement in a FieldAttributeDescriptor and delegates to {@link #resolve(AttributeDescriptor, EntityModel)}.
+     *
+     * @param field the field element to resolve as an attribute
+     * @param ownerEntity the entity model that owns the field
      */
     public void resolve(VariableElement field, EntityModel ownerEntity) {
         AttributeDescriptor fieldAttr = new FieldAttributeDescriptor(field, context.getTypeUtils(), context.getElementUtils());
@@ -79,8 +106,28 @@ public class RelationshipHandler {
     }
 
     /**
-     * Process @ManyToOne or @OneToOne relationships
-     * Adds FK column to the owning entity
+     * Resolve an owning to-one relationship (ManyToOne or OneToOne) and create the necessary
+     * foreign-key columns, constraints, and RelationshipModel on the owning entity.
+     *
+     * <p>When this method runs on the owning side it:
+     * - determines the referenced entity and its primary key columns;
+     * - validates and maps {@code @JoinColumn(s)} (including composite keys) or synthesizes FK column names;
+     * - honors {@code @MapsId} to mark FK columns as primary keys when required;
+     * - creates or updates ColumnModel entries on the owning entity (type/nullable/PK adjustments);
+     * - computes and validates the FK constraint name and foreign key constraint mode (including NO_CONSTRAINT);
+     * - registers a RelationshipModel (MANY_TO_ONE or ONE_TO_ONE) on the owner and optionally
+     *   adds a UNIQUE constraint when {@code @JoinColumn(unique=true)} is present;
+     * - ensures an index exists for the FK columns.
+     *
+     * <p>If the relationship is the inverse side (OneToOne with mappedBy), or if the referenced
+     * entity cannot be resolved or lacks a primary key, the method returns without creating DDL.
+     *
+     * @param attr descriptor for the attribute carrying the relationship annotations; used for annotation
+     *             values and diagnostics
+     * @param ownerEntity the entity model that owns the relationship and where FK columns/constraints
+     *                    should be applied
+     * @param manyToOne the {@code @ManyToOne} annotation instance if present, otherwise {@code null}
+     * @param oneToOne the {@code @OneToOne} annotation instance if present, otherwise {@code null}
      */
     private void processToOneRelationship(AttributeDescriptor attr, EntityModel ownerEntity,
                                           ManyToOne manyToOne, OneToOne oneToOne) {
@@ -315,7 +362,28 @@ public class RelationshipHandler {
     }
 
     /**
-     * Process unidirectional @OneToMany with FK
+     * Process a unidirectional {@code @OneToMany} where the owning side maps the relationship using
+     * foreign key columns on the target (many) table.
+     *
+     * <p>This method validates the attribute is a collection and resolves the target entity, ensures
+     * both sides have appropriate primary keys, and processes any {@code @JoinColumn(s)} present:
+     * - validates join column count and table consistency for composite keys,
+     * - determines or generates FK column names and creates missing columns on the target entity,
+     * - validates Java type compatibility with any existing columns,
+     * - determines the FK constraint name (honoring explicit {@code @ForeignKey.name} or building one),
+     * - honors {@code ConstraintMode.NO_CONSTRAINT} when specified,
+     * - records a ONE_TO_MANY RelationshipModel on the target entity (FK lives on the many side),
+     * - emits diagnostics and marks entities invalid on fatal errors,
+     * - converts {@code @JoinColumn(unique = true)} into a UNIQUE constraint with a warning, and
+     * - ensures an index exists for the FK columns.
+     *
+     * <p>All diagnostics are reported through the processing context. No DDL is emitted here; the
+     * method mutates the in-memory EntityModel (columns, relationships, constraints, indexes) used by
+     * later schema generation.
+     *
+     * @param attr the attribute descriptor for the owning field annotated with {@code @OneToMany}
+     * @param ownerEntity the entity model of the owning (one) side
+     * @param oneToMany the {@code @OneToMany} annotation instance on the attribute
      */
     private void processUnidirectionalOneToMany_FK(AttributeDescriptor attr, EntityModel ownerEntity, OneToMany oneToMany) {
         // Validate generic type
@@ -513,8 +581,24 @@ public class RelationshipHandler {
     }
 
     /**
-     * Process unidirectional @OneToMany with JoinTable
-     */
+         * Resolve and materialize an owning, unidirectional @OneToMany relationship that uses a join table.
+         *
+         * <p>When the attribute is a collection and the relation is the owning side, this method:
+         * - resolves the target entity and ensures both owner and target have primary keys;
+         * - validates and normalizes {@code @JoinTable}, {@code @JoinColumn} and {@code inverseJoinColumns} settings
+         *   (counts, composite-key consistency, constraint-name / ConstraintMode consistency, and name collisions);
+         * - maps join-table foreign key columns to owner/target primary key columns;
+         * - reuses an existing join-table entity if one exists (verifying it is a join table) or creates a new one;
+         * - ensures join-table columns, foreign-key relationships, indexes and any required UNIQUE constraint to enforce
+         *   1:N semantics on the target-side FK; and
+         * - applies {@code @JoinTable.uniqueConstraints} if present.
+         *
+         * <p>Diagnostics (errors and warnings) are emitted and processing is aborted on fatal validation failures.
+         *
+         * @param attr descriptor for the collection attribute annotated with {@code @OneToMany} (owning, unidirectional)
+         * @param ownerEntity the entity model that owns the collection (the source/owner side)
+         * @param oneToMany the {@code @OneToMany} annotation instance from the attribute
+         */
     private void processUnidirectionalOneToMany_JoinTable(AttributeDescriptor attr, EntityModel ownerEntity, OneToMany oneToMany) {
         if (!attr.isCollection()) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
@@ -699,6 +783,22 @@ public class RelationshipHandler {
         context.getSchemaModel().getEntities().putIfAbsent(joinTableEntity.getEntityName(), joinTableEntity);
     }
 
+    /**
+     * Validates explicit referencedColumnName presence on provided {@code @JoinColumn}s when the
+     * referenced entity has a composite primary key.
+     *
+     * <p>If the {@code pks} list contains more than one primary key column (composite PK) and any of
+     * the supplied {@code joinColumns} is missing a non-empty {@code referencedColumnName}, an error
+     * diagnostic is emitted (using {@code attr} for location) and an {@link IllegalStateException}
+     * is thrown.
+     *
+     * @param joinColumns the {@code @JoinColumn} annotations to validate
+     * @param pks the list of primary key columns on the referenced entity; composite PK is detected
+     *            when {@code pks.size() > 1}
+     * @param attr attribute descriptor whose element is used for diagnostic reporting
+     * @param sideLabel label used in diagnostic messages to indicate the relationship side (e.g.
+     *                  "joinColumns" or "inverseJoinColumns")
+     */
     private void validateExplicitJoinColumns(JoinColumn[] joinColumns, List<ColumnModel> pks,
                                              AttributeDescriptor attr, String sideLabel) {
         if (pks.size() > 1 && joinColumns.length > 0) {
@@ -714,6 +814,27 @@ public class RelationshipHandler {
         }
     }
 
+    /**
+     * Build a mapping from join-table foreign key column names to the referenced primary-key column names.
+     *
+     * If no {@code joinColumns} are provided, a naming strategy is used to generate FK column names for each
+     * referenced PK in order. If {@code joinColumns} are present, each entry is validated and used:
+     * - a missing {@code referencedColumnName} defaults to the PK at the same index in {@code referencedPks};
+     * - the referenced column name must match one of the referenced entity's primary-key columns;
+     * - a missing {@code name} is populated via the naming strategy.
+     *
+     * Validation errors are reported to the processing messager and result in an {@link IllegalStateException}:
+     * - duplicate FK column names within this mapping;
+     * - a {@code referencedColumnName} that is not a primary-key column of {@code entityTableName}.
+     *
+     * @param joinColumns     explicit join-column annotations (may be null or empty)
+     * @param referencedPks   list of primary-key columns on the referenced entity (order matters when joinColumns is absent)
+     * @param entityTableName base table name of the referenced entity (used for diagnostics and naming)
+     * @param attr            attribute descriptor used for diagnostics context
+     * @param isOwnerSide     true when resolving the owner side (affects diagnostic messages)
+     * @return a linked map whose keys are join-table FK column names and values are the referenced PK column names
+     * @throws IllegalStateException if validation fails (duplicate FK name or invalid referencedColumnName)
+     */
     private Map<String, String> resolveJoinColumnMapping(JoinColumn[] joinColumns,
                                                          List<ColumnModel> referencedPks,
                                                          String entityTableName,
@@ -757,6 +878,17 @@ public class RelationshipHandler {
         return mapping;
     }
 
+    /**
+     * Adds a UNIQUE constraint to the join table covering the target-side foreign key columns.
+     *
+     * If the provided target FK→PK mapping is non-empty this creates a ConstraintModel with a
+     * generated unique name (via the naming strategy) for the join table and registers it on the
+     * joinTableEntity. Column order from the mapping's key set is preserved.
+     *
+     * @param joinTableEntity the join-table EntityModel to receive the UNIQUE constraint
+     * @param targetFkToPkMap mapping of join-table FK column names (keys) to referenced PK column names;
+     *                        the keys determine the UNIQUE constraint columns and their order
+     */
     private void addOneToManyJoinTableUnique(EntityModel joinTableEntity,
                                              Map<String,String> targetFkToPkMap) {
         List<String> cols = new ArrayList<>(targetFkToPkMap.keySet());
@@ -776,8 +908,24 @@ public class RelationshipHandler {
     }
     
     /**
-     * Process @JoinTable.uniqueConstraints and add them to the join table entity
-     */
+         * Process and attach any {@code @JoinTable.uniqueConstraints} to the join table entity.
+         *
+         * <p>For each {@link UniqueConstraint} this method:
+         * <ul>
+         *   <li>skips constraints with empty {@code columnNames} (warns);</li>
+         *   <li>validates that every named column exists on the join table and emits an error and stops
+         *       processing the constraints if any column is missing;</li>
+         *   <li>uses the explicit constraint {@code name} when provided, otherwise generates a name
+         *       via the project's naming strategy;</li>
+         *   <li>creates a {@link ConstraintModel} of type UNIQUE and registers it on the join table;</li>
+         *   <li>warns and skips when a constraint with the same name already exists; otherwise emits a
+         *       note after successfully adding the constraint.</li>
+         * </ul>
+         *
+         * @param joinTableEntity the join-table entity to which unique constraints will be added
+         * @param uniqueConstraints the {@code uniqueConstraints} declared on the {@code @JoinTable}
+         * @param attr attribute descriptor used as the source for diagnostics (messages)
+         */
     private void addJoinTableUniqueConstraints(EntityModel joinTableEntity, 
                                                UniqueConstraint[] uniqueConstraints, 
                                                AttributeDescriptor attr) {
@@ -833,8 +981,27 @@ public class RelationshipHandler {
     }
 
     /**
-     * Process owning @ManyToMany relationship
-     */
+         * Processes an owning-side `@ManyToMany` relationship for the given attribute.
+         *
+         * <p>Validates the mapping, resolves the referenced entity and primary keys, and ensures or
+         * creates the join table and its schema artifacts (FK columns, FK relationships, composite
+         * primary key, unique constraints and indexes) according to any `@JoinTable` / `@JoinColumn`
+         * configuration. Emits diagnostics for invalid configurations (type/generic errors, PK
+         * absence, mismatched join column counts, duplicate FK names, cross-side column collisions,
+         * inconsistent ConstraintMode, etc.). If a join table entity with the same name already
+         * exists, this method validates compatibility and augments it.</p>
+         *
+         * <p>Side effects:
+         * - May create or update an EntityModel representing the join table and register it in the
+         *   processing schema model.
+         * - May add columns, relationships, constraints, and indexes to owner/target/join table
+         *   entities.
+         * - Emits diagnostics via the processing context for any errors, warnings, or notes.</p>
+         *
+         * @param attr descriptor for the owning attribute annotated with `@ManyToMany`
+         * @param ownerEntity the entity model that owns this relationship
+         * @param manyToMany the `@ManyToMany` annotation instance present on the attribute
+         */
     private void processOwningManyToMany(AttributeDescriptor attr, EntityModel ownerEntity, ManyToMany manyToMany) {
         JoinTable joinTable = attr.getAnnotation(JoinTable.class);
 
@@ -998,6 +1165,21 @@ public class RelationshipHandler {
         context.getSchemaModel().getEntities().putIfAbsent(joinTableEntity.getEntityName(), joinTableEntity);
     }
 
+    /**
+     * Ensures the join table has a composite primary key composed of the join-table
+     * foreign key columns (owner-side columns followed by inverse/target-side columns).
+     *
+     * If no FK columns are provided this is a no-op. If a primary key with the
+     * generated name already exists on the join table, the method does nothing.
+     * Otherwise it creates and registers a PRIMARY_KEY ConstraintModel on the
+     * joinTableEntity using the naming strategy from the processing context.
+     *
+     * @param joinTableEntity the join table entity to modify
+     * @param ownerFkToPkMap  mapping of owner-side join-table FK column name -> referenced PK column name;
+     *                        the map's keys determine the owner-side PK column ordering
+     * @param inverseFkToPkMap mapping of inverse/target-side join-table FK column name -> referenced PK column name;
+     *                         the map's keys determine the inverse-side PK column ordering
+     */
     private void addManyToManyPkConstraint(EntityModel joinTableEntity,
                                            Map<String,String> ownerFkToPkMap,
                                            Map<String,String> inverseFkToPkMap) {
@@ -1019,6 +1201,20 @@ public class RelationshipHandler {
         }
     }
 
+    /**
+     * Create an EntityModel representing the join table and populate it with FK columns
+     * mapped to the provided owner and referenced primary key columns.
+     *
+     * The returned EntityModel has TableType.JOIN_TABLE and contains non-nullable FK
+     * columns named per details.ownerFkToPkMap() and details.inverseFkToPkMap(), with
+     * javaType copied from the corresponding referenced primary key ColumnModel.
+     *
+     * @param details        join table metadata (names and FK→PK mappings)
+     * @param ownerPks       primary key columns of the owner entity (used to resolve owner-side FK types)
+     * @param referencedPks  primary key columns of the referenced/target entity (used to resolve inverse-side FK types)
+     * @return the created join table EntityModel populated with FK columns
+     * @throws IllegalStateException if any mapped PK name cannot be found in the supplied PK lists
+     */
     private EntityModel createJoinTableEntity(JoinTableDetails details, List<ColumnModel> ownerPks, List<ColumnModel> referencedPks) {
         EntityModel joinTableEntity = EntityModel.builder()
                 .entityName(details.joinTableName())
@@ -1069,6 +1265,26 @@ public class RelationshipHandler {
         return joinTableEntity;
     }
 
+    /**
+     * Creates and registers the two MANY_TO_ONE relationships that link a join table to its owner
+     * and referenced entities, and ensures indexes exist for the join-table foreign key columns.
+     *
+     * <p>The method:
+     * - Builds an owner-side MANY_TO_ONE RelationshipModel using details.ownerFkToPkMap()
+     *   and registers it on the join table entity.
+     * - Builds a target-side MANY_TO_ONE RelationshipModel using details.inverseFkToPkMap()
+     *   and registers it on the join table entity.
+     * - Uses the provided constraint names if present; otherwise generates names via the
+     *   naming strategy from the processing context.
+     * - Honors the no-constraint flags in JoinTableDetails to mark relationships that should
+     *   not produce DB-level foreign key constraints.
+     * - Adds non-unique indexes for each foreign-key column group on the join table when
+     *   appropriate.
+     *
+     * @param joinTableEntity the EntityModel representing the join table to receive relationships
+     * @param details         encapsulates join-table metadata (FK<->PK mappings, constraint names,
+     *                        and no-constraint flags) used to build the relationships
+     */
     private void addRelationshipsToJoinTable(EntityModel joinTableEntity, JoinTableDetails details) {
         List<String> ownerFkColumns = new ArrayList<>(details.ownerFkToPkMap().keySet());
         List<String> ownerPkColumns = new ArrayList<>(details.ownerFkToPkMap().values());
@@ -1111,6 +1327,29 @@ public class RelationshipHandler {
         addForeignKeyIndex(joinTableEntity, targetFkColumns, details.joinTableName());
     }
 
+    /**
+     * Resolve the referenced entity type for a relationship attribute.
+     *
+     * <p>Returns the target entity TypeElement determined in this order:
+     * <ol>
+     *   <li>the `targetEntity` element of the first non-default relationship annotation provided
+     *       (ManyToOne, OneToOne, OneToMany, ManyToMany), if explicitly set;</li>
+     *   <li>for collection-valued relationships (OneToMany or ManyToMany), the first generic
+     *       type argument of the attribute;</li>
+     *   <li>otherwise the declared attribute type itself.</li>
+     * </ol>
+     *
+     * <p>If an explicit `targetEntity` class is provided, this method uses the processing
+     * environment to resolve it to a TypeElement. Returns an empty Optional when the
+     * resulting TypeElement cannot be resolved.
+     *
+     * @param attr the attribute descriptor describing the field or property
+     * @param m2o the ManyToOne annotation instance if present, otherwise null
+     * @param o2o the OneToOne annotation instance if present, otherwise null
+     * @param o2m the OneToMany annotation instance if present, otherwise null
+     * @param m2m the ManyToMany annotation instance if present, otherwise null
+     * @return an Optional containing the resolved TypeElement for the target entity, or empty if not resolvable
+     */
     private Optional<TypeElement> resolveTargetEntity(AttributeDescriptor attr,
             ManyToOne m2o, OneToOne o2o, OneToMany o2m, ManyToMany m2m) {
         Class<?> te = null;
@@ -1130,6 +1369,17 @@ public class RelationshipHandler {
         return Optional.ofNullable(ref);
     }
 
+    /**
+     * Determine which table a {@code @JoinColumn} refers to, defaulting to the owner's primary table.
+     *
+     * If {@code jc} is null or its {@code table} attribute is empty, returns the owner's primary table.
+     * If {@code jc.table} matches the owner's primary table or one of its secondary tables, returns that value.
+     * Otherwise emits a warning and returns the owner's primary table.
+     *
+     * @param jc the JoinColumn annotation instance (may be null)
+     * @param owner the owning entity model whose primary/secondary tables are considered
+     * @return the table name to use for the join column (never null)
+     */
     private String resolveJoinColumnTable(JoinColumn jc, EntityModel owner) {
         String primary = owner.getTableName();
         if (jc == null || jc.table().isEmpty()) return primary;
@@ -1146,23 +1396,42 @@ public class RelationshipHandler {
     }
     
     /**
-     * 테이블명을 고려하여 컴럼을 찾는 헬퍼 메서드
-     * 주/보조 테이블에 동일한 컴럼명이 있을 때 충돌 방지
+     * Find a column on the given entity constrained to a specific table.
+     *
+     * This looks up a column by table name and column name to avoid collisions
+     * between primary and secondary tables that may contain identical column names.
+     *
+     * @param entity the entity model to search
+     * @param tableName the physical table name to restrict the search to
+     * @param columnName the column name to find
+     * @return the matching ColumnModel, or {@code null} if no matching column exists
      */
     private ColumnModel findColumn(EntityModel entity, String tableName, String columnName) {
         return entity.findColumn(tableName, columnName);
     }
     
     /**
-     * 컴럼을 엔티티 모델에 추가하는 헬퍼 메서드
-     * 테이블과 컬럼명을 조합한 키를 사용하여 충돌 방지
+     * Add a column to the given entity, using a table+column key to avoid name collisions.
+     *
+     * @param entity the entity model to receive the column
+     * @param column the column model to add to the entity
      */
     private void putColumn(EntityModel entity, ColumnModel column) {
         entity.putColumn(column);
     }
     
     /**
-     * FK 컬럼 집합이 PK나 UNIQUE 제약으로 이미 커버되는지 확인
+     * Returns true if the given set of columns on the specified table is exactly covered
+     * by an existing PRIMARY KEY or UNIQUE constraint on the entity.
+     *
+     * The comparison is order-insensitive and requires an exact match of column names;
+     * partial or superset matches do not count.
+     *
+     * @param e the entity model to inspect
+     * @param table the table name within the entity to check
+     * @param cols the list of column names to test for coverage
+     * @return true if a PRIMARY KEY or UNIQUE constraint exists on `table` whose columns
+     *         exactly match `cols`, false otherwise
      */
     boolean coveredByPkOrUnique(EntityModel e, String table, List<String> cols) {
         Set<String> want = new LinkedHashSet<>(cols); // 순서 무시 비교
@@ -1175,6 +1444,17 @@ public class RelationshipHandler {
         return false;
     }
 
+    /**
+     * Returns true if the entity already has a non-unique index on the specified table
+     * with exactly the given column sequence.
+     *
+     * The column order must match exactly.
+     *
+     * @param e the entity model to inspect
+     * @param table the table name to check for the index
+     * @param cols the ordered list of column names for the index
+     * @return true if an index with the same table and column sequence exists, false otherwise
+     */
     boolean hasSameIndex(EntityModel e, String table, List<String> cols) {
         for (IndexModel im : e.getIndexes().values()) {
             if (Objects.equals(table, im.getTableName()) && im.getColumnNames().equals(cols)) return true;
@@ -1183,8 +1463,20 @@ public class RelationshipHandler {
     }
 
     /**
-     * FK 컬럼에 자동 인덱스 생성 (성능 향상을 위해)
-     * PK/UNIQUE로 이미 커버된 경우는 생략
+     * Ensure a non-unique index exists for the given foreign-key columns on the specified table.
+     *
+     * If the provided fkColumns list is null/empty, already covered by a PRIMARY KEY or UNIQUE
+     * constraint, or an equivalent index already exists, this method returns without modifying the entity.
+     * Otherwise it creates an IndexModel (non-unique) named using the naming strategy and registers it
+     * on the entity.
+     *
+     * Notes:
+     * - The column order of the index is preserved from the provided fkColumns list.
+     * - Index creation is skipped when an index with the same generated name or identical column sequence already exists.
+     *
+     * @param entity    the entity model to update with the new index
+     * @param fkColumns the foreign-key column names (in desired index column order)
+     * @param tableName the base table name where the index should be applied
      */
     void addForeignKeyIndex(EntityModel entity, List<String> fkColumns, String tableName) {
         if (fkColumns == null || fkColumns.isEmpty()) return;
@@ -1202,6 +1494,12 @@ public class RelationshipHandler {
         entity.getIndexes().put(indexName, ix);
     }
 
+    /**
+     * Extracts a TypeElement from the given TypeMirror when it represents a declared (named) type.
+     *
+     * @param typeMirror the type to inspect; may be any TypeMirror
+     * @return the corresponding TypeElement if the mirror is a DeclaredType whose element is a TypeElement, otherwise {@code null}
+     */
     private TypeElement getReferencedTypeElement(TypeMirror typeMirror) {
         if (typeMirror instanceof DeclaredType declaredType && declaredType.asElement() instanceof TypeElement) {
             return (TypeElement) declaredType.asElement();
@@ -1213,6 +1511,23 @@ public class RelationshipHandler {
         return arr == null ? Collections.emptyList() : Arrays.stream(arr).toList();
     }
 
+    /**
+     * Ensures the join table has MANY_TO_ONE relationship entries for both owner and inverse sides
+     * and creates corresponding non-unique indexes for the foreign key columns.
+     *
+     * <p>The method:
+     * - Builds owner-side and target-side FK → referenced PK column lists from {@code details}.
+     * - Determines constraint names (uses explicit names from {@code details} or generates one via
+     *   the naming strategy).
+     * - If a relationship with the computed constraint name does not already exist on the join
+     *   table, creates a RelationshipModel (type MANY_TO_ONE) with the appropriate table, columns,
+     *   referenced table/columns and {@code noConstraint} flag, and registers it on the join table.
+     * - Ensures an index exists for each FK column group via {@link #addForeignKeyIndex(EntityModel, List, String)}.
+     *
+     * @param jt the join-table EntityModel to update
+     * @param details encapsulates mappings between join-table FK columns and owner/target PKs,
+     *                explicit constraint names, and flags indicating whether constraints should be omitted
+     */
     private void ensureJoinTableRelationships(EntityModel jt, JoinTableDetails details) {
         List<String> ownerFks = new ArrayList<>(details.ownerFkToPkMap().keySet());
         List<String> ownerPks = new ArrayList<>(details.ownerFkToPkMap().values());
@@ -1261,6 +1576,20 @@ public class RelationshipHandler {
         }
     }
 
+    /**
+     * Ensure the join table contains foreign-key columns that match the Java types of the referenced primary-key columns.
+     *
+     * For each entry in ownerFkToPkMap and targetFkToPkMap this method looks up the referenced primary-key
+     * ColumnModel (from ownerPks/targetPks) and calls {@link #ensureOneColumn(EntityModel, String, String, String, AttributeDescriptor)}
+     * to create or validate a corresponding column on the join table. The provided AttributeDescriptor is used for diagnostics.
+     *
+     * @param jt the join-table entity to update
+     * @param ownerPks list of primary-key columns from the owner entity (used to derive types for owner-side FK columns)
+     * @param targetPks list of primary-key columns from the referenced/target entity (used to derive types for target-side FK columns)
+     * @param ownerFkToPkMap mapping from join-table owner-side FK column name -> owner PK column name
+     * @param targetFkToPkMap mapping from join-table target-side FK column name -> target PK column name
+     * @param attr attribute descriptor used as the source for diagnostic messages
+     */
     private void ensureJoinTableColumns(
             EntityModel jt,
             List<ColumnModel> ownerPks, List<ColumnModel> targetPks,
@@ -1284,6 +1613,16 @@ public class RelationshipHandler {
         }
     }
 
+    /**
+     * Ensure a column with the given name and Java type exists on the specified table of the join-table entity.
+     *
+     * If the column is missing, it is created as non-nullable. If a column exists but its Java type differs,
+     * an error diagnostic is emitted referencing the provided attribute. If the existing column is nullable,
+     * it is updated to be non-nullable.
+     *
+     * @param javaType the expected Java type name for the column (used to validate type compatibility)
+     * @param attr     attribute descriptor used as the source for diagnostics when emitting errors
+     */
     private void ensureOneColumn(EntityModel jt, String colName, String javaType, String tableName, AttributeDescriptor attr) {
         ColumnModel existing = jt.findColumn(tableName, colName);
         if (existing == null) {
@@ -1308,7 +1647,21 @@ public class RelationshipHandler {
     }
 
     /**
-     * Process inverse side @OneToMany: no DDL artifacts, only logical relationship tracking
+     * Handle the inverse side of a @OneToMany relationship: record a logical relationship only and do not
+     * generate any DDL artifacts.
+     *
+     * <p>This method resolves the target entity from the attribute descriptor, verifies that the
+     * specified mappedBy attribute exists on the target entity, and emits diagnostics describing the
+     * outcome. No foreign keys, join tables, constraints, or columns are created for inverse sides.
+     *
+     * <p>Behavior:
+     * - If the target entity cannot be resolved, a warning is emitted and processing is skipped.
+     * - If the mappedBy attribute is not found on the target entity, a warning is emitted and processing is skipped.
+     * - On success, a note is emitted indicating the inverse relationship was processed (no DDL generated).
+     *
+     * @param attr the attribute descriptor for the field annotated with {@code @OneToMany}
+     * @param ownerEntity the entity model that owns the attribute (inverse side)
+     * @param oneToMany the {@code @OneToMany} annotation instance read from the attribute
      */
     private void processInverseSideOneToMany(AttributeDescriptor attr, EntityModel ownerEntity, OneToMany oneToMany) {
         // Inverse side: mappedBy is specified, no DB artifacts should be created
@@ -1342,7 +1695,18 @@ public class RelationshipHandler {
     }
     
     /**
-     * Process inverse side @ManyToMany: no DDL artifacts, only logical relationship tracking
+     * Handle the inverse side of a `@ManyToMany` mapping: record/log the logical relationship but do not
+     * create any database artifacts.
+     *
+     * <p>Resolves the target entity from the attribute or annotation, verifies that the `mappedBy`
+     * attribute exists on the target entity, and emits diagnostics (notes or warnings) describing the
+     * inverse-side processing. If the target entity cannot be resolved or the `mappedBy` attribute is
+     * missing, a warning is emitted and no relationship is recorded. This method never generates DDL
+     * (foreign keys, join tables, etc.) for the inverse side.
+     *
+     * @param attr descriptor of the attribute annotated with `@ManyToMany`
+     * @param ownerEntity entity model that owns the attribute being processed
+     * @param manyToMany the `@ManyToMany` annotation instance from the attribute
      */
     private void processInverseSideManyToMany(AttributeDescriptor attr, EntityModel ownerEntity, ManyToMany manyToMany) {
         // Inverse side: mappedBy is specified, no DB artifacts should be created
@@ -1376,8 +1740,18 @@ public class RelationshipHandler {
     }
     
     /**
-     * Find the corresponding attribute descriptor in the target entity using the same naming convention
-     * as AttributeDescriptorFactory.extractAttributeName() with caching and cycle detection.
+     * Locate the AttributeDescriptor on the target entity that corresponds to the given
+     * mappedBy attribute name, using cached descriptors and guarding against cycles.
+     *
+     * <p>Searches the cached attribute descriptors for the target entity and returns the first
+     * descriptor whose name equals {@code mappedByAttributeName}. To prevent infinite recursion
+     * when walking mappedBy chains, the method records the (targetEntityName, mappedByAttributeName)
+     * pair as visited and will emit a warning and return {@code null} if that pair is encountered again.
+     *
+     * @param ownerEntityName        the fully qualified name of the owning entity (used only for diagnostic text)
+     * @param targetEntityName       the fully qualified name of the target entity to search
+     * @param mappedByAttributeName  the attribute name on the target entity to find
+     * @return the matching AttributeDescriptor, or {@code null} if the target entity or attribute is not found
      */
     private AttributeDescriptor findMappedByAttribute(String ownerEntityName, String targetEntityName, String mappedByAttributeName) {
         // Check for infinite recursion
@@ -1430,6 +1804,13 @@ public class RelationshipHandler {
             boolean inverseNoConstraint
     ) {}
 
+    /**
+     * Returns true if the list is empty or every JoinColumn in the list has the same
+     * ForeignKey.ConstraintMode (i.e., the same `foreignKey().value()`).
+     *
+     * @param jcs the list of JoinColumn instances to compare
+     * @return true when the list is empty or all entries share the same constraint mode; false otherwise
+     */
     boolean allSameConstraintMode(List<JoinColumn> jcs) {
         if (jcs.isEmpty()) return true;
         ConstraintMode first = jcs.get(0).foreignKey().value();

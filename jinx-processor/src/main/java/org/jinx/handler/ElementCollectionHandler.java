@@ -30,6 +30,11 @@ public class ElementCollectionHandler {
     private final Types typeUtils;
     private final Elements elementUtils;
 
+    /**
+     * Constructs an ElementCollectionHandler with the provided processing context and helper handlers.
+     *
+     * Initializes internal utilities (TypeUtils and ElementUtils) from the given ProcessingContext.
+     */
     public ElementCollectionHandler(ProcessingContext context, ColumnHandler columnHandler, EmbeddedHandler embeddedHandler) {
         this.context = context;
         this.columnHandler = columnHandler;
@@ -38,13 +43,35 @@ public class ElementCollectionHandler {
         this.elementUtils = context.getElementUtils();
     }
 
+    /**
+     * Processes an @ElementCollection declared on a field by wrapping the field into a
+     * FieldAttributeDescriptor and delegating to {@link #processElementCollection(AttributeDescriptor, EntityModel)}.
+     *
+     * @param field the field element annotated with @ElementCollection
+     * @param ownerEntity the owning entity model that will contain the collection table
+     */
     public void processElementCollection(VariableElement field, EntityModel ownerEntity) {
         // Delegate to AttributeDescriptor-based method
         AttributeDescriptor fieldDescriptor = new FieldAttributeDescriptor(field, typeUtils, elementUtils);
         processElementCollection(fieldDescriptor, ownerEntity);
     }
 
-    // Main AttributeDescriptor-based method for @ElementCollection processing
+    /**
+     * Processes an @ElementCollection attribute on an entity and builds a corresponding collection table model.
+     *
+     * <p>Creates a collection EntityModel (table) for the attribute, adds foreign-key columns that reference
+     * the owner's primary key columns, determines element (and optional map key) types, creates value/key/order
+     * columns (including support for embeddable value types and Map key/temporal/enum handling), builds the
+     * foreign-key relationship back to the owner, and registers the collection table in the schema.</p>
+     *
+     * <p>If required validations fail (for example: owner has no primary key, generic element type cannot be
+     * determined, or @CollectionTable.joinColumns length mismatches owner PK count), a diagnostic error is
+     * emitted and the method returns without registering the collection table.</p>
+     *
+     * @param attribute the attribute descriptor representing the @ElementCollection field or property; used to
+     *                  read annotations, the declared generic type, and diagnostic element information
+     * @param ownerEntity the owning entity model into which the collection table will reference its primary key(s)
+     */
     public void processElementCollection(AttributeDescriptor attribute, EntityModel ownerEntity) {
         // 1. 컬렉션 테이블 이름 결정 및 새 EntityModel 생성
         String defaultTableName = ownerEntity.getTableName() + "_" + attribute.name();
@@ -217,7 +244,16 @@ public class ElementCollectionHandler {
     }
 
     /**
-     * TypeMirror로부터 ColumnModel을 생성하는 헬퍼 메소드
+     * Create a ColumnModel for the given type, column name, and table.
+     *
+     * The returned ColumnModel uses the type's string representation (type.toString())
+     * as its javaType and isNullable is set to true.
+     *
+     * @param type the TypeMirror representing the column's Java type; its {@code toString()}
+     *             value is stored in ColumnModel.javaType
+     * @param columnName the column name to set on the model
+     * @param tableName the table name to set on the model
+     * @return a ColumnModel with javaType = {@code type.toString()}, the provided names, and nullable = true
      */
     private ColumnModel createColumnFromType(TypeMirror type, String columnName, String tableName) {
         String javaTypeName = type.toString();

@@ -10,6 +10,23 @@ import java.util.List;
 import java.util.Objects;
 
 public class RelationshipDiffer implements EntityComponentDiffer {
+    /**
+     * Computes differences between relationship components of two entity models and records them in the provided accumulator.
+     *
+     * <p>For each relationship in {@code newEntity} this method attempts to find a matching relationship in
+     * {@code oldEntity} by comparing their column lists. If no match is found, an ADDED relationship diff is
+     * recorded. If a match is found but the relationships differ (structural attributes such as referenced table/columns,
+     * cascade, orphanRemoval, fetch, mapsId, etc.), a MODIFIED relationship diff is recorded with a textual change
+     * detail, and {@code analyzeRelationshipChanges} is invoked to append any warnings.</p>
+     *
+     * <p>Separately, the method iterates over {@code oldEntity} relationships and records DROPPED diffs for any old
+     * relationship whose columns are not present in {@code newEntity}. Relationships with a null type are ignored when
+     * detecting deletions.</p>
+     *
+     * @param oldEntity the original entity model to compare from
+     * @param newEntity the updated entity model to compare against
+     * @param result accumulator that will receive RelationshipDiff entries and any warnings produced by analysis
+     */
     @Override
     public void diff(EntityModel oldEntity, EntityModel newEntity, DiffResult.ModifiedEntity result) {
         newEntity.getRelationships().values().forEach(newRel -> {

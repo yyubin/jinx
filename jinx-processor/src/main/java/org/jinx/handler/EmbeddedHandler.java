@@ -30,6 +30,13 @@ public class EmbeddedHandler {
     private final Types typeUtils;
     private final Elements elementUtils;
 
+    /**
+     * Creates a new EmbeddedHandler and wires required collaborators.
+     *
+     * Initializes the processing context and handler collaborators, obtains type and
+     * element utilities from the context, and constructs the AttributeDescriptorFactory
+     * used to produce AttributeDescriptor instances for embeddable/embedded processing.
+     */
     public EmbeddedHandler(ProcessingContext context, ColumnHandler columnHandler, RelationshipHandler relationshipHandler) {
         this.context = context;
         this.columnHandler = columnHandler;
@@ -39,11 +46,35 @@ public class EmbeddedHandler {
         this.descriptorFactory = new AttributeDescriptorFactory(typeUtils, elementUtils, context);
     }
 
+    /**
+     * Process an embedded field on an entity.
+     *
+     * Converts the given field (an embedded or embeddable attribute) into columns and/or
+     * relationship entries on the provided owner entity. This overload wraps the
+     * VariableElement into a FieldAttributeDescriptor and delegates to the descriptor-based
+     * processing routine.
+     *
+     * @param field the field element representing the embedded attribute
+     * @param ownerEntity the target EntityModel to which columns and relationships will be added
+     * @param processedTypes a set of already-processed embeddable type names used to avoid recursive re-processing
+     */
     public void processEmbedded(VariableElement field, EntityModel ownerEntity, Set<String> processedTypes) {
         AttributeDescriptor fieldDescriptor = new FieldAttributeDescriptor(field, typeUtils, elementUtils);
         processEmbedded(fieldDescriptor, ownerEntity, processedTypes);
     }
 
+    /**
+     * Processes an embedded attribute (non-Id) by applying any attribute/association/table overrides
+     * and materializing its columns and relationships onto the given owner entity model.
+     *
+     * This performs descriptor-driven traversal of the embeddable type, handling nested embeddables,
+     * relationship mappings, and column mappings. It delegates to internal processing with an empty
+     * prefix and marks the embedding context as not part of a primary key.
+     *
+     * @param attribute the descriptor for the embedded attribute to process
+     * @param ownerEntity the target EntityModel to receive columns and relationships produced from the embeddable
+     * @param processedTypes a set of type names used to track and avoid recursive re-processing of embeddable types
+     */
     public void processEmbedded(AttributeDescriptor attribute, EntityModel ownerEntity, Set<String> processedTypes) {
         Map<String, String> nameOverrides = new HashMap<>();
         Map<String, String> tableOverrides = new HashMap<>();
@@ -52,11 +83,33 @@ public class EmbeddedHandler {
         processEmbeddedInternal(attribute, ownerEntity, processedTypes, false, "", nameOverrides, tableOverrides, assocOverrides);
     }
 
+    /**
+     * Process an @EmbeddedId field, adding its constituent columns and relationships to the owner entity.
+     *
+     * This converts the provided field into a descriptor and delegates to the descriptor-based
+     * processing path that handles embeddable types, applies overrides, and marks resulting
+     * columns as primary key components on the owner entity. Recursive processing of embeddable
+     * types is guarded using the supplied processedTypes set.
+     *
+     * @param field the VariableElement representing the embedded id field
+     * @param ownerEntity the entity model to receive columns and relationships derived from the embeddable
+     * @param processedTypes a set of type names already processed to prevent infinite recursion
+     */
     public void processEmbeddedId(VariableElement field, EntityModel ownerEntity, Set<String> processedTypes) {
         AttributeDescriptor fieldDescriptor = new FieldAttributeDescriptor(field, typeUtils, elementUtils);
         processEmbeddedId(fieldDescriptor, ownerEntity, processedTypes);
     }
 
+    /**
+     * Processes an embeddable attribute used as an entity's embedded id (primary key).
+     *
+     * Builds name/table/association override maps for the given attribute and delegates
+     * to the internal embedding routine with primary-key context.
+     *
+     * @param attribute descriptor for the embedded-id attribute
+     * @param ownerEntity the entity model receiving columns/relationships
+     * @param processedTypes a set of already-processed embeddable type names to avoid recursion
+     */
     public void processEmbeddedId(AttributeDescriptor attribute, EntityModel ownerEntity, Set<String> processedTypes) {
         Map<String, String> nameOverrides = new HashMap<>();
         Map<String, String> tableOverrides = new HashMap<>();
@@ -65,6 +118,22 @@ public class EmbeddedHandler {
         processEmbeddedInternal(attribute, ownerEntity, processedTypes, true, "", nameOverrides, tableOverrides, assocOverrides);
     }
 
+    /**
+     * Recursively processes the fields of an embeddable type and adds corresponding columns
+     * and relationships to the given collection-owner entity model.
+     *
+     * This walks the attributes of the provided embeddable type (including nested embeddables,
+     * associations, and basic attributes), applies attribute/table/association overrides, and
+     * creates columns or relationships on ownerCollectionTable. Column names are prefixed
+     * with the provided prefix and the collection field name when applicable. The method
+     * prevents infinite recursion by tracking processed type names in processedTypes.
+     *
+     * @param embeddableType the embeddable type whose attributes will be processed
+     * @param ownerCollectionTable the entity model that receives the generated columns and relationships
+     * @param processedTypes a modifiable set of qualified type names used to avoid re-processing recursive types
+     * @param prefix an optional name prefix applied to generated column names (may be null)
+     * @param collectionField if non-null, the collection field descriptor whose name and overrides are applied when generating column names and resolving overrides
+     */
     public void processEmbeddableFields(TypeElement embeddableType, EntityModel ownerCollectionTable, Set<String> processedTypes, String prefix, VariableElement collectionField) {
         String typeName = embeddableType.getQualifiedName().toString();
         if (processedTypes.contains(typeName)) return;
@@ -134,6 +203,23 @@ public class EmbeddedHandler {
         processedTypes.remove(typeName);
     }
 
+    /**
+     * Recursively processes an embeddable attribute, adding its columns and relationships to the owner entity.
+     *
+     * <p>Traverses the fields described by the embeddable type referenced by {@code attribute}. Handles nested
+     * embedded types, association mappings (ManyToOne/OneToOne) and simple attributes. Applies attribute and table
+     * overrides, prefixes generated column names with the parent prefix and the attribute name, and marks columns
+     * as primary-key / non-null when {@code isPrimaryKey} is true. Prevents infinite recursion using {@code processedTypes}.</p>
+     *
+     * @param attribute         descriptor of the embedded attribute to process
+     * @param ownerEntity       entity model receiving generated columns and relationships
+     * @param processedTypes    set of fully-qualified embeddable type names already visited to avoid recursion
+     * @param isPrimaryKey      true when processing an embedded id (columns created must be PK and non-null)
+     * @param parentPrefix      prefix to apply to generated column names (typically accumulated from ancestor attributes)
+     * @param nameOverrides     map of attribute-path -> column-name overrides to apply for attributes within this embeddable
+     * @param tableOverrides    map of attribute-path -> table-name overrides to apply for attributes within this embeddable
+     * @param assocOverrides    map of attribute-path -> list of JoinColumn used to override association join columns
+     */
     private void processEmbeddedInternal(
             AttributeDescriptor attribute,
             EntityModel ownerEntity,
@@ -212,6 +298,23 @@ public class EmbeddedHandler {
         processedTypes.remove(typeName);
     }
 
+    /**
+     * Processes an embedded relationship attribute (ManyToOne or OneToOne) on an owning entity.
+     *
+     * <p>Resolves join columns from explicit association overrides or the attribute's
+     * {@code @JoinColumns}/{@code @JoinColumn} annotations, validates them against the
+     * referenced entity's primary key(s), and creates or reuses foreign-key columns on
+     * the owning entity. Builds and registers a corresponding RelationshipModel (including
+     * FK constraint name and no-constraint flag) and, for 1:1 single-column FKs, a UNIQUE
+     * constraint if applicable. Emits diagnostic errors/warnings through the processing
+     * context and aborts processing for this relationship on fatal configuration issues
+     * (e.g., mismatched composite key sizes, inconsistent FK tables, type/nullability mismatches).
+     *
+     * @param attribute the embedded attribute descriptor representing the relationship
+     * @param ownerEntity the entity model that will receive FK columns, constraints, and the relationship
+     * @param associationOverrides map of attribute name -> list of {@code JoinColumn} overrides to consult before annotations
+     * @param prefix a column-name prefix to apply when generating default FK column names
+     */
     private void processEmbeddedRelationship(AttributeDescriptor attribute, EntityModel ownerEntity,
                                              Map<String, List<JoinColumn>> associationOverrides, String prefix) {
         ManyToOne manyToOne = attribute.getAnnotation(ManyToOne.class);
@@ -403,6 +506,19 @@ public class EmbeddedHandler {
         }
     }
 
+    /**
+     * Resolve the actual table name to use for a join column.
+     *
+     * Returns the join column's explicit table name if it is non-empty and is either
+     * the owner's primary table or one of its secondary tables. If the join column
+     * is null or its table name is empty, returns the owner's primary table.
+     * If the explicit table is not a primary/secondary table of the owner, logs a
+     * warning and returns the owner's primary table.
+     *
+     * @param jc    the JoinColumn annotation (may be null)
+     * @param owner the owning entity model whose primary/secondary tables are validated
+     * @return the resolved table name to use for the join column
+     */
     private String resolveJoinColumnTable(JoinColumn jc, EntityModel owner) {
         String primary = owner.getTableName();
         if (jc == null || jc.table().isEmpty()) return primary;
@@ -418,6 +534,20 @@ public class EmbeddedHandler {
         return req;
     }
 
+    /**
+     * Extracts attribute and association override information from the given attribute descriptor.
+     *
+     * Populates the supplied maps with column name and table overrides found on
+     * `@AttributeOverrides` / `@AttributeOverride` annotations (keyed by the overridden
+     * attribute name). Empty override values are ignored. Also collects association
+     * overrides from `@AssociationOverrides` / `@AssociationOverride` and returns them
+     * as a map from association name to the list of `JoinColumn`s.
+     *
+     * @param attribute the attribute descriptor to inspect for override annotations
+     * @param nameOverrides map to populate with attribute-to-column-name overrides
+     * @param tableOverrides map to populate with attribute-to-table-name overrides
+     * @return a map of association override entries (association name -> list of JoinColumn)
+     */
     private Map<String, List<JoinColumn>> extractOverrides(AttributeDescriptor attribute, Map<String, String> nameOverrides, Map<String, String> tableOverrides) {
         AttributeOverrides aos = attribute.getAnnotation(AttributeOverrides.class);
         if (aos != null) {
@@ -446,6 +576,14 @@ public class EmbeddedHandler {
         return assocOverrides;
     }
 
+    /**
+     * Returns a new map containing entries from {@code parentOverrides} whose keys start with {@code prefix},
+     * with the returned keys having the {@code prefix} removed.
+     *
+     * @param parentOverrides map of override keys to values
+     * @param prefix string prefix to filter keys by and strip from returned keys
+     * @return a new map with filtered and remapped keys; values are unchanged
+     */
     private Map<String, String> filterAndRemapOverrides(Map<String, String> parentOverrides, String prefix) {
         return parentOverrides.entrySet().stream()
                 .filter(e -> e.getKey().startsWith(prefix))
@@ -455,6 +593,14 @@ public class EmbeddedHandler {
                 ));
     }
 
+    /**
+     * Returns a new map containing only entries from parentOverrides whose keys start with the given prefix,
+     * with the prefix removed from each key.
+     *
+     * @param parentOverrides map of association override names to lists of JoinColumn instances
+     * @param prefix the key prefix to filter by and remove from retained keys
+     * @return a new map with filtered entries and keys remapped by stripping the prefix
+     */
     private Map<String, List<JoinColumn>> filterAndRemapAssocOverrides(Map<String, List<JoinColumn>> parentOverrides, String prefix) {
         return parentOverrides.entrySet().stream()
                 .filter(e -> e.getKey().startsWith(prefix))
@@ -464,6 +610,14 @@ public class EmbeddedHandler {
                 ));
     }
 
+    /**
+     * Convert a Jakarta Persistence CascadeType array to an immutable List.
+     *
+     * Returns an empty list when the input is null.
+     *
+     * @param arr the jakarta.persistence.CascadeType array, may be null
+     * @return an immutable List of CascadeType corresponding to the array contents, or an empty list if {@code arr} is null
+     */
     private static List<CascadeType> toCascadeList(jakarta.persistence.CascadeType[] arr) {
         return arr == null ? List.of() : Arrays.stream(arr).toList();
     }

@@ -39,6 +39,20 @@ public class ProcessingContext {
     // MappedBy cycle detection: (ownerType, attributeName) -> inverse visited set
     private final Set<String> mappedByVisitedSet = new HashSet<>();
 
+    /**
+     * Create a ProcessingContext for annotation processing of JINX models.
+     *
+     * <p>Stores the provided processing environment and schema model, initializes the naming
+     * strategy from the processor option {@code jinx.naming.maxLength} (defaults to 30 if
+     * missing or invalid), and constructs the AttributeDescriptorFactory used to build
+     * attribute descriptors and the descriptor cache.</p>
+     *
+     * <p>If the {@code jinx.naming.maxLength} option is present but cannot be parsed as an
+     * integer, a warning is reported via the processing Messager and the default length (30)
+     * is used.</p>
+     *
+     * @param schemaModel the SchemaModel being built/processed
+     */
     public ProcessingContext(ProcessingEnvironment processingEnv, SchemaModel schemaModel) {
         this.processingEnv = processingEnv;
         this.schemaModel = schemaModel;
@@ -99,6 +113,16 @@ public class ProcessingContext {
                 .toList();
     }
 
+    /**
+     * Determines whether the given type is a subtype of the named supertype.
+     *
+     * If the named supertype cannot be resolved in the processing environment, an error
+     * message is emitted to the annotation processing Messager and the method returns false.
+     *
+     * @param type the type to test
+     * @param supertypeName the fully qualified name of the supertype to check against
+     * @return true if {@code type} is a subtype of the resolved {@code supertypeName}; false otherwise
+     */
     public boolean isSubtype(TypeMirror type, String supertypeName) {
         Elements elements = getElementUtils();
         Types types = getTypeUtils();
@@ -112,8 +136,13 @@ public class ProcessingContext {
     }
     
     /**
-     * Get cached AttributeDescriptors for a TypeElement, creating and caching them if necessary.
-     * This prevents re-computation during bidirectional relationship resolution.
+     * Return attribute descriptors for the given type element, creating and caching them on first access.
+     *
+     * The descriptors describe the persistent/processable attributes of the provided type and are cached
+     * to avoid re-computation during bidirectional relationship resolution.
+     *
+     * @param typeElement the type element whose attribute descriptors are requested
+     * @return a non-null list of AttributeDescriptor instances for the given type (may be empty)
      */
     public List<AttributeDescriptor> getCachedDescriptors(TypeElement typeElement) {
         return descriptorCache.computeIfAbsent(typeElement, 
@@ -121,8 +150,13 @@ public class ProcessingContext {
     }
     
     /**
-     * Check if a mappedBy relationship has been visited to prevent infinite recursion.
-     * Key format: "ownerEntityName.attributeName"
+     * Returns true if the mappedBy relationship identified by the given owner entity and attribute has already been visited.
+     *
+     * The membership key is formed as "ownerEntityName.attributeName". This is used to prevent infinite recursion when resolving bidirectional relationships.
+     *
+     * @param ownerEntityName the owner entity's name
+     * @param attributeName the attribute name on the owner entity
+     * @return true if the mappedBy relationship has been marked visited
      */
     public boolean isMappedByVisited(String ownerEntityName, String attributeName) {
         String key = ownerEntityName + "." + attributeName;
@@ -130,7 +164,12 @@ public class ProcessingContext {
     }
     
     /**
-     * Mark a mappedBy relationship as visited to prevent cycles.
+     * Marks a bidirectional `mappedBy` relationship as visited to prevent infinite recursion when resolving relationships.
+     *
+     * The relationship is recorded as "ownerEntityName.attributeName" in the internal visited set.
+     *
+     * @param ownerEntityName the name of the owning entity
+     * @param attributeName the name of the attribute on the owner entity that refers to the inverse side
      */
     public void markMappedByVisited(String ownerEntityName, String attributeName) {
         String key = ownerEntityName + "." + attributeName;
