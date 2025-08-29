@@ -12,14 +12,7 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class EmbeddedHandler {
@@ -233,7 +226,8 @@ public class EmbeddedHandler {
             }
         }
 
-        TypeElement referencedTypeElement = (TypeElement) ((DeclaredType) attribute.type()).asElement();
+        TypeElement referencedTypeElement = resolveTargetEntityForEmbedded(attribute, manyToOne, oneToOne).orElse(null);
+        if (referencedTypeElement == null) return;
         EntityModel referencedEntity = context.getSchemaModel().getEntities()
                 .get(referencedTypeElement.getQualifiedName().toString());
         if (referencedEntity == null) return;
@@ -381,13 +375,15 @@ public class EmbeddedHandler {
         if (oneToOne != null && mapsId == null && fkColumnNames.size() == 1) {
             boolean isJoinColumnUnique = joinColumns.isEmpty() || joinColumns.get(0).unique();
             if (isJoinColumnUnique) {
-                String uqName = context.getNaming().uqName(fkTableBase, fkColumnNames);
-                ownerEntity.getConstraints().putIfAbsent(uqName, ConstraintModel.builder()
-                        .name(uqName)
-                        .type(ConstraintType.UNIQUE)
-                        .tableName(fkTableBase)
-                        .columns(new ArrayList<>(fkColumnNames))
-                        .build());
+                if (!relationshipHandler.coveredByPkOrUnique(ownerEntity, fkTableBase, fkColumnNames)) {
+                    String uqName = context.getNaming().uqName(fkTableBase, fkColumnNames);
+                    ownerEntity.getConstraints().putIfAbsent(uqName, ConstraintModel.builder()
+                            .name(uqName)
+                            .type(ConstraintType.UNIQUE)
+                            .tableName(fkTableBase)
+                            .columns(new ArrayList<>(fkColumnNames))
+                            .build());
+                }
             }
         }
 
@@ -409,9 +405,29 @@ public class EmbeddedHandler {
                 .build();
         ownerEntity.getRelationships().put(relationship.getConstraintName(), relationship);
 
-        if (!noConstraint) {
-            relationshipHandler.addForeignKeyIndex(ownerEntity, fkColumnNames, fkTableBase);
+        relationshipHandler.addForeignKeyIndex(ownerEntity, fkColumnNames, fkTableBase);
+    }
+
+    private Optional<TypeElement> resolveTargetEntityForEmbedded(AttributeDescriptor attr, ManyToOne m2o, OneToOne o2o) {
+        // 1) 명시적 targetEntity 우선 처리(MirroredTypeException 대응)
+        try {
+            Class<?> c =
+                    (m2o != null) ? m2o.targetEntity() :
+                            (o2o != null) ? o2o.targetEntity() : void.class;
+            if (c != void.class) {
+                TypeElement te = elementUtils.getTypeElement(c.getName());
+                if (te != null) return Optional.of(te);
+            }
+        } catch (javax.lang.model.type.MirroredTypeException mte) {
+            if (mte.getTypeMirror() instanceof DeclaredType dt && dt.asElement() instanceof TypeElement te) {
+                return Optional.of(te);
+            }
         }
+        // 2) 필드/프로퍼티 타입으로 추론
+        if (attr.type() instanceof DeclaredType dt && dt.asElement() instanceof TypeElement te) {
+            return Optional.of(te);
+        }
+        return Optional.empty();
     }
 
     private String resolveJoinColumnTable(JoinColumn jc, EntityModel owner) {

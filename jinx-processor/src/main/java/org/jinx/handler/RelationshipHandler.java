@@ -1473,10 +1473,7 @@ public class RelationshipHandler {
                     .findFirst()
                     .orElse(null);
         } finally {
-            // Clean up the visited marker after processing
-            // Note: In a real implementation, you might want to keep visited markers 
-            // for the duration of the entire processing cycle, not just this call
-            // context.markMappedByUnvisited(targetEntityName, mappedByAttributeName);
+            context.unmarkMappedByVisited(targetEntityName, mappedByAttributeName);
         }
     }
 
@@ -1499,27 +1496,5 @@ public class RelationshipHandler {
             if (jc.foreignKey().value() != first) return false;
         }
         return true;
-    }
-    
-    /**
-     * 지정된 컬럼들이 이미 PK나 UNIQUE 제약으로 커버되는지 확인합니다.
-     * 중복 UNIQUE 제약 생성을 방지하기 위해 사용됩니다.
-     */
-    private boolean coveredByPkOrUnique(EntityModel entity, String tableName, List<String> columns) {
-        // PK로 커버되는지 확인
-        List<String> pkColumns = context.findAllPrimaryKeyColumns(entity);
-        if (!pkColumns.isEmpty() && entity.getTableName().equals(tableName)) {
-            if (pkColumns.size() == columns.size() && pkColumns.containsAll(columns)) {
-                return true;
-            }
-        }
-        
-        // 기존 UNIQUE 제약으로 커버되는지 확인
-        return entity.getConstraints().values().stream()
-                .filter(c -> c.getType() == ConstraintType.UNIQUE)
-                .filter(c -> tableName.equals(c.getTableName()))
-                .anyMatch(c -> c.getColumns() != null 
-                        && c.getColumns().size() == columns.size() 
-                        && c.getColumns().containsAll(columns));
     }
 }

@@ -48,6 +48,7 @@ public class ElementCollectionHandler {
     public void processElementCollection(AttributeDescriptor attribute, EntityModel ownerEntity) {
         // 1. 컬렉션 테이블 이름 결정 및 새 EntityModel 생성
         String defaultTableName = ownerEntity.getTableName() + "_" + attribute.name();
+
         CollectionTable collectionTable = attribute.getAnnotation(CollectionTable.class);
         String tableName = (collectionTable != null && !collectionTable.name().isEmpty())
                 ? collectionTable.name()
@@ -111,11 +112,18 @@ public class ElementCollectionHandler {
         for (ColumnModel pk : ownerPkColumns) ownerPkByName.put(pk.getColumnName(), pk);
         for (int i = 0; i < ownerPkColumns.size(); i++) {
             JoinColumn jc = (joinColumns.length > 0) ? joinColumns[i] : null;
-            ColumnModel ownerPkCol =
-                (jc != null && !jc.referencedColumnName().isEmpty())
-                    ? java.util.Objects.requireNonNull(ownerPkByName.get(jc.referencedColumnName()),
-                        "referencedColumnName not found in owner PKs: " + jc.referencedColumnName())
-                    : ownerPkColumns.get(i);
+            ColumnModel ownerPkCol;
+            if (jc != null && !jc.referencedColumnName().isEmpty()) {
+                ownerPkCol = ownerPkByName.get(jc.referencedColumnName());
+                if (ownerPkCol == null) {
+                    context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "referencedColumnName not found in owner PKs: " + jc.referencedColumnName(),
+                            attribute.elementForDiagnostics());
+                    return;
+                }
+            } else {
+                ownerPkCol = ownerPkColumns.get(i);
+            }
             String fkColumnName = (jc != null && !jc.name().isEmpty())
                 ? jc.name()
                 : ownerEntity.getTableName() + "_" + ownerPkCol.getColumnName();

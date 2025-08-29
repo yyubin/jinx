@@ -27,6 +27,7 @@ public class AttributeDescriptorFactory {
 
     // Set of common JPA mapping annotations to check for conflicts.
     private static final Set<Class<? extends Annotation>> MAPPING_ANNOTATIONS = Set.of(
+        jakarta.persistence.Basic.class,
         jakarta.persistence.Column.class,
         jakarta.persistence.JoinColumn.class,
         jakarta.persistence.JoinColumns.class,

@@ -49,7 +49,7 @@ public class ConstraintHandler {
                     .tableName(tableName)
                     .name(c.value())
                     .type(type)
-                    .columns(List.of(fieldName))
+                    .columns(fieldName != null ? List.of(fieldName) : List.of())
                     .checkClause(Optional.ofNullable(checkExpr))
                     .build();
 

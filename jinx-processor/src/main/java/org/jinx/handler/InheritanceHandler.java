@@ -142,8 +142,8 @@ public class InheritanceHandler {
         for (JoinPair jp : joinPairs) {
             ColumnModel parentPk = jp.parent();
             String childCol = jp.childName();
-            
-            ColumnModel existing = childEntity.findColumn(childTable, childCol);
+
+            ColumnModel existing = childEntity.findColumn(null, childCol);
             if (existing != null) {
                 String wantType = parentPk.getJavaType();
                 String haveType = existing.getJavaType();

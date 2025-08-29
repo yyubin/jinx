@@ -238,13 +238,19 @@ public class AttributeBasedEntityResolver implements AttributeColumnResolver {
             case IDENTITY -> builder.generationStrategy(GenerationStrategy.IDENTITY);
             case SEQUENCE -> {
                 builder.generationStrategy(GenerationStrategy.SEQUENCE);
-                if (!generatedValue.generator().isEmpty()) {
-                    // Use correct ColumnModel field for sequence generator
-                    builder.sequenceName(generatedValue.generator());
-                    
-                    // Verify sequence generator exists and validate
-                    validateSequenceGenerator(generatedValue.generator(), attribute);
+                String gen = generatedValue.generator();
+                if (gen.isEmpty()) {
+                    context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "@GeneratedValue(strategy=SEQUENCE) must specify a 'generator'", attribute.elementForDiagnostics());
+                    return;
                 }
+                builder.sequenceName(gen);
+                SequenceGenerator sg = attribute.getAnnotation(SequenceGenerator.class);
+                if (sg != null) {
+                    sequenceHandler.processSingleGenerator(sg, attribute.elementForDiagnostics());
+                }
+                builder.sequenceName(generatedValue.generator());
+                validateSequenceGenerator(gen, attribute);
             }
             case TABLE -> {
                 builder.generationStrategy(GenerationStrategy.TABLE);

@@ -38,12 +38,13 @@ public class EntityModel {
 
     public boolean isValidTableName(String tableNameToValidate) {
         // An empty/null table name implies the default primary table, which is always valid.
-        if (tableNameToValidate == null || tableNameToValidate.isEmpty()) {
+        if (tableNameToValidate == null || tableNameToValidate.isBlank()) {
             return true;
         }
 
         // Check if it matches the primary table name (case-insensitive).
-        if (tableNameToValidate.equalsIgnoreCase(this.tableName)) {
+        final String t = tableNameToValidate.trim();
+        if (t.equalsIgnoreCase(this.tableName)) {
             return true;
         }
 
@@ -51,12 +52,14 @@ public class EntityModel {
         return secondaryTables.stream()
                 .map(SecondaryTableModel::getName)
                 .filter(name -> name != null && !name.isEmpty())
-                .anyMatch(name -> tableNameToValidate.equalsIgnoreCase(name));
+                .anyMatch(name -> t.equalsIgnoreCase(name));
     }
 
     private String colKey(String tableName, String columnName) {
-        String normalizedTableName = (tableName == null || tableName.isEmpty()) ? this.tableName : tableName;
-        return normalizedTableName + "::" + columnName;
+        String normalizedTableName = (tableName == null || tableName.isBlank()) ? this.tableName : tableName;
+        String t = normalizedTableName == null ? "" : normalizedTableName.trim().toLowerCase(java.util.Locale.ROOT);
+        String c = columnName == null ? "" : columnName.trim().toLowerCase(java.util.Locale.ROOT);
+        return t + "::" + c;
     }
 
     public ColumnModel findColumn(String tableName, String columnName) {

@@ -63,6 +63,25 @@ public class DefaultNaming implements Naming{
         return clampWithHash(base);
     }
 
+    @Override
+    public String nnName(String tableName, List<String> columns) {
+        String base = "nn_" + norm(tableName) + "__" + String.join("_", columns.stream().map(this::norm).toList());
+        return clampWithHash(base);
+    }
+
+    @Override
+    public String dfName(String tableName, List<String> columns) {
+        String base = "df_" + norm(tableName) + "__" + String.join("_", columns.stream().map(this::norm).toList());
+        return clampWithHash(base);
+    }
+
+    @Override
+    public String autoName(String tableName, List<String> columns) {
+        // 프리픽스는 ‘cn_’(constraint)로 통일된 fallback
+        String base = "cn_" + norm(tableName) + "__" + String.join("_", columns.stream().map(this::norm).toList());
+        return clampWithHash(base);
+    }
+
     private String norm(String s) {
         if (s == null) return "null";
         String x = s.replaceAll("[^A-Za-z0-9_]", "_");

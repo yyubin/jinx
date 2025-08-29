@@ -34,7 +34,7 @@ public class ProcessingContext {
     private final AttributeDescriptorFactory attributeDescriptorFactory;
     
     // AttributeDescriptor caching to avoid re-computation during bidirectional relationship resolution
-    private final Map<TypeElement, List<AttributeDescriptor>> descriptorCache = new HashMap<>();
+    private final Map<String, List<AttributeDescriptor>> descriptorCache = new HashMap<>();
     
     // MappedBy cycle detection: (ownerType, attributeName) -> inverse visited set
     private final Set<String> mappedByVisitedSet = new HashSet<>();
@@ -116,8 +116,9 @@ public class ProcessingContext {
      * This prevents re-computation during bidirectional relationship resolution.
      */
     public List<AttributeDescriptor> getCachedDescriptors(TypeElement typeElement) {
-        return descriptorCache.computeIfAbsent(typeElement, 
-                te -> attributeDescriptorFactory.createDescriptors(te));
+        String fqn = typeElement.getQualifiedName().toString();
+        return descriptorCache.computeIfAbsent(fqn,
+                k -> attributeDescriptorFactory.createDescriptors(typeElement));
     }
     
     /**
@@ -135,6 +136,10 @@ public class ProcessingContext {
     public void markMappedByVisited(String ownerEntityName, String attributeName) {
         String key = ownerEntityName + "." + attributeName;
         mappedByVisitedSet.add(key);
+    }
+
+    public void unmarkMappedByVisited(String entityName, String attr) {
+        mappedByVisitedSet.remove(entityName + "#" + attr);
     }
     
     /**

@@ -48,8 +48,11 @@ public record FieldAttributeDescriptor(VariableElement field, Types typeUtils, E
 
         TypeMirror arg = typeArgs.get(idx);
         if (arg instanceof WildcardType wt) {
-            TypeMirror bound = wt.getExtendsBound() != null ? wt.getExtendsBound() : wt.getSuperBound();
-            return (bound instanceof DeclaredType bdt) ? Optional.of(bdt) : Optional.empty();
+            if (wt.getExtendsBound() != null) {
+                TypeMirror bound = wt.getExtendsBound();
+                return (bound instanceof DeclaredType bdt) ? Optional.of(bdt) : Optional.empty();
+            }
+            return Optional.empty();
         }
         if (arg instanceof TypeVariable tv) {
             TypeMirror upper = tv.getUpperBound();

@@ -343,9 +343,6 @@ public class EntityHandler {
         return secondaryTableList;
     }
 
-    
-
-
     private boolean processCompositeKeys(TypeElement typeElement, EntityModel entity) {
         IdClass idClass = typeElement.getAnnotation(IdClass.class);
         if (idClass != null) {
@@ -356,7 +353,7 @@ public class EntityHandler {
             return false;
         }
 
-        // ✅ Descriptor 기반으로 EmbeddedId 탐색
+        // Descriptor 기반으로 EmbeddedId 탐색
         AttributeDescriptor embeddedId = context.getCachedDescriptors(typeElement).stream()
             .filter(d -> d.hasAnnotation(EmbeddedId.class))
             .findFirst()
@@ -395,22 +392,101 @@ public class EntityHandler {
             processRegularAttribute(descriptor, entity, tableMappings);
         }
     }
-    
-    private void processRegularAttribute(AttributeDescriptor descriptor, EntityModel entity, Map<String, SecondaryTable> tableMappings) {
-        Column column = descriptor.getAnnotation(Column.class);
-        String targetTable = determineTargetTableFromDescriptor(column, tableMappings, entity.getTableName());
-        
-        // Create column with pre-determined target table to avoid validation conflicts
+
+    private void processRegularAttribute(AttributeDescriptor descriptor,
+                                         EntityModel entity,
+                                         Map<String, SecondaryTable> tableMappings) {
+        Column columnAnn = descriptor.getAnnotation(Column.class);
+        String targetTable = determineTargetTableFromDescriptor(columnAnn, tableMappings, entity.getTableName());
+
+        // 1) 컬럼 생성 (테이블 미리 주입)
         Map<String, String> overrides = Collections.singletonMap("tableName", targetTable);
-        ColumnModel columnModel = columnHandler.createFromAttribute(descriptor, entity, overrides);
-        if (columnModel != null) {
-            // Use table-aware column storage to prevent primary/secondary table column conflicts
-            if (!entity.hasColumn(targetTable, columnModel.getColumnName())) {
-                entity.putColumn(columnModel);
+        ColumnModel col = columnHandler.createFromAttribute(descriptor, entity, overrides);
+        if (col == null) return;
+
+        if (col.getTableName() == null || col.getTableName().isEmpty()) {
+            col.setTableName(targetTable);
+        }
+
+        // 2) 테이블 인식 컬럼 반영 (중복 시 메타 보강)
+        ColumnModel existing = entity.findColumn(targetTable, col.getColumnName());
+        if (existing == null) {
+            entity.putColumn(col);
+        } else {
+            // 필요한 경우만 최소 보강(옵션)
+            if (existing.getJavaType() == null && col.getJavaType() != null) existing.setJavaType(col.getJavaType());
+            if (existing.getLength() == 0 && col.getLength() > 0) existing.setLength(col.getLength());
+            if (existing.getPrecision() == 0 && col.getPrecision() > 0) existing.setPrecision(col.getPrecision());
+            if (existing.getScale() == 0 && col.getScale() > 0) existing.setScale(col.getScale());
+            if (existing.getDefaultValue() == null && col.getDefaultValue() != null) existing.setDefaultValue(col.getDefaultValue());
+            if (existing.getComment() == null && col.getComment() != null) existing.setComment(col.getComment());
+        }
+
+        // 3) 속성 단 제약 수집
+        List<ConstraintModel> out = new ArrayList<>();
+        // descriptor의 소스 위치로 진단 매핑
+        processConstraints(descriptor.elementForDiagnostics(), col.getColumnName(), out, targetTable);
+
+        // 4) @Column(unique=true) → UNIQUE 제약 (PK/기존 UNIQUE로 이미 커버되면 생략)
+        if (columnAnn != null && columnAnn.unique()) {
+            List<String> cols = List.of(col.getColumnName());
+            boolean covered = entity.getConstraints().values().stream().anyMatch(c ->
+                    targetTable.equals(c.getTableName()) &&
+                            (c.getType() == ConstraintType.PRIMARY_KEY || c.getType() == ConstraintType.UNIQUE) &&
+                            c.getColumns().equals(cols)
+            );
+            if (!covered) {
+                String uqName = context.getNaming().uqName(targetTable, cols);
+                out.add(ConstraintModel.builder()
+                        .name(uqName)
+                        .type(ConstraintType.UNIQUE)
+                        .tableName(targetTable)
+                        .columns(cols)
+                        .build());
             }
         }
+
+        // 5) 제약 병합
+        // 5-1) out 내부 중복(테이블/타입/컬럼 동일) 제거
+        Map<String, ConstraintModel> dedup = new LinkedHashMap<>();
+        for (ConstraintModel c : out) {
+            String key = c.getType() + "|" + c.getTableName() + "|" + String.join(",", c.getColumns());
+            dedup.putIfAbsent(key, c);
+        }
+        for (ConstraintModel c : dedup.values()) {
+            // INDEX는 IndexModel로
+            if (c.getType() == ConstraintType.INDEX) {
+                String ixName = (c.getName() == null || c.getName().isEmpty())
+                        ? context.getNaming().ixName(c.getTableName(), c.getColumns())
+                        : c.getName();
+                entity.getIndexes().putIfAbsent(ixName, IndexModel.builder()
+                        .indexName(ixName)
+                        .tableName(c.getTableName())
+                        .columnNames(c.getColumns())
+                        .isUnique(false)
+                        .build());
+                continue;
+            }
+
+            // 이름 보정
+            String name = c.getName();
+            if (name == null || name.isEmpty()) {
+                name = switch (c.getType()) {
+                    case UNIQUE -> context.getNaming().uqName(c.getTableName(), c.getColumns());
+                    case CHECK  -> context.getNaming().ckName(c.getTableName(), c.getColumns());
+                    case NOT_NULL -> context.getNaming().nnName(c.getTableName(), c.getColumns());
+                    case PRIMARY_KEY -> context.getNaming().pkName(c.getTableName(), c.getColumns());
+                    case DEFAULT -> context.getNaming().dfName(c.getTableName(), c.getColumns());
+                    default -> context.getNaming().autoName(c.getTableName(), c.getColumns());
+                };
+                c.setName(name);
+            }
+
+            // 최종 반영
+            entity.getConstraints().putIfAbsent(name, c);
+        }
     }
-    
+
     private String determineTargetTableFromDescriptor(Column column, Map<String, SecondaryTable> tableMappings, String defaultTable) {
         if (column == null || column.table().isEmpty()) return defaultTable;
         
