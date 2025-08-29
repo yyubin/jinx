@@ -905,7 +905,7 @@ class RelationshipHandlerTest {
         lenient().when(field.getSimpleName()).thenReturn(fieldName);
         when(field.getKind()).thenReturn(ElementKind.FIELD);
         lenient().when(field.getModifiers()).thenReturn(Collections.emptySet());
-        when(field.getAnnotation(Transient.class)).thenReturn(null);
+        lenient().when(field.getAnnotation(Transient.class)).thenReturn(null);
         return field;
     }
 
@@ -1325,7 +1325,7 @@ class RelationshipHandlerTest {
 
         // Then
         verify(messager).printMessage(eq(Diagnostic.Kind.ERROR),
-                        contains("Cannot resolve generic type parameter for @ManyToMany field."),
+                contains("Cannot resolve generic type parameter for @ManyToMany field."),
                 eq(field));
         // 조인 테이블 생성 X
         assertEquals(2, schemaModel.getEntities().size()); // owner/target만

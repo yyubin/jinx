@@ -1,10 +1,8 @@
 package org.jinx.handler;
 
 import jakarta.persistence.*;
-import org.jinx.context.DefaultNaming;
 import org.jinx.context.Naming;
 import org.jinx.context.ProcessingContext;
-import org.jinx.handler.*;
 import org.jinx.model.ColumnModel;
 import org.jinx.model.EntityModel;
 import org.jinx.model.RelationshipModel;
@@ -26,7 +24,6 @@ import javax.lang.model.util.Elements;
 import javax.tools.Diagnostic;
 import java.util.*;
 
-import static javax.lang.model.type.TypeKind.DECLARED;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -1024,7 +1021,7 @@ class EntityHandlerTest {
             ColumnModel embeddedColumn = ColumnModel.builder().columnName("embedded_col").build();
             entity.getColumns().put("embedded_col", embeddedColumn);
             return null; // void 메서드이므로 null 반환
-        }).when(embeddedHandler).processEmbedded(any(), any(EntityModel.class), anySet());
+        }).when(embeddedHandler).processEmbedded(any(VariableElement.class), any(EntityModel.class), anySet());
 
 
         // --- ACT ---
@@ -1253,7 +1250,7 @@ class EntityHandlerTest {
         when(columnHandler.createFrom(eq(id), any())).thenReturn(idCol);
         when(context.findAllPrimaryKeyColumns(any(EntityModel.class))).thenAnswer(inv -> {
             EntityModel em = inv.getArgument(0);
-            return em.getColumns().values().stream().filter(org.jinx.model.ColumnModel::isPrimaryKey).toList();
+            return em.getColumns().values().stream().filter(ColumnModel::isPrimaryKey).toList();
         });
 
         // SecondaryTable with pkJoinColumns mapping to custom child column name CK and ref parent id

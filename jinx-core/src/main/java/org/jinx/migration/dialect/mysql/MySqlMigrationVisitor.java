@@ -6,7 +6,6 @@ import org.jinx.migration.contributor.create.*;
 import org.jinx.migration.contributor.drop.*;
 import org.jinx.migration.spi.dialect.DdlDialect;
 import org.jinx.migration.spi.visitor.TableContentVisitor;
-import org.jinx.migration.spi.visitor.TableGeneratorVisitor;
 import org.jinx.migration.spi.visitor.TableVisitor;
 import org.jinx.model.*;
 

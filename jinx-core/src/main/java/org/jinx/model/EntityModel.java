@@ -10,8 +10,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 @Data
 @Builder
@@ -36,5 +34,43 @@ public class EntityModel {
 
     public enum TableType {
         ENTITY, JOIN_TABLE, COLLECTION_TABLE
+    }
+
+    public boolean isValidTableName(String tableNameToValidate) {
+        // An empty/null table name implies the default primary table, which is always valid.
+        if (tableNameToValidate == null || tableNameToValidate.isBlank()) {
+            return true;
+        }
+
+        // Check if it matches the primary table name (case-insensitive).
+        final String t = tableNameToValidate.trim();
+        if (t.equalsIgnoreCase(this.tableName)) {
+            return true;
+        }
+
+        // Check if it matches any of the registered secondary table names (case-insensitive).
+        return secondaryTables.stream()
+                .map(SecondaryTableModel::getName)
+                .filter(name -> name != null && !name.isEmpty())
+                .anyMatch(name -> t.equalsIgnoreCase(name));
+    }
+
+    private String colKey(String tableName, String columnName) {
+        String normalizedTableName = (tableName == null || tableName.isBlank()) ? this.tableName : tableName;
+        String t = normalizedTableName == null ? "" : normalizedTableName.trim().toLowerCase(java.util.Locale.ROOT);
+        String c = columnName == null ? "" : columnName.trim().toLowerCase(java.util.Locale.ROOT);
+        return t + "::" + c;
+    }
+
+    public ColumnModel findColumn(String tableName, String columnName) {
+        return columns.get(colKey(tableName, columnName));
+    }
+
+    public void putColumn(ColumnModel column) {
+        columns.put(colKey(column.getTableName(), column.getColumnName()), column);
+    }
+
+    public boolean hasColumn(String tableName, String columnName) {
+        return columns.containsKey(colKey(tableName, columnName));
     }
 }

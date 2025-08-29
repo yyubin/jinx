@@ -3,10 +3,8 @@ package org.jinx.handler.builtins;
 import jakarta.persistence.*;
 import org.jinx.context.ProcessingContext;
 import org.jinx.handler.AbstractColumnResolver;
-import org.jinx.handler.ColumnResolver;
 import org.jinx.model.ColumnModel;
 import org.jinx.model.GenerationStrategy;
-import org.jinx.model.JdbcType;
 
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;

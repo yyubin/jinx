@@ -1,5 +1,5 @@
 package org.jinx.model;
 
 public enum GenerationStrategy {
-    NONE, IDENTITY, SEQUENCE, TABLE
+    NONE, IDENTITY, SEQUENCE, TABLE, AUTO, UUID
 }

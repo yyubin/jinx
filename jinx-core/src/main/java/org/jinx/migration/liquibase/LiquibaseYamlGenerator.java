@@ -6,9 +6,6 @@ import org.jinx.model.DiffResult;
 import org.jinx.model.DiffResult.*;
 import org.jinx.model.SchemaModel;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class LiquibaseYamlGenerator {
     public DatabaseChangeLog generate(DiffResult diff, SchemaModel oldSchema, SchemaModel newSchema, DialectBundle dialectBundle) {
         ChangeSetIdGenerator idGenerator = new ChangeSetIdGenerator();

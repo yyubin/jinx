@@ -1,6 +1,7 @@
 package org.jinx.migration.contributor;
 
 import org.jinx.migration.contributor.drop.*;
+import org.jinx.descriptor.*;
 import org.jinx.model.*;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

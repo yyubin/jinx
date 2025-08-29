@@ -14,4 +14,7 @@ public interface Naming {
     String ixName(String tableName, List<String> columns);
     String ckName(String tableName, List<String> columns);
     String ckName(String tableName, CheckConstraint constraint);
+    String nnName(String tableName, List<String> columns);
+    String dfName(String tableName, List<String> columns);
+    String autoName(String tableName, List<String> columns);
 }

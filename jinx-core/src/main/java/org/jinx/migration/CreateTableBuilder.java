@@ -7,7 +7,6 @@ import org.jinx.migration.contributor.TableBodyContributor;
 import org.jinx.migration.contributor.create.ColumnContributor;
 import org.jinx.migration.contributor.create.ConstraintContributor;
 import org.jinx.migration.contributor.create.IndexContributor;
-import org.jinx.migration.contributor.SqlContributor;
 import org.jinx.migration.spi.dialect.DdlDialect;
 import org.jinx.model.ColumnModel;
 import org.jinx.model.EntityModel;

@@ -1,7 +1,6 @@
 package org.jinx.handler.builtins;
 
 import jakarta.persistence.*;
-import org.jinx.annotation.Identity;
 import org.jinx.context.ProcessingContext;
 import org.jinx.handler.SequenceHandler;
 import org.jinx.model.ColumnModel;
@@ -11,7 +10,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;

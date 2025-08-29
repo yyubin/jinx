@@ -1,7 +1,9 @@
 package org.jinx.migration;
 
 import org.jinx.migration.spi.visitor.SqlGeneratingVisitor;
-import org.jinx.model.*;
+import org.jinx.model.DialectBundle;
+import org.jinx.model.DiffResult;
+import org.jinx.model.SchemaModel;
 
 public class MigrationGenerator {
     private final DialectBundle dialects;
@@ -16,6 +18,13 @@ public class MigrationGenerator {
 
     public String generateSql(DiffResult diff) {
         var out = new StringBuilder();
+        if (reverseMode) {
+            out.append("-- WARNING: this is rollback SQL for a migration").append('\n');
+        }
+        for (String w : diff.getWarnings()) {
+            out.append("-- WARNING: ").append(w).append('\n');
+        }
+        
         var providers = VisitorFactory.forBundle(dialects);
 
         // 0) Pre-Objects

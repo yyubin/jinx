@@ -1,15 +1,13 @@
 package org.jinx.migration;
 
-import org.jinx.migration.differs.SequenceDiffer;
 import org.jinx.migration.differs.TableGeneratorDiffer;
+import org.jinx.descriptor.*;
 import org.jinx.model.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -18,7 +16,7 @@ import static org.mockito.Mockito.*;
 class MigrationGeneratorTest {
 
     @Mock
-    private Dialect dialect;
+    private DdlDialect dialect;
     @Mock
     private SchemaModel newSchema;
 
@@ -28,8 +26,9 @@ class MigrationGeneratorTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        migrationGenerator = new MigrationGenerator(dialect, newSchema, false);
-        migrationReverseGenerator = new MigrationGenerator(dialect, newSchema, true);
+        DialectBundle dialectBundle = DialectBundle.builder(dialect, DatabaseType.MySQL).build();
+        migrationGenerator = new MigrationGenerator(dialectBundle, newSchema, false);
+        migrationReverseGenerator = new MigrationGenerator(dialectBundle, newSchema, true);
     }
 
     private EntityModel createDummyEntity(String name) {
