@@ -43,7 +43,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                                 .type(getLiquibaseTypeName(col))
                                 .autoIncrement(shouldUseAutoIncrement(col.getGenerationStrategy()))
                                 .defaultValueComputed(getUuidComputedDefaultOrNull(col))
-                                .defaultValue(getEffectiveDefaultValue(col))
+                                .defaultValue(getNonComputedDefaultOrNull(col))
                                 .constraints(LiquibaseUtils.buildConstraintsWithoutPK(col, currentTableName)) // ← PK 제외
                                 .build())
                         .build())
@@ -404,9 +404,9 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                 .config(AddForeignKeyConstraintConfig.builder()
                         .constraintName(relationship.getConstraintName())
                         .baseTableName(baseTable)
-                        .baseColumnNames(relationship.getColumns() != null ? String.join(",", relationship.getColumns()) : "")
+                        .baseColumnNames(String.join(",", relationship.getColumns()))
                         .referencedTableName(relationship.getReferencedTable())
-                        .referencedColumnNames(relationship.getReferencedColumns() != null ? String.join(",", relationship.getReferencedColumns()) : "")
+                        .referencedColumnNames(String.join(",", relationship.getReferencedColumns()))
                         .onDelete(relationship.getOnDelete() != null ? relationship.getOnDelete().name().replace('_',' ') : null)
                         .onUpdate(relationship.getOnUpdate() != null ? relationship.getOnUpdate().name().replace('_',' ') : null)
                         .build())
@@ -497,19 +497,6 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
      * Gets the effective default value considering generation strategy
      */
     private String getEffectiveDefaultValue(ColumnModel column) {
-        GenerationStrategy strategy = column.getGenerationStrategy();
-        
-        // UUID generation strategy
-        if (strategy == GenerationStrategy.UUID) {
-            String uuidDefault = dialectBundle.liquibase()
-                    .map(lb -> lb.getUuidDefaultValue())
-                    .orElse(null);
-            if (uuidDefault != null) {
-                return uuidDefault;
-            }
-        }
-        
-        // Return original default value for other cases
         return column.getDefaultValue();
     }
     

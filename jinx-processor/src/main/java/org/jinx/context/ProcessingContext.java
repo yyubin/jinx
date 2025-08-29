@@ -139,7 +139,7 @@ public class ProcessingContext {
     }
 
     public void unmarkMappedByVisited(String entityName, String attr) {
-        mappedByVisitedSet.remove(entityName + "#" + attr);
+        mappedByVisitedSet.remove(entityName + "." + attr);
     }
     
     /**
@@ -157,5 +157,6 @@ public class ProcessingContext {
         clearMappedByVisited();
         deferredEntities.clear();
         deferredNames.clear();
+        descriptorCache.clear();
     }
 }

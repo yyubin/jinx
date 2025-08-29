@@ -83,6 +83,8 @@ public class InheritanceHandler {
 
     private void findAndProcessJoinedChildren(EntityModel parentEntity, TypeElement parentType) {
         if (context.findAllPrimaryKeyColumns(parentEntity).isEmpty()) {
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "Parent entity '" + parentType.getQualifiedName() + "' must define a primary key for JOINED inheritance.", parentType);
             parentEntity.setValid(false);
             return;
         }

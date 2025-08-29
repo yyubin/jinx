@@ -249,7 +249,6 @@ public class AttributeBasedEntityResolver implements AttributeColumnResolver {
                 if (sg != null) {
                     sequenceHandler.processSingleGenerator(sg, attribute.elementForDiagnostics());
                 }
-                builder.sequenceName(generatedValue.generator());
                 validateSequenceGenerator(gen, attribute);
             }
             case TABLE -> {
