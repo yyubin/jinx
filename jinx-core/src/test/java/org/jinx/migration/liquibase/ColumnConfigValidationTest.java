@@ -48,6 +48,40 @@ class ColumnConfigValidationTest {
                     () -> assertNull(config.getDefaultValueSequenceNext())
             );
         }
+
+        @Test
+        @DisplayName("computed가 sequence를 덮어쓴다 (computed 먼저 설정)")
+        void computedOverridesSequence_ComputedFirst() {
+            ColumnConfig config = ColumnConfig.builder()
+                    .name("test")
+                    .type("varchar(36)")
+                    .defaultValueComputed("uuid()")
+                    .defaultValueSequenceNext("should_be_ignored")
+                    .build();
+
+            assertAll(
+                    () -> assertEquals("uuid()", config.getDefaultValueComputed()),
+                    () -> assertNull(config.getDefaultValue()),
+                    () -> assertNull(config.getDefaultValueSequenceNext())
+            );
+        }
+
+        @Test
+        @DisplayName("computed가 sequence를 덮어쓴다 (sequence 먼저 설정)")
+        void computedOverridesSequence_SequenceFirst() {
+            ColumnConfig config = ColumnConfig.builder()
+                    .name("test")
+                    .type("varchar(36)")
+                    .defaultValueSequenceNext("should_be_ignored")
+                    .defaultValueComputed("uuid()")
+                    .build();
+
+            assertAll(
+                    () -> assertEquals("uuid()", config.getDefaultValueComputed()),
+                    () -> assertNull(config.getDefaultValue()),
+                    () -> assertNull(config.getDefaultValueSequenceNext())
+            );
+        }
     }
 
     @Nested
@@ -84,6 +118,23 @@ class ColumnConfigValidationTest {
                     () -> assertEquals("seq", config.getDefaultValueSequenceNext()),
                     () -> assertNull(config.getDefaultValue()),
                     () -> assertNull(config.getDefaultValueComputed())
+            );
+        }
+
+        @Test
+        @DisplayName("sequence는 computed에 의해 무시된다")
+        void sequenceIgnoredByComputed() {
+            ColumnConfig config = ColumnConfig.builder()
+                    .name("test")
+                    .type("varchar(36)")
+                    .defaultValueSequenceNext("should_be_ignored")
+                    .defaultValueComputed("uuid()")
+                    .build();
+
+            assertAll(
+                    () -> assertEquals("uuid()", config.getDefaultValueComputed()),
+                    () -> assertNull(config.getDefaultValue()),
+                    () -> assertNull(config.getDefaultValueSequenceNext())
             );
         }
     }
