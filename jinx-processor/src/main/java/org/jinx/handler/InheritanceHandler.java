@@ -29,6 +29,7 @@ public class InheritanceHandler {
                 DiscriminatorColumn discriminatorColumn = typeElement.getAnnotation(DiscriminatorColumn.class);
                 if (discriminatorColumn != null) {
                     ColumnModel dColumn = ColumnModel.builder()
+                            .tableName(entityModel.getTableName())
                             .columnName(discriminatorColumn.name().isEmpty() ? "dtype" : discriminatorColumn.name())
                             .javaType("java.lang.String")
                             .isPrimaryKey(false)
@@ -123,9 +124,9 @@ public class InheritanceHandler {
      */
     private String normalizeType(String javaType) {
         if (javaType == null) return null;
-        
+        String jt = javaType.trim();
         // 기본 타입 정규화
-        return switch (javaType) {
+        return switch (jt) {
             case "java.lang.Boolean" -> "boolean";
             case "java.lang.Byte" -> "byte";
             case "java.lang.Short" -> "short";
@@ -311,7 +312,8 @@ public class InheritanceHandler {
         context.getSchemaModel().getEntities().values().stream()
                 .filter(childCandidate -> !childCandidate.getEntityName().equals(parentEntity.getEntityName()))
                 .forEach(childEntity -> {
-                    TypeElement childType = context.getElementUtils().getTypeElement(childEntity.getEntityName());
+                    String fqcn = childEntity.getFqcn() == null ? childEntity.getEntityName() : childEntity.getFqcn();
+                    TypeElement childType = context.getElementUtils().getTypeElement(fqcn);
                     if (childType != null && context.getTypeUtils().isSubtype(childType.asType(), parentType.asType())) {
                         processSingleTablePerClassChild(childEntity, parentEntity);
                         checkIdentityStrategy(childType, childEntity); // Check children too

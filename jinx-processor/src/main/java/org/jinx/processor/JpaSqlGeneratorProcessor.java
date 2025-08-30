@@ -135,11 +135,12 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
             // 1. 상속 해석
             for (EntityModel entityModel : context.getSchemaModel().getEntities().values()) {
                 if (!entityModel.isValid()) continue;
-                TypeElement typeElement = context.getElementUtils().getTypeElement(entityModel.getEntityName());
+                String entityName = entityModel.getFqcn() != null ? entityModel.getFqcn() : entityModel.getEntityName();
+                TypeElement typeElement = context.getElementUtils().getTypeElement(entityName);
                 if (typeElement == null) {
                     context.getMessager().printMessage(
                         Diagnostic.Kind.ERROR,
-                        "Cannot resolve TypeElement for entity '" + entityModel.getEntityName() + "'."
+                        "Cannot resolve TypeElement for entity '" + entityName + "'."
                     );
                     entityModel.setValid(false);
                     continue;

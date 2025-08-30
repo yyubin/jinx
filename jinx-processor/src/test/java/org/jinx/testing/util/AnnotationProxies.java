@@ -97,7 +97,7 @@ public final class AnnotationProxies {
                     Object v1 = members.containsKey(m.getName()) ? members.get(m.getName())
                             : (m.getDefaultValue() != null ? m.getDefaultValue() : null);
                     Object v2 = m.invoke(a);
-                    if (!Objects.deepEquals(v1, v2)) return false;
+                    if (!deepEqualsNormalized(v1, v2)) return false;
                 } catch (Exception e) {
                     return false;
                 }
@@ -113,6 +113,26 @@ public final class AnnotationProxies {
                 result += nameHash ^ (v == null ? 0 : deepHashCode(v));
             }
             return result;
+        }
+
+        private static boolean deepEqualsNormalized(Object a, Object b) {
+            if (a == b) return true;
+            if (a == null || b == null) return false;
+
+            Class<?> ca = a.getClass(), cb = b.getClass();
+            if (ca.isArray() && cb.isArray()) {
+                if (a instanceof Object[] ao && b instanceof Object[] bo) return Arrays.deepEquals(ao, bo);
+                if (a instanceof int[] ai && b instanceof int[] bi) return Arrays.equals(ai, bi);
+                if (a instanceof long[] al && b instanceof long[] bl) return Arrays.equals(al, bl);
+                if (a instanceof short[] as && b instanceof short[] bs) return Arrays.equals(as, bs);
+                if (a instanceof byte[] ab && b instanceof byte[] bb) return Arrays.equals(ab, bb);
+                if (a instanceof char[] ac && b instanceof char[] bc) return Arrays.equals(ac, bc);
+                if (a instanceof boolean[] ab1 && b instanceof boolean[] bb1) return Arrays.equals(ab1, bb1);
+                if (a instanceof float[] af && b instanceof float[] bf) return Arrays.equals(af, bf);
+                if (a instanceof double[] ad && b instanceof double[] bd) return Arrays.equals(ad, bd);
+                return false;
+            }
+            return Objects.equals(a, b);
         }
 
         private static int deepHashCode(Object value) {

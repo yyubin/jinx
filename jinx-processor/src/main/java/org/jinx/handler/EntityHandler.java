@@ -119,10 +119,11 @@ public class EntityHandler {
             if (child == null) break;
             if (!child.isValid()) continue;
 
-            TypeElement te = context.getElementUtils().getTypeElement(child.getEntityName());
+            String childName = child.getFqcn() != null ? child.getFqcn() : child.getEntityName();
+            TypeElement te = context.getElementUtils().getTypeElement(childName);
             if (te == null) {
                 context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "Deferred processing: cannot resolve TypeElement for " + child.getEntityName() + " – re-queue");
+                        "Deferred processing: cannot resolve TypeElement for " + childName + " – re-queue");
                 context.getDeferredEntities().offer(child);
                 continue;
             }
