@@ -4,20 +4,20 @@ import jakarta.persistence.*;
 import org.jinx.context.Naming;
 import org.jinx.context.ProcessingContext;
 import org.jinx.descriptor.AttributeDescriptor;
-import org.jinx.handler.ColumnHandler;
-import org.jinx.handler.EmbeddedHandler;
 import org.jinx.model.*;
+import org.jinx.testing.asserts.ColumnAssertions;
+import org.jinx.testing.mother.AttributeDescriptorFactory;
+import org.jinx.testing.mother.EntityModelMother;
+import org.jinx.testing.util.NamingTestUtil;
+import org.jinx.testing.util.SchemaCapture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import javax.annotation.processing.Messager;
-import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
@@ -26,7 +26,6 @@ import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -54,10 +53,7 @@ class ElementCollectionHandlerTest {
     @Mock
     private Naming naming;
     @Mock
-    private Map<String, EntityModel> entitiesMap; // << [FIX-1] 실제 HashMap 대신 Mock Map 사용
-
-    @Captor
-    private ArgumentCaptor<EntityModel> entityModelCaptor;
+    private Map<String, EntityModel> entitiesMap;
 
     private ElementCollectionHandler elementCollectionHandler;
 
@@ -75,78 +71,44 @@ class ElementCollectionHandlerTest {
     }
 
     private EntityModel createMockOwnerEntity() {
-        EntityModel owner = EntityModel.builder()
-                .entityName("User")
-                .tableName("users")
-                .build();
-        ColumnModel pk = ColumnModel.builder()
-                .columnName("id")
-                .javaType("java.lang.Long")
-                .isPrimaryKey(true)
-                .build();
-        owner.putColumn(pk);
-        when(context.findAllPrimaryKeyColumns(owner)).thenReturn(List.of(pk));
+        EntityModel owner = EntityModelMother.usersWithPkIdLong();
+        // EntityModel의 키 형태는 "tableName::columnName"이므로 getColumn 메서드 사용
+        ColumnModel idColumn = owner.findColumn("users", "id");
+        List<ColumnModel> pkColumns = List.of(idColumn);
+        when(context.findAllPrimaryKeyColumns(owner)).thenReturn(pkColumns);
         return owner;
     }
-
-    // [FIX-2] 테스트에서 공통적으로 필요한 'null' 어노테이션 모킹을 미리 설정하는 헬퍼 메서드
-    private void setupDefaultAnnotationMocks(AttributeDescriptor attribute) {
-        when(attribute.getAnnotation(CollectionTable.class)).thenReturn(null);
-        when(attribute.getAnnotation(Column.class)).thenReturn(null);
-        when(attribute.getAnnotation(OrderColumn.class)).thenReturn(null);
-        when(attribute.getAnnotation(MapKeyColumn.class)).thenReturn(null);
-        when(attribute.getAnnotation(MapKeyEnumerated.class)).thenReturn(null);
-        when(attribute.getAnnotation(MapKeyTemporal.class)).thenReturn(null);
-    }
-
 
     @Test
     @DisplayName("기본적인 Set<String> 타입의 ElementCollection 처리 테스트")
     void processElementCollection_withBasicSet_shouldCreateCorrectTableAndColumns() {
         // Arrange
         EntityModel ownerEntity = createMockOwnerEntity();
-        AttributeDescriptor attribute = mock(AttributeDescriptor.class);
-        when(attribute.name()).thenReturn("tags");
 
-        // [FIX-2] 어노테이션 기본 모킹 설정
-        setupDefaultAnnotationMocks(attribute);
-
-        DeclaredType setType = mock(DeclaredType.class);
-        TypeMirror stringType = mock(TypeMirror.class);
-        when(stringType.toString()).thenReturn("java.lang.String");
-        doReturn(List.of(stringType)).when(setType).getTypeArguments();
-        when(attribute.type()).thenReturn(setType);
-
+        AttributeDescriptor attribute = AttributeDescriptorFactory.setOf("java.lang.String", "tags");
+        DeclaredType setType = (DeclaredType) attribute.type();
+        
         when(context.isSubtype(setType, "java.util.Map")).thenReturn(false);
         when(context.isSubtype(setType, "java.util.List")).thenReturn(false);
-
-        when(naming.fkName(any(), any(), any(), any())).thenReturn("FK_users_tags_users");
+        
+        String expectedFkName = NamingTestUtil.fk("users_tags", List.of("users_id"), "users", List.of("id"));
+        when(naming.fkName(any(), any(), any(), any())).thenReturn(expectedFkName);
 
         // Act
         elementCollectionHandler.processElementCollection(attribute, ownerEntity);
 
         // Assert
-        // [FIX-1] 검증 대상을 Mock Map으로 변경
-        verify(entitiesMap).putIfAbsent(eq("users_tags"), entityModelCaptor.capture());
-        EntityModel collectionEntity = entityModelCaptor.getValue();
+        EntityModel collectionEntity = SchemaCapture.capturePutIfAbsent(entitiesMap, "users_tags");
 
         assertEquals("users_tags", collectionEntity.getTableName());
         assertEquals(EntityModel.TableType.COLLECTION_TABLE, collectionEntity.getTableType());
         assertEquals(2, collectionEntity.getColumns().size());
 
-        ColumnModel fkColumn = collectionEntity.getColumns().get("users_id");
-        assertNotNull(fkColumn);
-        assertTrue(fkColumn.isPrimaryKey());
-        assertFalse(fkColumn.isNullable());
-        assertEquals("java.lang.Long", fkColumn.getJavaType());
-
-        ColumnModel valueColumn = collectionEntity.getColumns().get("tags");
-        assertNotNull(valueColumn);
-        assertTrue(valueColumn.isPrimaryKey());
-        assertEquals("java.lang.String", valueColumn.getJavaType());
+        ColumnAssertions.assertPkNonNull(collectionEntity, "users_tags::users_id", "java.lang.Long");
+        ColumnAssertions.assertPkNonNull(collectionEntity, "users_tags::tags", "java.lang.String");
 
         assertEquals(1, collectionEntity.getRelationships().size());
-        RelationshipModel relationship = collectionEntity.getRelationships().get("FK_users_tags_users");
+        RelationshipModel relationship = collectionEntity.getRelationships().get(expectedFkName);
         assertNotNull(relationship);
         assertEquals(RelationshipType.ELEMENT_COLLECTION, relationship.getType());
         assertEquals("users_tags", relationship.getTableName());
@@ -160,23 +122,13 @@ class ElementCollectionHandlerTest {
     void processElementCollection_withListAndOrderColumn_shouldCreateOrderColumn() {
         // Arrange
         EntityModel ownerEntity = createMockOwnerEntity();
-        AttributeDescriptor attribute = mock(AttributeDescriptor.class);
-        when(attribute.name()).thenReturn("scores");
 
-        // [FIX-2] 어노테이션 기본 모킹 설정
-        setupDefaultAnnotationMocks(attribute);
+        OrderColumn orderColumn = mock(OrderColumn.class);
+        when(orderColumn.name()).thenReturn("score_order");
 
-        // 테스트에 필요한 어노테이션만 재정의
-        OrderColumn orderColumnAnnotation = mock(OrderColumn.class);
-        when(orderColumnAnnotation.name()).thenReturn("score_order");
-        when(attribute.getAnnotation(OrderColumn.class)).thenReturn(orderColumnAnnotation);
+        AttributeDescriptor attribute = AttributeDescriptorFactory.listOf("java.lang.Integer", "scores", orderColumn);
 
-        DeclaredType listType = mock(DeclaredType.class);
-        TypeMirror intType = mock(TypeMirror.class);
-        when(intType.toString()).thenReturn("java.lang.Integer");
-        doReturn(List.of(intType)).when(listType).getTypeArguments();
-        when(attribute.type()).thenReturn(listType);
-
+        DeclaredType listType = (DeclaredType) attribute.type();
         when(context.isSubtype(listType, "java.util.Map")).thenReturn(false);
         when(context.isSubtype(listType, "java.util.List")).thenReturn(true);
 
@@ -184,16 +136,13 @@ class ElementCollectionHandlerTest {
         elementCollectionHandler.processElementCollection(attribute, ownerEntity);
 
         // Assert
-        // [FIX-1] 검증 대상을 Mock Map으로 변경
-        verify(entitiesMap).putIfAbsent(eq("users_scores"), entityModelCaptor.capture());
-        EntityModel collectionEntity = entityModelCaptor.getValue();
+        EntityModel collectionEntity = SchemaCapture.capturePutIfAbsent(entitiesMap, "users_scores");
 
-        assertEquals(3, collectionEntity.getColumns().size());
+        assertEquals(3, collectionEntity.getColumns().size(),
+                "cols=" + collectionEntity.getColumns().keySet());
 
-        ColumnModel orderColumn = collectionEntity.getColumns().get("score_order");
-        assertNotNull(orderColumn);
-        assertTrue(orderColumn.isPrimaryKey());
-        assertEquals("java.lang.Integer", orderColumn.getJavaType());
+        assertNotNull(collectionEntity.getColumns().get("users_scores::score_order"),
+                "missing score_order, cols=" + collectionEntity.getColumns().keySet());
     }
 
     @Test
@@ -201,42 +150,28 @@ class ElementCollectionHandlerTest {
     void processElementCollection_withMapAndMapKeyColumn_shouldCreateMapKeyColumn() {
         // Arrange
         EntityModel ownerEntity = createMockOwnerEntity();
-        AttributeDescriptor attribute = mock(AttributeDescriptor.class);
-        when(attribute.name()).thenReturn("attributes");
-
-        // [FIX-2] 어노테이션 기본 모킹 설정
-        setupDefaultAnnotationMocks(attribute);
-
-        // 테스트에 필요한 어노테이션만 재정의
+        
         MapKeyColumn mapKeyColumnAnnotation = mock(MapKeyColumn.class);
         when(mapKeyColumnAnnotation.name()).thenReturn("attr_key");
-        when(attribute.getAnnotation(MapKeyColumn.class)).thenReturn(mapKeyColumnAnnotation);
-
-        DeclaredType mapType = mock(DeclaredType.class);
-        TypeMirror stringType = mock(TypeMirror.class);
-        when(stringType.toString()).thenReturn("java.lang.String");
-        doReturn(List.of(stringType, stringType)).when(mapType).getTypeArguments();
-        when(attribute.type()).thenReturn(mapType);
+        
+        AttributeDescriptor attribute = AttributeDescriptorFactory.mapOf("java.lang.String", "java.lang.String", "attributes", mapKeyColumnAnnotation);
+        DeclaredType mapType = (DeclaredType) attribute.type();
 
         when(context.isSubtype(mapType, "java.util.Map")).thenReturn(true);
+        when(attribute.getAnnotation(MapKeyColumn.class)).thenReturn(mapKeyColumnAnnotation);
 
         // Act
         elementCollectionHandler.processElementCollection(attribute, ownerEntity);
 
         // Assert
-        // [FIX-1] 검증 대상을 Mock Map으로 변경
-        verify(entitiesMap).putIfAbsent(eq("users_attributes"), entityModelCaptor.capture());
-        EntityModel collectionEntity = entityModelCaptor.getValue();
+        EntityModel collectionEntity = SchemaCapture.capturePutIfAbsent(entitiesMap, "users_attributes");
 
         assertEquals(3, collectionEntity.getColumns().size());
-
-        ColumnModel mapKeyColumn = collectionEntity.getColumns().get("attr_key");
-        assertNotNull(mapKeyColumn);
-        assertTrue(mapKeyColumn.isPrimaryKey());
+        
+        ColumnModel mapKeyColumn = ColumnAssertions.assertPkNonNull(collectionEntity, "users_attributes::attr_key", "java.lang.String");
         assertTrue(mapKeyColumn.isMapKey());
-        assertEquals("java.lang.String", mapKeyColumn.getJavaType());
-
-        assertNotNull(collectionEntity.getColumns().get("attributes"));
+        
+        assertNotNull(collectionEntity.getColumns().get("users_attributes::attributes"));
     }
 
     @Test
@@ -274,7 +209,7 @@ class ElementCollectionHandlerTest {
                 isNull()
         );
 
-        // [FIX-1] 테이블이 생성되고 스키마에 등록되는지 확인
+        // 테이블이 생성되고 스키마에 등록되는지 확인
         verify(entitiesMap).putIfAbsent(eq("users_addresses"), any(EntityModel.class));
     }
 
@@ -285,9 +220,11 @@ class ElementCollectionHandlerTest {
         EntityModel ownerWithoutPk = EntityModel.builder().entityName("Orphan").build();
         when(context.findAllPrimaryKeyColumns(ownerWithoutPk)).thenReturn(Collections.emptyList());
 
-        AttributeDescriptor attribute = mock(AttributeDescriptor.class);
         VariableElement fieldElement = mock(VariableElement.class);
-        when(attribute.elementForDiagnostics()).thenReturn(fieldElement);
+        AttributeDescriptor attribute = AttributeDescriptorFactory.withDiagnostic(
+            AttributeDescriptorFactory.setOf("java.lang.String", "orphaned"), 
+            fieldElement
+        );
 
         // Act
         elementCollectionHandler.processElementCollection(attribute, ownerWithoutPk);
@@ -299,7 +236,7 @@ class ElementCollectionHandlerTest {
                 eq(fieldElement)
         );
 
-        // [FIX-1] Mock Map에 아무것도 추가되지 않았는지 검증
+        // Mock Map에 아무것도 추가되지 않았는지 검증
         verify(entitiesMap, never()).putIfAbsent(anyString(), any(EntityModel.class));
     }
 }
