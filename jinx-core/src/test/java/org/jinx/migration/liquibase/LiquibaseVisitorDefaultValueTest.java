@@ -50,12 +50,7 @@ public class LiquibaseVisitorDefaultValueTest {
         when(liquibaseDialect.getUuidDefaultValue()).thenReturn("uuid()");
 
         // When
-        ColumnConfig.ColumnConfigBuilder builder = ColumnConfig.builder()
-                .name("id")
-                .type("varchar(36)");
-        
-        // Use reflection to call private method or create a test-friendly version
-        // For this example, we'll test the behavior by building a full config
+        // Test the behavior by building a full config
         ColumnConfig config = ColumnConfig.builder()
                 .name("id")
                 .type("varchar(36)")

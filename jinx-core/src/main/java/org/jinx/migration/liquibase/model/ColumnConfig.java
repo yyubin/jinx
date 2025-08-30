@@ -6,7 +6,6 @@ import lombok.Data;
 import java.util.List;
 
 @Data
-@Builder
 public class ColumnConfig {
     private String name;
     private String type;
@@ -23,10 +22,43 @@ public class ColumnConfig {
     private Constraints constraints;
     private Boolean autoIncrement;
 
+
+    // ── 빌더 진입점 제공 ──
+    public static ColumnConfigBuilder builder() {
+        return new ColumnConfigBuilder();
+    }
+
     public static class ColumnConfigBuilder {
+        // ── 기본 필드도 빌더 상태로 유지 ──
+        private String name;
+        private String type;
+        private Constraints constraints;
+        private Boolean autoIncrement;
+        
+        // ── 상호배타적 기본값 필드들 ──
         private String defaultValue;
         private String defaultValueSequenceNext;
         private String defaultValueComputed;
+
+        public ColumnConfigBuilder name(String name) {
+            this.name = name;
+            return this;
+        }
+
+        public ColumnConfigBuilder type(String type) {
+            this.type = type;
+            return this;
+        }
+
+        public ColumnConfigBuilder constraints(Constraints constraints) {
+            this.constraints = constraints;
+            return this;
+        }
+
+        public ColumnConfigBuilder autoIncrement(Boolean autoIncrement) {
+            this.autoIncrement = autoIncrement;
+            return this;
+        }
 
         public ColumnConfigBuilder defaultValue(String defaultValue) {
             if (defaultValue != null) {
@@ -117,12 +149,20 @@ public class ColumnConfig {
             if (defaultValue != null) setCount++;
 
             if (setCount > 1) {
-                System.err.println("[ERROR] ColumnConfig: Multiple default value fields are set after build validation. " +
-                         "This should not happen if validation logic is correct.");
+                throw new IllegalStateException(
+                    "ColumnConfig: Multiple default value fields are set. Priority must enforce mutual exclusivity."
+                );
             }
 
-            return new ColumnConfig(name, type, defaultValue, defaultValueSequenceNext, 
-                                  defaultValueComputed, constraints, autoIncrement);
+            ColumnConfig config = new ColumnConfig();
+            config.setName(name);
+            config.setType(type);
+            config.setDefaultValue(defaultValue);
+            config.setDefaultValueSequenceNext(defaultValueSequenceNext);
+            config.setDefaultValueComputed(defaultValueComputed);
+            config.setConstraints(constraints);
+            config.setAutoIncrement(autoIncrement);
+            return config;
         }
     }
 }
