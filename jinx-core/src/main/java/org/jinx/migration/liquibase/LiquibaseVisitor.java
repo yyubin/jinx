@@ -37,16 +37,20 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                 .toList();
 
         List<ColumnWrapper> columns = table.getColumns().values().stream()
-                .map(col -> ColumnWrapper.builder()
-                        .config(ColumnConfig.builder()
-                                .name(col.getColumnName())
-                                .type(getLiquibaseTypeName(col))
-                                .autoIncrement(shouldUseAutoIncrement(col.getGenerationStrategy()))
-                                .defaultValueComputed(getUuidComputedDefaultOrNull(col))
-                                .defaultValue(getNonComputedDefaultOrNull(col))
-                                .constraints(LiquibaseUtils.buildConstraintsWithoutPK(col, currentTableName)) // ← PK 제외
-                                .build())
-                        .build())
+                .map(col -> {
+                    ColumnConfig.ColumnConfigBuilder builder = ColumnConfig.builder()
+                            .name(col.getColumnName())
+                            .type(getLiquibaseTypeName(col))
+                            .autoIncrement(shouldUseAutoIncrement(col.getGenerationStrategy()))
+                            .constraints(LiquibaseUtils.buildConstraintsWithoutPK(col, currentTableName)); // ← PK 제외
+                    
+                    // Apply priority-based default value setting
+                    setDefaultValueWithPriority(builder, col);
+                    
+                    return ColumnWrapper.builder()
+                            .config(builder.build())
+                            .build();
+                })
                 .toList();
 
         var createTable = CreateTableChange.builder()
@@ -236,18 +240,20 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     // 테이블 컨텐츠 관련 방문 메서드
     @Override
     public void visitAddedColumn(ColumnModel column) {
+        ColumnConfig.ColumnConfigBuilder columnBuilder = ColumnConfig.builder()
+                .name(column.getColumnName())
+                .type(getLiquibaseTypeName(column))
+                .autoIncrement(shouldUseAutoIncrement(column.getGenerationStrategy()))
+                .constraints(LiquibaseUtils.buildConstraints(column, currentTableName));
+        
+        // Apply priority-based default value setting
+        setDefaultValueWithPriority(columnBuilder, column);
+        
         AddColumnChange addColumn = AddColumnChange.builder()
                 .config(AddColumnConfig.builder()
                         .tableName(currentTableName)
                         .columns(List.of(ColumnWrapper.builder()
-                                .config(ColumnConfig.builder()
-                                        .name(column.getColumnName())
-                                        .type(getLiquibaseTypeName(column))
-                                        .defaultValueComputed(getUuidComputedDefaultOrNull(column))
-                                        .defaultValue(getNonComputedDefaultOrNull(column))
-                                        .autoIncrement(shouldUseAutoIncrement(column.getGenerationStrategy()))
-                                        .constraints(LiquibaseUtils.buildConstraints(column, currentTableName))
-                                        .build())
+                                .config(columnBuilder.build())
                                 .build()))
                         .build())
                 .build();
@@ -494,16 +500,28 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     }
 
     /**
-     * Gets the effective default value considering generation strategy
+     * Priority-based default value setting: computed > sequence > literal
+     * Sets the appropriate default value based on generation strategy and column configuration.
      */
-    private String getEffectiveDefaultValue(ColumnModel column) {
-        return column.getDefaultValue();
+    private void setDefaultValueWithPriority(ColumnConfig.ColumnConfigBuilder builder, ColumnModel column) {
+        String computedDefault = getComputedDefault(column);
+        String sequenceDefault = getSequenceDefault(column);
+        String literalDefault = getLiteralDefault(column);
+        
+        // Priority: computed > sequence > literal
+        if (computedDefault != null) {
+            builder.defaultValueComputed(computedDefault);
+        } else if (sequenceDefault != null) {
+            builder.defaultValueSequenceNext(sequenceDefault);
+        } else if (literalDefault != null) {
+            builder.defaultValue(literalDefault);
+        }
     }
     
     /**
-     * UUID 전략인 경우 computed default 값을 반환, 그렇지 않으면 null
+     * Gets computed default value based on generation strategy (e.g., UUID)
      */
-    private String getUuidComputedDefaultOrNull(ColumnModel column) {
+    private String getComputedDefault(ColumnModel column) {
         if (column.getGenerationStrategy() == GenerationStrategy.UUID) {
             return dialectBundle.liquibase()
                     .map(lb -> lb.getUuidDefaultValue())
@@ -513,13 +531,48 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     }
     
     /**
-     * UUID 전략이 아닌 경우 일반 default 값을 반환, UUID 전략이면 null
+     * Gets sequence default value based on generation strategy
      */
-    private String getNonComputedDefaultOrNull(ColumnModel column) {
+    private String getSequenceDefault(ColumnModel column) {
+        if (column.getGenerationStrategy() == GenerationStrategy.SEQUENCE) {
+            // Add sequence handling logic here if needed
+            return null; // Placeholder for future sequence implementation
+        }
+        return null;
+    }
+    
+    /**
+     * Gets literal default value from column model
+     */
+    private String getLiteralDefault(ColumnModel column) {
+        // Don't set literal default if there's a computed strategy that would override it
         if (column.getGenerationStrategy() == GenerationStrategy.UUID) {
             return null;
         }
         return column.getDefaultValue();
+    }
+    
+    /**
+     * Gets the effective default value considering generation strategy (kept for backward compatibility)
+     */
+    private String getEffectiveDefaultValue(ColumnModel column) {
+        return column.getDefaultValue();
+    }
+    
+    /**
+     * UUID 전략인 경우 computed default 값을 반환, 그렇지 않으면 null (deprecated, use getComputedDefault)
+     */
+    @Deprecated
+    private String getUuidComputedDefaultOrNull(ColumnModel column) {
+        return getComputedDefault(column);
+    }
+    
+    /**
+     * UUID 전략이 아닌 경우 일반 default 값을 반환, UUID 전략이면 null (deprecated, use getLiteralDefault)
+     */
+    @Deprecated
+    private String getNonComputedDefaultOrNull(ColumnModel column) {
+        return getLiteralDefault(column);
     }
 
 }
