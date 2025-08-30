@@ -24,7 +24,8 @@ public interface AttributeDescriptor {
     default Optional<AnnotationMirror> findAnnotationMirror(String fqcn) {
         return elementForDiagnostics().getAnnotationMirrors().stream()
                 .filter(am -> am.getAnnotationType().toString().equals(fqcn))
-                .findFirst();
+                .findFirst()
+                .map(am -> (AnnotationMirror) am); // Optional<? extends ...> → Optional<...> 고정
     }
 
     default boolean hasAnnotation(String fqcn) {
