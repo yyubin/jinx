@@ -107,8 +107,7 @@ public class InheritanceHandler {
             case STRING, CHAR -> "java.lang.String";
             case INTEGER -> "java.lang.Integer";
         };
-
-        ColumnModel col = ColumnModel.builder()
+        ColumnModel.ColumnModelBuilder colb = ColumnModel.builder()
                 .tableName(entityModel.getTableName())
                 .columnName(name)
                 .javaType(javaType)
@@ -118,10 +117,12 @@ public class InheritanceHandler {
                 .columnKind(ColumnModel.ColumnKind.DISCRIMINATOR)
                 .discriminatorType(dtype)
                 .columnDefinition(columnDef.isBlank() ? null : columnDef)
-                .options(options.isBlank() ? null : options)
-                .length((dtype == DiscriminatorType.STRING || dtype == DiscriminatorType.CHAR) ? len : null)
-                .build();
+                .options(options.isBlank() ? null : options);
 
+        if (dtype == DiscriminatorType.STRING || dtype == DiscriminatorType.CHAR) {
+            colb.length(len);
+        }
+        ColumnModel col = colb.build();
         entityModel.putColumn(col);
     }
 
