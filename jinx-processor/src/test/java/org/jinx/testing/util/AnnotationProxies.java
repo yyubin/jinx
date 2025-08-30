@@ -151,4 +151,31 @@ public final class AnnotationProxies {
             return 0;
         }
     }
+
+    public static DiscriminatorColumn discriminatorColumnFull(
+            String name,
+            DiscriminatorType type,
+            int length,
+            String columnDefinition,
+            String options
+    ) {
+        class H implements InvocationHandler {
+            @Override public Object invoke(Object proxy, Method method, Object[] args) {
+                return switch (method.getName()) {
+                    case "annotationType" -> DiscriminatorColumn.class;
+                    case "name" -> name;
+                    case "discriminatorType" -> type;
+                    case "length" -> length;
+                    case "columnDefinition" -> columnDefinition;
+                    case "options" -> options;
+                    default -> method.getDefaultValue();
+                };
+            }
+        }
+        return (DiscriminatorColumn) Proxy.newProxyInstance(
+                DiscriminatorColumn.class.getClassLoader(),
+                new Class[]{DiscriminatorColumn.class},
+                new H()
+        );
+    }
 }

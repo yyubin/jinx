@@ -46,6 +46,14 @@ public class ColumnModel {
     @Builder.Default private String mapKeyType = null; // e.g., "entity:fieldName" or null
     @Builder.Default private String[] mapKeyEnumValues = new String[]{}; // For @MapKeyEnumerated
     @Builder.Default private TemporalType mapKeyTemporalType = null; // For @MapKeyTemporal
+    @Builder.Default private ColumnKind columnKind = ColumnKind.NORMAL;
+
+    // Discriminator metadata
+    private jakarta.persistence.DiscriminatorType discriminatorType; // optional
+    private String columnDefinition; // optional
+    private String options; // optional (JPA 3.2)
+
+    public enum ColumnKind { NORMAL, DISCRIMINATOR }
 
     public long getAttributeHash() {
         return Objects.hash(columnName, javaType, length, precision, scale, isNullable, isUnique, defaultValue,
