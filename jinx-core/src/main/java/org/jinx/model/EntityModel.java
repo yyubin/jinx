@@ -23,6 +23,7 @@ public class EntityModel {
     @Builder.Default private String comment = null; // Added for @Table(comment)
     private InheritanceType inheritance;
     private String parentEntity;
+    @Builder.Default private String fqcn = null;
     @Builder.Default private TableType tableType = TableType.ENTITY;
     @Builder.Default private Map<String, ColumnModel> columns = new HashMap<>();
     @Builder.Default private Map<String, IndexModel> indexes = new HashMap<>();
@@ -72,5 +73,9 @@ public class EntityModel {
 
     public boolean hasColumn(String tableName, String columnName) {
         return columns.containsKey(colKey(tableName, columnName));
+    }
+
+    public boolean isJavaBackedEntity() {
+        return fqcn != null && !fqcn.isBlank() && tableType == TableType.ENTITY;
     }
 }
