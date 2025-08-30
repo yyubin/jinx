@@ -9,6 +9,7 @@ import javax.tools.Diagnostic;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 public class InheritanceHandler {
@@ -90,12 +91,26 @@ public class InheritanceHandler {
         }
 
         context.getSchemaModel().getEntities().values().stream()
+                .filter(EntityModel::isJavaBackedEntity)
                 .filter(childCandidate -> !childCandidate.getEntityName().equals(parentEntity.getEntityName()))
                 .forEach(childEntity -> {
-                    TypeElement childType = context.getElementUtils().getTypeElement(childEntity.getEntityName());
-                    if (childType != null && context.getTypeUtils().isSubtype(childType.asType(), parentType.asType())) {
-                        processSingleJoinedChild(childEntity, parentEntity, childType);
-                        checkIdentityStrategy(childType, childEntity);
+                    String fqcn = childEntity.getFqcn();
+                    TypeElement childType = (fqcn == null || fqcn.isBlank()) ? null : context.getElementUtils().getTypeElement(fqcn);
+                    if (childType == null) {
+                        // 타입이 없으면 스킵(원인 로깅은 선택)
+                        context.getMessager().printMessage(
+                                Diagnostic.Kind.NOTE,
+                                "Skip inheritance child: cannot resolve TypeElement for " + fqcn);
+                        return;
+                    }
+                    if (context.getTypeUtils().isSubtype(childType.asType(), parentType.asType())) {
+                        try {
+                            processSingleJoinedChild(childEntity, parentEntity, childType);
+                            checkIdentityStrategy(childType, childEntity);
+                        } catch (IllegalStateException ex) {
+                            // 이미 ERROR/NOTE 로깅했다면 여기선 삼키고 진행
+                            childEntity.setValid(false);
+                        }
                     }
                 });
     }
@@ -191,15 +206,34 @@ public class InheritanceHandler {
 
         RelationshipModel relationship = RelationshipModel.builder()
                 .type(RelationshipType.JOINED_INHERITANCE)
-                .columns(joinPairs.stream().map(j -> j.childName).toList())
+                .tableName(childEntity.getTableName())
+                .columns(joinPairs.stream().map(JoinPair::childName).toList())
                 .referencedTable(parentEntity.getTableName())
-                .referencedColumns(joinPairs.stream().map(j -> j.parent.getColumnName()).toList())
+                .referencedColumns(joinPairs.stream().map(j -> j.parent().getColumnName()).toList())
                 .constraintName(context.getNaming().fkName(
                         childEntity.getTableName(),
-                        joinPairs.stream().map(j -> j.childName).toList(),
+                        joinPairs.stream().map(JoinPair::childName).toList(),
                         parentEntity.getTableName(),
-                        joinPairs.stream().map(j -> j.parent.getColumnName()).toList()))
+                        joinPairs.stream().map(j -> j.parent().getColumnName()).toList()))
                 .build();
+
+        String fkName = relationship.getConstraintName();
+        if (fkName == null || fkName.isBlank()) {
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                "JOINED inheritance FK constraint name is null/blank for child " + childEntity.getEntityName());
+            childEntity.setValid(false);
+            return;
+        }
+        String n = fkName.trim().toLowerCase(Locale.ROOT);
+        boolean dup = childEntity.getRelationships().keySet().stream()
+            .map(s -> s == null ? "" : s.trim().toLowerCase(Locale.ROOT))
+            .anyMatch(n::equals);
+        if (dup) {
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                "Duplicate relationship constraint name: " + fkName, childType);
+            childEntity.setValid(false);
+            return;
+        }
 
         childEntity.getRelationships().put(relationship.getConstraintName(), relationship);
         childEntity.setParentEntity(parentEntity.getEntityName());
@@ -285,13 +319,18 @@ public class InheritanceHandler {
                 });
     }
 
+    private static <T> List<T> safeList(List<T> src) {
+        return (src == null) ? java.util.Collections.emptyList() : new java.util.ArrayList<>(src);
+    }
+
     private void processSingleTablePerClassChild(EntityModel childEntity, EntityModel parentEntity) {
         childEntity.setParentEntity(parentEntity.getEntityName());
         childEntity.setInheritance(InheritanceType.TABLE_PER_CLASS);
 
-        parentEntity.getColumns().forEach((name, column) -> {
-            if (!childEntity.hasColumn(null, name)) {
+        parentEntity.getColumns().values().forEach(column -> {
+            if (!childEntity.hasColumn(null, column.getColumnName())) {
                 ColumnModel copiedColumn = ColumnModel.builder()
+                        .tableName(childEntity.getTableName())
                         .columnName(column.getColumnName())
                         .javaType(column.getJavaType())
                         .isPrimaryKey(column.isPrimaryKey())
@@ -317,14 +356,15 @@ public class InheritanceHandler {
         });
 
         parentEntity.getConstraints().values().forEach(constraint -> {
-            ConstraintModel copiedConstraint = ConstraintModel.builder()
+            ConstraintModel copied = ConstraintModel.builder()
                     .name(constraint.getName())
                     .type(constraint.getType())
-                    .columns(new ArrayList<>(constraint.getColumns()))
+                    .columns(safeList(constraint.getColumns()))
                     .referencedTable(constraint.getReferencedTable())
-                    .referencedColumns(new ArrayList<>(constraint.getReferencedColumns()))
+                    .referencedColumns(safeList(constraint.getReferencedColumns()))
                     .build();
-            childEntity.getConstraints().put(copiedConstraint.getName(), copiedConstraint);
+
+            childEntity.getConstraints().put(copied.getName(), copied);
         });
     }
 }

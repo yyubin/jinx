@@ -1,9 +1,8 @@
 package org.jinx.testing.util;
 
-import jakarta.persistence.CollectionTable;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.OrderColumn;
+import jakarta.persistence.*;
 import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 
 import java.lang.annotation.Annotation;
 

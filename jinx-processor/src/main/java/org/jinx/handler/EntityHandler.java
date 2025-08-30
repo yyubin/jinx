@@ -160,6 +160,7 @@ public class EntityHandler {
         return EntityModel.builder()
                 .entityName(entityName)
                 .tableName(tableName)
+                .fqcn(typeElement.getQualifiedName().toString())
                 .isValid(true)
                 .build();
     }
