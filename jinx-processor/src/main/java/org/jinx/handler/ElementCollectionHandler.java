@@ -40,7 +40,7 @@ public class ElementCollectionHandler {
     private static class ValidationResult {
         private final List<String> errors = new ArrayList<>();
         private final List<ColumnModel> pendingColumns = new ArrayList<>();
-        private final Map<String, RelationshipModel> pendingRelationships = new HashMap<>();
+        private final List<RelationshipModel> pendingRelationships = new ArrayList<>();
         private EntityModel collectionEntity;
         private boolean committed = false; // 재진입 방지 플래그
 
@@ -52,8 +52,8 @@ public class ElementCollectionHandler {
             pendingColumns.add(column);
         }
 
-        public void addRelationship(String key, RelationshipModel relationship) {
-            pendingRelationships.put(key, relationship);
+        public void addRelationship(RelationshipModel relationship) {
+            pendingRelationships.add(relationship);
         }
 
         public void setCollectionEntity(EntityModel entity) {
@@ -73,35 +73,79 @@ public class ElementCollectionHandler {
         }
 
         /**
-         * 컬럼명 중복 검증 - FK, Map Key, Value, Order 컬럼 간 충돌 체크
+         * 컬럼명 중복 검증 - FK, Map Key, Value, Order 컬럼 간 충돌 체크 + 기존 컬럼과의 충돌
          */
         private void validateColumnNameDuplicates() {
             Set<String> columnNames = new HashSet<>();
+            
+            // 이미 collectionEntity에 존재하는 컬럼과의 충돌도 포함 (Embeddable 경로 등)
+            if (collectionEntity != null && collectionEntity.getColumns() != null) {
+                for (ColumnModel existing : collectionEntity.getColumns().values()) {
+                    if (existing.getColumnName() != null) {
+                        String normalizedName = existing.getColumnName().trim().toLowerCase(java.util.Locale.ROOT);
+                        columnNames.add(normalizedName);
+                    }
+                }
+            }
+            
+            // 대기 중인 컬럼들 검증
             for (ColumnModel column : pendingColumns) {
                 String columnName = column.getColumnName();
-                if (!columnNames.add(columnName)) {
+                if (columnName == null || columnName.isBlank()) {
+                    addError("Column name cannot be null/blank in collection table: " + 
+                            (collectionEntity != null ? collectionEntity.getTableName() : "unknown"));
+                    continue;
+                }
+                
+                String normalizedName = columnName.trim().toLowerCase(java.util.Locale.ROOT);
+                if (!columnNames.add(normalizedName)) {
                     addError("Duplicate column name in collection table: " + columnName);
                 }
             }
         }
 
         /**
-         * 제약명 중복 검증 - 관계(FK) 제약명 충돌 체크
+         * 제약명 중복 검증 - 관계(FK) 제약명 충돌 체크 + 기존 관계와의 충돌
          */
         private void validateConstraintNameDuplicates() {
             Set<String> constraintNames = new HashSet<>();
-            for (RelationshipModel relationship : pendingRelationships.values()) {
-                String constraintName = relationship.getConstraintName();
-                if (constraintName != null && !constraintName.isEmpty()) {
-                    if (!constraintNames.add(constraintName)) {
-                        addError("Duplicate constraint name in collection table: " + constraintName);
+            
+            // 이미 collectionEntity에 존재하는 관계와의 충돌도 포함 (Embeddable/다른 경로 등)
+            if (collectionEntity != null && collectionEntity.getRelationships() != null) {
+                for (RelationshipModel existing : collectionEntity.getRelationships().values()) {
+                    if (existing.getConstraintName() != null && !existing.getConstraintName().trim().isEmpty()) {
+                        String normalizedName = existing.getConstraintName().trim().toLowerCase(java.util.Locale.ROOT);
+                        constraintNames.add(normalizedName);
                     }
+                }
+            }
+            
+            // 대기 중인 관계들 검증
+            for (RelationshipModel relationship : pendingRelationships) {
+                String constraintName = relationship.getConstraintName();
+                if (constraintName == null || constraintName.trim().isEmpty()) {
+                    addError("Constraint name cannot be null or empty for relationship: " + relationship.getTableName());
+                    continue;
+                }
+                
+                // 대소문자 구분 없는 중복 검증 (DB는 보통 대소문자 구분 안 함)
+                String normalizedName = constraintName.trim().toLowerCase(java.util.Locale.ROOT);
+                if (!constraintNames.add(normalizedName)) {
+                    addError("Duplicate constraint name in collection table: " + constraintName);
                 }
             }
         }
 
         /**
-         * 검증 성공 시 실제 모델에 커밋 (재진입 방지)
+         * 최종 중복 검증 수행 (validate 단계 말미에서 호출)
+         */
+        public void performFinalValidation() {
+            validateColumnNameDuplicates();
+            validateConstraintNameDuplicates();
+        }
+
+        /**
+         * 순수 커밋 - 예외 없이 모델에 반영만 수행 (재진입 방지)
          */
         public void commitToModel() {
             // 재진입 방지: 이미 커밋된 경우 무시
@@ -109,27 +153,15 @@ public class ElementCollectionHandler {
                 return;
             }
             
-            if (hasErrors()) {
-                throw new IllegalStateException("Cannot commit with validation errors: " + errors);
-            }
-
-            // 커밋 전 최종 중복 검증
-            validateColumnNameDuplicates();
-            validateConstraintNameDuplicates();
-            
-            // 중복 검증 후 오류가 발견되면 커밋 중단
-            if (hasErrors()) {
-                throw new IllegalStateException("Cannot commit with duplicate name validation errors: " + errors);
-            }
-
+            // 검증 완료 상태에서만 호출되므로 예외 없음
             // 모든 컬럼을 일괄 추가
             for (ColumnModel column : pendingColumns) {
                 collectionEntity.putColumn(column);
             }
 
             // 모든 관계를 일괄 추가
-            for (Map.Entry<String, RelationshipModel> entry : pendingRelationships.entrySet()) {
-                collectionEntity.getRelationships().put(entry.getKey(), entry.getValue());
+            for (RelationshipModel relationship : pendingRelationships) {
+                collectionEntity.getRelationships().put(relationship.getConstraintName(), relationship);
             }
             
             // 커밋 완료 플래그 설정
@@ -165,7 +197,7 @@ public class ElementCollectionHandler {
             return; // 부분 생성 없이 완전 롤백
         }
 
-        // 검증 성공: 모델에 일괄 커밋
+        // 검증 성공: 모델에 일괄 커밋 (예외 없음, 순수 커밋)
         validation.commitToModel();
         
         // 완성된 컬렉션 테이블 모델을 스키마에 등록
@@ -180,6 +212,16 @@ public class ElementCollectionHandler {
      */
     private ValidationResult validateElementCollection(AttributeDescriptor attribute, EntityModel ownerEntity) {
         ValidationResult result = new ValidationResult();
+
+        // 0. 기본 값 null/blank 검증 - NPE 방어
+        if (ownerEntity.getTableName() == null || ownerEntity.getTableName().isBlank()) {
+            result.addError("Owner entity has no tableName; cannot derive collection table name for @ElementCollection on " + attribute.name());
+            return result;
+        }
+        if (attribute.name() == null || attribute.name().isBlank()) {
+            result.addError("Attribute name is blank for @ElementCollection");
+            return result;
+        }
 
         // 1. 컬렉션 테이블 이름 결정 및 새 EntityModel 생성
         String defaultTableName = ownerEntity.getTableName() + "_" + attribute.name();
@@ -349,9 +391,11 @@ public class ElementCollectionHandler {
                 .referencedColumns(ownerPkNames)
                 .constraintName(context.getNaming().fkName(tableName, fkColumnNames, ownerEntity.getTableName(), ownerPkNames))
                 .build();
-        result.addRelationship(fkRelationship.getConstraintName(), fkRelationship);
+        result.addRelationship(fkRelationship);
 
-        // 9. 검증 성공 - 모든 컴포넌트가 메모리상에서만 생성됨
+        // 9. 최종 중복 검증 (임베디드로 선반영된 컬럼/관계 포함)
+        result.performFinalValidation();
+        
         return result;
     }
 
