@@ -26,26 +26,6 @@ public class InheritanceHandler {
         switch (inheritance.strategy()) {
             case SINGLE_TABLE:
                 entityModel.setInheritance(InheritanceType.SINGLE_TABLE);
-                DiscriminatorColumn discriminatorColumn = typeElement.getAnnotation(DiscriminatorColumn.class);
-                if (discriminatorColumn != null) {
-                    ColumnModel dColumn = ColumnModel.builder()
-                            .tableName(entityModel.getTableName())
-                            .columnName(discriminatorColumn.name().isEmpty() ? "dtype" : discriminatorColumn.name())
-                            .javaType("java.lang.String")
-                            .isPrimaryKey(false)
-                            .isNullable(false)
-                            .generationStrategy(GenerationStrategy.NONE)
-                            .build();
-                    if (entityModel.hasColumn(null, dColumn.getColumnName())) {
-                        context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                                "Duplicate column name '" + dColumn.getColumnName() + "' for discriminator in entity " + entityModel.getEntityName(), typeElement);
-                        entityModel.setValid(false);
-                        return;
-                    }
-                    if (!entityModel.hasColumn(null, dColumn.getColumnName())) {
-                        entityModel.putColumn(dColumn);
-                    }
-                }
                 DiscriminatorValue discriminatorValue = typeElement.getAnnotation(DiscriminatorValue.class);
                 if (discriminatorValue != null) {
                     entityModel.setDiscriminatorValue(discriminatorValue.value());
@@ -61,6 +41,89 @@ public class InheritanceHandler {
                 checkIdentityStrategy(typeElement, entityModel); // Check for IDENTITY strategy
                 break;
         }
+        handleDiscriminator(typeElement, entityModel, inheritance.strategy());
+    }
+
+    private void handleDiscriminator(TypeElement typeElement, EntityModel entityModel, InheritanceType strategy) {
+        DiscriminatorColumn dc = typeElement.getAnnotation(DiscriminatorColumn.class);
+
+        boolean isSingleTable = strategy == InheritanceType.SINGLE_TABLE;
+        boolean isJoined = strategy == InheritanceType.JOINED;
+
+        // SINGLE_TABLE: 없으면 기본 생성, JOINED: 있으면 생성
+        if (dc == null && !isSingleTable) return;
+
+        String rawName = (dc != null && !dc.name().isEmpty()) ? dc.name() : "DTYPE";
+        String name = rawName.trim();
+
+        DiscriminatorType dtype = (dc != null) ? dc.discriminatorType() : DiscriminatorType.STRING;
+        int len = (dc != null) ? dc.length() : 31;
+
+        String columnDef = (dc != null) ? dc.columnDefinition() : "";
+        String options = (dc != null) ? dc.options() : "";
+
+        List<String> errors = new ArrayList<>();
+
+        // 1) columnDefinition vs options 상호배타
+        if (!columnDef.isBlank() && !options.isBlank()) {
+            errors.add("@DiscriminatorColumn: columnDefinition and options cannot be used together");
+        }
+
+        // 2) 중복 컬럼명 체크
+        if (entityModel.hasColumn(null, name)) {
+            errors.add("Duplicate column name '" + name + "' for discriminator in entity " + entityModel.getEntityName());
+        }
+
+        // 3) 길이/타입 유효성
+        if ((dtype == DiscriminatorType.STRING || dtype == DiscriminatorType.CHAR) && len <= 0) {
+            errors.add("Invalid discriminator length: " + len + " (must be > 0)");
+        }
+
+        boolean needCharAdjust = false;
+        if (dtype == DiscriminatorType.CHAR && len != 1) {
+            // 경고 + 자동 보정
+            needCharAdjust = true;
+            len = 1;
+        }
+
+        if (!errors.isEmpty()) {
+            for (String e : errors) {
+                context.getMessager().printMessage(Diagnostic.Kind.ERROR, e, typeElement);
+            }
+            entityModel.setValid(false);
+            return;
+        }
+
+        if (needCharAdjust) {
+            context.getMessager().printMessage(
+                    Diagnostic.Kind.WARNING,
+                    "@DiscriminatorColumn(length) adjusted to 1 for CHAR type",
+                    typeElement
+            );
+        }
+
+        // 타입 매핑
+        String javaType = switch (dtype) {
+            case STRING, CHAR -> "java.lang.String";
+            case INTEGER -> "java.lang.Integer";
+        };
+        ColumnModel.ColumnModelBuilder colb = ColumnModel.builder()
+                .tableName(entityModel.getTableName())
+                .columnName(name)
+                .javaType(javaType)
+                .isPrimaryKey(false)
+                .isNullable(false)
+                .generationStrategy(GenerationStrategy.NONE)
+                .columnKind(ColumnModel.ColumnKind.DISCRIMINATOR)
+                .discriminatorType(dtype)
+                .columnDefinition(columnDef.isBlank() ? null : columnDef)
+                .options(options.isBlank() ? null : options);
+
+        if (dtype == DiscriminatorType.STRING || dtype == DiscriminatorType.CHAR) {
+            colb.length(len);
+        }
+        ColumnModel col = colb.build();
+        entityModel.putColumn(col);
     }
 
     private void checkIdentityStrategy(TypeElement typeElement, EntityModel entityModel) {

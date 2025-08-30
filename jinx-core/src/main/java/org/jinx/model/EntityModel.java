@@ -31,7 +31,10 @@ public class EntityModel {
     @Builder.Default private Map<String, RelationshipModel> relationships = new HashMap<>();
     @Builder.Default private List<SecondaryTableModel> secondaryTables = new ArrayList<>();
     @Builder.Default private boolean isValid = true;
+
     @Builder.Default private String discriminatorValue = null;
+
+    public enum ColumnKind { NORMAL, DISCRIMINATOR }
 
     public enum TableType {
         ENTITY, JOIN_TABLE, COLLECTION_TABLE
