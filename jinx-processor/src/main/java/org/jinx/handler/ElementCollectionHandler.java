@@ -344,7 +344,8 @@ public class ElementCollectionHandler {
         if (valueElement != null && valueElement.getAnnotation(Embeddable.class) != null) {
             // 값이 Embeddable 타입인 경우 - 현재는 임시 EntityModel에 직접 추가
             // TODO: EmbeddedHandler도 2단계 패턴으로 변경 후 검증 결과 통합 필요
-            embeddedHandler.processEmbeddableFields((TypeElement) valueElement, collectionEntity, new HashSet<>(), null, null);
+            AttributeDescriptor valueAttribute = new FieldAttributeDescriptor((VariableElement) valueElement, typeUtils, elementUtils);
+            embeddedHandler.processEmbedded(valueAttribute, collectionEntity, new HashSet<>());
             // TODO: Embeddable 필드들의 PK 승격 처리 필요 (Set의 경우)
         } else {
             // 값이 기본 타입인 경우

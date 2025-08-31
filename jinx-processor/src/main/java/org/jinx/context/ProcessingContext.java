@@ -39,6 +39,9 @@ public class ProcessingContext {
     // MappedBy cycle detection: (ownerType, attributeName) -> inverse visited set
     private final Set<String> mappedByVisitedSet = new HashSet<>();
 
+    // Map<entityFqcn, Map<pkAttrPath, List<columnName>>>
+    private final Map<String, Map<String, List<String>>> pkAttributeToColumnMap = new HashMap<>();
+
     public ProcessingContext(ProcessingEnvironment processingEnv, SchemaModel schemaModel) {
         this.processingEnv = processingEnv;
         this.schemaModel = schemaModel;
@@ -148,6 +151,33 @@ public class ProcessingContext {
     public void clearMappedByVisited() {
         mappedByVisitedSet.clear();
     }
+
+    /**
+     * Registers the mapping from a primary key attribute path to its database columns.
+     * This is used for @MapsId("...") resolution.
+     *
+     * @param entityFqcn The fully qualified name of the entity.
+     * @param attributePath The dot-separated path to the attribute within an @EmbeddedId.
+     * @param columnNames The list of database column names for that attribute.
+     */
+    public void registerPkAttributeColumns(String entityFqcn, String attributePath, List<String> columnNames) {
+        pkAttributeToColumnMap
+            .computeIfAbsent(entityFqcn, k -> new HashMap<>())
+            .put(attributePath, columnNames);
+    }
+
+    /**
+     * Retrieves the database column names for a given primary key attribute path.
+     *
+     * @param entityFqcn The fully qualified name of the entity.
+     * @param attributePath The attribute path to look up.
+     * @return A list of column names, or null if not found.
+     */
+    public List<String> getPkColumnsForAttribute(String entityFqcn, String attributePath) {
+        return Optional.ofNullable(pkAttributeToColumnMap.get(entityFqcn))
+            .map(attrMap -> attrMap.get(attributePath))
+            .orElse(null);
+    }
     
     /**
      * Initialize context state at the beginning of an annotation processing round.
@@ -158,5 +188,6 @@ public class ProcessingContext {
         deferredEntities.clear();
         deferredNames.clear();
         descriptorCache.clear();
+        pkAttributeToColumnMap.clear();
     }
 }

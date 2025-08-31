@@ -5,6 +5,7 @@ import org.jinx.context.ProcessingContext;
 import org.jinx.descriptor.AttributeDescriptor;
 import org.jinx.handler.builtins.SecondaryTableAdapter;
 import org.jinx.handler.builtins.TableAdapter;
+import org.jinx.handler.relationship.RelationshipSupport;
 import org.jinx.model.*;
 
 import javax.lang.model.element.*;
@@ -23,6 +24,7 @@ public class EntityHandler {
     private final ElementCollectionHandler elementCollectionHandler;
     private final TableGeneratorHandler tableGeneratorHandler;
     private final RelationshipHandler relationshipHandler;
+    private final RelationshipSupport relationshipSupport;
 
     public EntityHandler(ProcessingContext context, ColumnHandler columnHandler, EmbeddedHandler embeddedHandler,
                          ConstraintHandler constraintHandler, SequenceHandler sequenceHandler,
@@ -36,6 +38,7 @@ public class EntityHandler {
         this.elementCollectionHandler = elementCollectionHandler;
         this.tableGeneratorHandler = tableGeneratorHandler;
         this.relationshipHandler = relationshipHandler;
+        this.relationshipSupport = new RelationshipSupport(context);
     }
 
     public void handle(TypeElement typeElement) {
@@ -81,8 +84,6 @@ public class EntityHandler {
         }
     }
 
-    // ... (runDeferredJoinedFks and other methods) ...
-
     private void registerSecondaryTableNames(List<SecondaryTable> secondaryTablesAnns, EntityModel entity) {
         for (SecondaryTable stAnn : secondaryTablesAnns) {
             SecondaryTableModel stModel = SecondaryTableModel.builder()
@@ -112,7 +113,7 @@ public class EntityHandler {
         }
     }
 
-    public void runDeferredJoinedFks() {
+    public void runDeferredPostProcessing() {
         int size = context.getDeferredEntities().size();
         for (int i = 0; i < size; i++) {
             EntityModel child = context.getDeferredEntities().poll();
@@ -127,15 +128,23 @@ public class EntityHandler {
                 context.getDeferredEntities().offer(child);
                 continue;
             }
-            
+
             // Process JOINED inheritance
             processInheritanceJoin(te, child);
-            
+
             // Process @MapsId attributes if any
             if (hasMapsIdAttributes(te, child)) {
-                processMapsIdAttributes(te, child);
+                relationshipHandler.processMapsIdAttributes(te, child);
+                // If processing was successful (entity is still valid), remove from deferred set.
+                if (child.isValid()) {
+                    context.getDeferredNames().remove(childName);
+                }
+            } else {
+                // If it was in the queue but not for @MapsId, it must be for another reason
+                // (like JOINED) which should have been handled already. We can remove it.
+                context.getDeferredNames().remove(childName);
             }
-            
+
             // 부모가 여전히 없으면 processInheritanceJoin 내부에서 다시 enqueue
             // 하지만 여기서는 '이번 라운드' 스냅샷만 처리해서 무한루프 방지
         }
@@ -310,7 +319,7 @@ public class EntityHandler {
         ensureChildPkColumnsExist(entity, tableName, childCols, parentPkCols);
         
         // FK 인덱스 생성 (PK/UNIQUE로 커버되지 않은 경우에만)
-        relationshipHandler.addForeignKeyIndex(entity, childCols, tableName);
+        relationshipSupport.addForeignKeyIndex(entity, childCols, tableName);
         
         return true;
     }
@@ -532,33 +541,7 @@ public class EntityHandler {
                 .anyMatch(desc -> desc.hasAnnotation(MapsId.class) && isRelationshipAttribute(desc));
     }
     
-    /**
-     * Process @MapsId attributes during deferred processing
-     */
-    public void processMapsIdAttributes(TypeElement typeElement, EntityModel entity) {
-        List<AttributeDescriptor> descriptors = context.getCachedDescriptors(typeElement);
-        
-        for (AttributeDescriptor descriptor : descriptors) {
-            if (descriptor.hasAnnotation(MapsId.class) && isRelationshipAttribute(descriptor)) {
-                processMapsIdAttribute(descriptor, entity);
-            }
-        }
-    }
     
-    private void processMapsIdAttribute(AttributeDescriptor descriptor, EntityModel entity) {
-        MapsId mapsId = descriptor.getAnnotation(MapsId.class);
-        String mapsIdValue = (mapsId != null && !mapsId.value().isEmpty()) ? mapsId.value() : null;
-        
-        // Find FK columns created by the relationship
-        // Promote them to PK status based on @MapsId specification
-        // This logic would be similar to what's in RelationshipHandler.processToOneRelationship
-        
-        // TODO: Implement the PK promotion logic
-        // For now, just mark that this entity needs MapsId processing
-        context.getMessager().printMessage(Diagnostic.Kind.NOTE,
-                "Processing @MapsId for attribute: " + descriptor.name() + " (value=" + mapsIdValue + ")",
-                descriptor.elementForDiagnostics());
-    }
 
     private ColumnModel resolveParentRef(List<ColumnModel> parentPkCols, PrimaryKeyJoinColumn a, int idx) {
         if (!a.referencedColumnName().isEmpty()) {

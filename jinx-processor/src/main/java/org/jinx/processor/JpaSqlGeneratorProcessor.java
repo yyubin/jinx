@@ -176,7 +176,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
             // 최대 5회 시도
             int maxPass = 5;
             for (int pass = 0; pass < maxPass && !context.getDeferredEntities().isEmpty(); pass++) {
-                entityHandler.runDeferredJoinedFks();
+                entityHandler.runDeferredPostProcessing();
             }
             if (!context.getDeferredEntities().isEmpty()) {
                 context.getMessager().printMessage(Diagnostic.Kind.ERROR,
@@ -212,7 +212,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
     }
 
     public void processRetryTasks() {
-        entityHandler.runDeferredJoinedFks();
+        entityHandler.runDeferredPostProcessing();
 
     }
 
