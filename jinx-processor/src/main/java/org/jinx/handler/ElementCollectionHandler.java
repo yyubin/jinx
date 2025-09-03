@@ -5,7 +5,9 @@ import org.jinx.context.ProcessingContext;
 import org.jinx.descriptor.AttributeDescriptor;
 import org.jinx.descriptor.FieldAttributeDescriptor;
 import org.jinx.model.ColumnModel;
+import org.jinx.model.ConstraintModel;
 import org.jinx.model.EntityModel;
+import org.jinx.model.IndexModel;
 import org.jinx.model.RelationshipModel;
 import org.jinx.model.RelationshipType;
 import org.jinx.util.ColumnUtils;
@@ -19,6 +21,7 @@ import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -41,6 +44,8 @@ public class ElementCollectionHandler {
         private final List<String> errors = new ArrayList<>();
         private final List<ColumnModel> pendingColumns = new ArrayList<>();
         private final List<RelationshipModel> pendingRelationships = new ArrayList<>();
+        private final List<IndexModel> pendingIndexes = new ArrayList<>();
+        private final List<ConstraintModel> pendingConstraints = new ArrayList<>();
         private EntityModel collectionEntity;
         private boolean committed = false; // 재진입 방지 플래그
 
@@ -54,6 +59,14 @@ public class ElementCollectionHandler {
 
         public void addRelationship(RelationshipModel relationship) {
             pendingRelationships.add(relationship);
+        }
+        
+        public void addIndex(IndexModel index) {
+            pendingIndexes.add(index);
+        }
+        
+        public void addConstraint(ConstraintModel constraint) {
+            pendingConstraints.add(constraint);
         }
 
         public void setCollectionEntity(EntityModel entity) {
@@ -142,6 +155,130 @@ public class ElementCollectionHandler {
         public void performFinalValidation() {
             validateColumnNameDuplicates();
             validateConstraintNameDuplicates();
+            validateIndexAndConstraintDuplicates();
+            validateIndexAndConstraintColumnsExist();
+        }
+
+        /**
+         * 인덱스/제약조건 중복 검증 - 이름 중복과 의미 중복 모두 체크
+         */
+        private void validateIndexAndConstraintDuplicates() {
+            // 이름 중복 검증 (대소문자 무시)
+            Set<String> names = new HashSet<>();
+            
+            // 기존 인덱스/제약조건 이름 수집
+            if (collectionEntity != null) {
+                if (collectionEntity.getIndexes() != null) {
+                    for (IndexModel existing : collectionEntity.getIndexes().values()) {
+                        if (existing.getIndexName() != null) {
+                            names.add(existing.getIndexName().toLowerCase(java.util.Locale.ROOT));
+                        }
+                    }
+                }
+                if (collectionEntity.getConstraints() != null) {
+                    for (ConstraintModel existing : collectionEntity.getConstraints().values()) {
+                        if (existing.getName() != null) {
+                            names.add(existing.getName().toLowerCase(java.util.Locale.ROOT));
+                        }
+                    }
+                }
+            }
+            
+            // 대기 중인 인덱스 이름 중복 검증
+            for (IndexModel ix : pendingIndexes) {
+                String k = ix.getIndexName().toLowerCase(java.util.Locale.ROOT);
+                if (!names.add(k)) {
+                    addError("Duplicate index name on collection table: " + ix.getIndexName());
+                }
+            }
+            
+            // 대기 중인 제약조건 이름 중복 검증
+            for (ConstraintModel c : pendingConstraints) {
+                String k = c.getName().toLowerCase(java.util.Locale.ROOT);
+                if (!names.add(k)) {
+                    addError("Duplicate constraint name on collection table: " + c.getName());
+                }
+            }
+            
+            // 의미 중복 검증 (동일 테이블+컬럼셋+유형)
+            Set<String> shapes = new HashSet<>();
+            
+            // 기존 인덱스/제약조건 의미 중복 수집
+            if (collectionEntity != null) {
+                if (collectionEntity.getIndexes() != null) {
+                    for (IndexModel existing : collectionEntity.getIndexes().values()) {
+                        String shape = "IX|" + existing.getTableName().toLowerCase() + "|" + 
+                                      String.join(",", existing.getColumnNames()).toLowerCase() + "|" + existing.isUnique();
+                        shapes.add(shape);
+                    }
+                }
+                if (collectionEntity.getConstraints() != null) {
+                    for (ConstraintModel existing : collectionEntity.getConstraints().values()) {
+                        String shape = existing.getType() + "|" + existing.getTableName().toLowerCase() + "|" + 
+                                      String.join(",", existing.getColumns()).toLowerCase();
+                        shapes.add(shape);
+                    }
+                }
+            }
+            
+            // 대기 중인 인덱스 의미 중복 검증
+            for (IndexModel ix : pendingIndexes) {
+                String shape = "IX|" + ix.getTableName().toLowerCase() + "|" + 
+                              String.join(",", ix.getColumnNames()).toLowerCase() + "|" + ix.isUnique();
+                if (!shapes.add(shape)) {
+                    addError("Duplicate index definition: " + ix.getIndexName());
+                }
+            }
+            
+            // 대기 중인 제약조건 의미 중복 검증
+            for (ConstraintModel c : pendingConstraints) {
+                String shape = c.getType() + "|" + c.getTableName().toLowerCase() + "|" + 
+                              String.join(",", c.getColumns()).toLowerCase();
+                if (!shapes.add(shape)) {
+                    addError("Duplicate constraint definition: " + c.getName());
+                }
+            }
+        }
+
+        /**
+         * 인덱스/제약조건이 참조하는 컬럼 존재성 검증
+         */
+        private void validateIndexAndConstraintColumnsExist() {
+            Set<String> cols = new HashSet<>();
+            
+            // 대기 중인 컬럼들 수집
+            for (ColumnModel cm : pendingColumns) {
+                if (cm.getColumnName() != null) {
+                    cols.add(cm.getColumnName().toLowerCase(java.util.Locale.ROOT));
+                }
+            }
+            
+            // 기존 컬럼들도 포함 (임베디드 선반영 등)
+            if (collectionEntity != null && collectionEntity.getColumns() != null) {
+                for (ColumnModel cm : collectionEntity.getColumns().values()) {
+                    if (cm.getColumnName() != null) {
+                        cols.add(cm.getColumnName().toLowerCase(java.util.Locale.ROOT));
+                    }
+                }
+            }
+            
+            // 인덱스가 참조하는 컬럼 검증
+            for (IndexModel ix : pendingIndexes) {
+                for (String colName : ix.getColumnNames()) {
+                    if (!cols.contains(colName.toLowerCase(java.util.Locale.ROOT))) {
+                        addError("Index '" + ix.getIndexName() + "' refers to unknown column: " + colName);
+                    }
+                }
+            }
+            
+            // 제약조건이 참조하는 컬럼 검증
+            for (ConstraintModel c : pendingConstraints) {
+                for (String colName : c.getColumns()) {
+                    if (!cols.contains(colName.toLowerCase(java.util.Locale.ROOT))) {
+                        addError("Constraint '" + c.getName() + "' refers to unknown column: " + colName);
+                    }
+                }
+            }
         }
 
         /**
@@ -154,9 +291,21 @@ public class ElementCollectionHandler {
             }
             
             // 검증 완료 상태에서만 호출되므로 예외 없음
+            // 컬럼 → 인덱스 → 제약 → 관계 순으로 커밋
+            
             // 모든 컬럼을 일괄 추가
             for (ColumnModel column : pendingColumns) {
                 collectionEntity.putColumn(column);
+            }
+            
+            // 모든 인덱스를 일괄 추가
+            for (IndexModel ix : pendingIndexes) {
+                collectionEntity.getIndexes().put(ix.getIndexName(), ix);
+            }
+            
+            // 모든 제약조건을 일괄 추가
+            for (ConstraintModel c : pendingConstraints) {
+                collectionEntity.getConstraints().put(c.getName(), c);
             }
 
             // 모든 관계를 일괄 추가
@@ -294,6 +443,18 @@ public class ElementCollectionHandler {
                 .build();
         result.setCollectionEntity(collectionEntity);
 
+        // 1-1. @CollectionTable의 indexes/uniqueConstraints 반영
+        if (collectionTable != null) {
+            var adapter = new org.jinx.handler.builtins.CollectionTableAdapter(collectionTable, context, tableName);
+            
+            for (var ix : adapter.getIndexes()) {
+                result.addIndex(ix);
+            }
+            for (var c : adapter.getConstraints()) {
+                result.addConstraint(c);
+            }
+        }
+
         // 2. 컬렉션의 제네릭 타입 분석 (Map vs Collection) - FK 생성 전 검증
         TypeMirror attributeType = attribute.type();
         if (!(attributeType instanceof DeclaredType declaredType)) {
@@ -350,7 +511,7 @@ public class ElementCollectionHandler {
             }
             String fkColumnName = (jc != null && !jc.name().isEmpty())
                 ? jc.name()
-                : ownerEntity.getTableName() + "_" + ownerPkCol.getColumnName();
+                : context.getNaming().foreignKeyColumnName(ownerEntity.getTableName(), ownerPkCol.getColumnName());
             ColumnModel fkColumn = ColumnModel.builder()
                     .columnName(fkColumnName)
                     .tableName(tableName)
@@ -363,33 +524,55 @@ public class ElementCollectionHandler {
         }
 
         // 5. Map Key 컬럼 처리 - 메모리상에서만 생성
-        if (isMap && keyType != null) {
-            MapKeyColumn mapKeyColumn = attribute.getAnnotation(MapKeyColumn.class);
-            String mapKeyColumnName = (mapKeyColumn != null && !mapKeyColumn.name().isEmpty())
-                    ? mapKeyColumn.name()
-                    : attribute.name() + "_KEY";
+        if (isMap) {
+            // @MapKeyClass나 @MapKey에 의해 키 타입이 재정의될 수 있음
+            TypeMirror actualKeyType = resolveMapKeyType(attribute, keyType);
+            
+            if (actualKeyType != null) {
+                // 키 타입이 엔티티인지 확인
+                Element keyElement = typeUtils.asElement(actualKeyType);
+                boolean isEntityKey = keyElement != null && keyElement.getAnnotation(Entity.class) != null;
+                
+                if (isEntityKey) {
+                    // @MapKeyJoinColumn(s)로 엔티티 키 처리
+                    processMapKeyJoinColumns(attribute, actualKeyType, tableName, result);
+                } else {
+                    // 기본 타입 키 처리 (@MapKeyColumn)
+                    MapKeyColumn mapKeyColumn = attribute.getAnnotation(MapKeyColumn.class);
+                    String mapKeyColumnName = (mapKeyColumn != null && !mapKeyColumn.name().isEmpty())
+                            ? mapKeyColumn.name()
+                            : attribute.name() + "_KEY";
 
-            ColumnModel keyColumn = createColumnFromType(keyType, mapKeyColumnName, tableName);
-            if (keyColumn != null) {
-                keyColumn.setPrimaryKey(true);
-                keyColumn.setMapKey(true);
-                keyColumn.setNullable(false);
+                    ColumnModel keyColumn = createColumnFromType(actualKeyType, mapKeyColumnName, tableName);
+                    if (keyColumn != null) {
+                        keyColumn.setPrimaryKey(true);
+                        keyColumn.setMapKey(true);
+                        keyColumn.setNullable(false);
 
-                // Map Key 특수 어노테이션 처리
-                MapKeyEnumerated mapKeyEnumerated = attribute.getAnnotation(MapKeyEnumerated.class);
-                if (mapKeyEnumerated != null) {
-                    keyColumn.setEnumStringMapping(mapKeyEnumerated.value() == EnumType.STRING);
-                    if (keyColumn.isEnumStringMapping()) {
-                        keyColumn.setEnumValues(ColumnUtils.getEnumConstants(keyType));
+                        // @MapKeyColumn 메타데이터 반영 (PK 규칙 우선)
+                        if (mapKeyColumn != null) {
+                            keyColumn.setNullable(false); // PK는 항상 NOT NULL (nullable 요청 무시)
+                            if (mapKeyColumn.length() != 255) { // 기본값이 아닌 경우만
+                                keyColumn.setLength(mapKeyColumn.length());
+                            }
+                            if (mapKeyColumn.precision() != 0) {
+                                keyColumn.setPrecision(mapKeyColumn.precision());
+                            }
+                            if (mapKeyColumn.scale() != 0) {
+                                keyColumn.setScale(mapKeyColumn.scale());
+                            }
+                            if (!mapKeyColumn.columnDefinition().isEmpty()) {
+                                // ColumnModel에 columnDefinition 세터가 없으므로 defaultValue 사용
+                                keyColumn.setDefaultValue(mapKeyColumn.columnDefinition());
+                            }
+                        }
+
+                        // Map Key 특수 어노테이션 처리
+                        processMapKeyAnnotations(attribute, keyColumn, actualKeyType);
+
+                        result.addColumn(keyColumn); // 즉시 putColumn 대신 검증 결과에 추가
                     }
                 }
-
-                MapKeyTemporal mapKeyTemporal = attribute.getAnnotation(MapKeyTemporal.class);
-                if (mapKeyTemporal != null) {
-                    keyColumn.setTemporalType(mapKeyTemporal.value());
-                }
-
-                result.addColumn(keyColumn); // 즉시 putColumn 대신 검증 결과에 추가
             }
         }
 
@@ -458,6 +641,194 @@ public class ElementCollectionHandler {
         result.performFinalValidation();
         
         return result;
+    }
+
+    /**
+     * Map 키가 엔티티인 경우 @MapKeyJoinColumn(s) 처리
+     */
+    private void processMapKeyJoinColumns(AttributeDescriptor attribute, TypeMirror keyType, 
+                                        String tableName, ValidationResult result) {
+        // 키 엔티티의 PK 컬럼들 조회
+        Element keyElement = typeUtils.asElement(keyType);
+        if (keyElement == null || !(keyElement instanceof TypeElement keyTypeElement)) {
+            result.addError("Cannot resolve key entity type for @MapKeyJoinColumn");
+            return;
+        }
+
+        // 키 엔티티의 EntityModel을 스키마에서 찾아서 PK 컬럼들 수집 (FQCN 사용)
+        String keyFqcn = keyTypeElement.getQualifiedName().toString();
+        EntityModel keyEntity = context.getSchemaModel().getEntities().get(keyFqcn);
+        if (keyEntity == null) {
+            result.addError("Key entity " + keyFqcn + " not found in schema for @MapKeyJoinColumn");
+            return;
+        }
+
+        List<ColumnModel> keyPkColumns = context.findAllPrimaryKeyColumns(keyEntity);
+        if (keyPkColumns.isEmpty()) {
+            result.addError("Key entity " + keyTypeElement.getSimpleName() + " has no primary key for @MapKeyJoinColumn");
+            return;
+        }
+
+        // @MapKeyJoinColumn(s) 어노테이션 처리
+        MapKeyJoinColumn[] mapKeyJoinColumns = getMapKeyJoinColumns(attribute);
+        
+        if (mapKeyJoinColumns.length > 0 && mapKeyJoinColumns.length != keyPkColumns.size()) {
+            result.addError("@MapKeyJoinColumn size mismatch: expected " + keyPkColumns.size() 
+                + " but got " + mapKeyJoinColumns.length + " for key entity " + keyTypeElement.getSimpleName());
+            return;
+        }
+
+        // 키 FK 컬럼들 생성 (이름 목록과 동시에 수집)
+        Map<String, ColumnModel> keyPkByName = new HashMap<>();
+        for (ColumnModel pk : keyPkColumns) {
+            keyPkByName.put(pk.getColumnName(), pk);
+        }
+
+        List<String> keyFkColumnNames = new ArrayList<>();
+        Set<String> usedReferencedColumns = new HashSet<>();
+        for (int i = 0; i < keyPkColumns.size(); i++) {
+            MapKeyJoinColumn mkjc = (mapKeyJoinColumns.length > 0) ? mapKeyJoinColumns[i] : null;
+            ColumnModel keyPkCol;
+            
+            if (mkjc != null && !mkjc.referencedColumnName().isEmpty()) {
+                keyPkCol = keyPkByName.get(mkjc.referencedColumnName());
+                if (keyPkCol == null) {
+                    result.addError("MapKeyJoinColumn.referencedColumnName not found in key entity PKs: " + mkjc.referencedColumnName());
+                    return;
+                }
+                // 중복 referencedColumnName 검출
+                if (!usedReferencedColumns.add(keyPkCol.getColumnName())) {
+                    result.addError("Duplicate MapKeyJoinColumn.referencedColumnName: " + keyPkCol.getColumnName());
+                    return;
+                }
+            } else {
+                keyPkCol = keyPkColumns.get(i);
+                // 기본 매핑에서도 중복 방지
+                if (!usedReferencedColumns.add(keyPkCol.getColumnName())) {
+                    result.addError("Duplicate key PK column reference: " + keyPkCol.getColumnName());
+                    return;
+                }
+            }
+
+            String keyFkColumnName = (mkjc != null && !mkjc.name().isEmpty())
+                ? mkjc.name()
+                : context.getNaming().foreignKeyColumnName(attribute.name() + "_KEY", keyPkCol.getColumnName());
+
+            ColumnModel keyFkColumn = ColumnModel.builder()
+                    .columnName(keyFkColumnName)
+                    .tableName(tableName)
+                    .javaType(keyPkCol.getJavaType())
+                    .isPrimaryKey(true)  // Map 키 FK는 컬렉션 테이블 PK의 일부
+                    .isNullable(false)
+                    .isMapKey(true)
+                    .build();
+            
+            result.addColumn(keyFkColumn);
+            keyFkColumnNames.add(keyFkColumnName);  // 생성한 이름을 즉시 리스트에 추가
+        }
+
+        List<String> keyPkColumnNames = keyPkColumns.stream().map(ColumnModel::getColumnName).toList();
+        RelationshipModel keyRelationship = RelationshipModel.builder()
+                .type(RelationshipType.ELEMENT_COLLECTION)  // Map key FK도 ElementCollection의 일부
+                .tableName(tableName)
+                .columns(keyFkColumnNames)
+                .referencedTable(keyEntity.getTableName())
+                .referencedColumns(keyPkColumnNames)
+                .constraintName(context.getNaming().fkName(tableName, keyFkColumnNames, 
+                    keyEntity.getTableName(), keyPkColumnNames))
+                .build();
+        
+        result.addRelationship(keyRelationship);
+    }
+
+    /**
+     * @MapKeyClass, @MapKey 어노테이션을 고려하여 실제 Map 키 타입을 결정
+     */
+    private TypeMirror resolveMapKeyType(AttributeDescriptor attribute, TypeMirror defaultKeyType) {
+        // 1) @MapKeyClass 우선순위가 높음
+        MapKeyClass mapKeyClass = attribute.getAnnotation(MapKeyClass.class);
+        if (mapKeyClass != null) {
+            TypeElement keyClassElement = classValToTypeElement(() -> mapKeyClass.value());
+            if (keyClassElement != null) {
+                return keyClassElement.asType();
+            }
+        }
+        
+        // 2) @MapKey는 특별한 처리 (키 필드명 지정)
+        MapKey mapKey = attribute.getAnnotation(MapKey.class);
+        if (mapKey != null && !mapKey.name().isEmpty()) {
+            // @MapKey(name="fieldName")은 값 엔티티의 특정 필드를 키로 사용
+            // 여기서는 타입 정보만 필요하므로 defaultKeyType 반환
+            // 실제 컬럼명은 processMapKeyAnnotations에서 처리
+            return defaultKeyType;
+        }
+        
+        // 3) 기본값 사용 (제네릭 타입 인자)
+        return defaultKeyType;
+    }
+    
+    /**
+     * Map Key 관련 어노테이션들을 처리하여 ColumnModel 설정
+     */
+    private void processMapKeyAnnotations(AttributeDescriptor attribute, ColumnModel keyColumn, TypeMirror keyType) {
+        // @MapKey 처리 - 키 필드명 지정
+        MapKey mapKey = attribute.getAnnotation(MapKey.class);
+        if (mapKey != null && !mapKey.name().isEmpty()) {
+            // @MapKey(name="fieldName")의 경우 컬럼명을 해당 필드명으로 재설정
+            keyColumn.setColumnName(mapKey.name());
+        }
+        
+        // @MapKeyEnumerated 처리
+        MapKeyEnumerated mapKeyEnumerated = attribute.getAnnotation(MapKeyEnumerated.class);
+        if (mapKeyEnumerated != null) {
+            keyColumn.setEnumStringMapping(mapKeyEnumerated.value() == EnumType.STRING);
+            if (keyColumn.isEnumStringMapping()) {
+                keyColumn.setEnumValues(ColumnUtils.getEnumConstants(keyType));
+            }
+        }
+
+        // @MapKeyTemporal 처리
+        MapKeyTemporal mapKeyTemporal = attribute.getAnnotation(MapKeyTemporal.class);
+        if (mapKeyTemporal != null) {
+            keyColumn.setTemporalType(mapKeyTemporal.value());
+        }
+    }
+
+    /**
+     * @MapKeyJoinColumn 또는 @MapKeyJoinColumns 어노테이션에서 배열 추출
+     */
+    private MapKeyJoinColumn[] getMapKeyJoinColumns(AttributeDescriptor attribute) {
+        MapKeyJoinColumns mapKeyJoinColumns = attribute.getAnnotation(MapKeyJoinColumns.class);
+        if (mapKeyJoinColumns != null) {
+            return mapKeyJoinColumns.value();
+        }
+        
+        MapKeyJoinColumn mapKeyJoinColumn = attribute.getAnnotation(MapKeyJoinColumn.class);
+        if (mapKeyJoinColumn != null) {
+            return new MapKeyJoinColumn[]{mapKeyJoinColumn};
+        }
+        
+        return new MapKeyJoinColumn[0];
+    }
+    
+    /**
+     * 클래스값(annotation)에서 TypeElement를 안전하게 추출합니다.
+     * APT 환경에서 MirroredTypeException을 적절히 처리합니다.
+     */
+    private TypeElement classValToTypeElement(java.util.function.Supplier<Class<?>> getter) {
+        try {
+            Class<?> clz = getter.get();
+            if (clz == void.class) return null;
+            return context.getElementUtils().getTypeElement(clz.getName());
+        } catch (javax.lang.model.type.MirroredTypeException mte) {
+            TypeMirror typeMirror = mte.getTypeMirror();
+            if (typeMirror instanceof DeclaredType declaredType && declaredType.asElement() instanceof TypeElement) {
+                return (TypeElement) declaredType.asElement();
+            }
+            return null;
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     /**
