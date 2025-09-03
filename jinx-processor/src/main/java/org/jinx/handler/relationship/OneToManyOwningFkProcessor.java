@@ -110,15 +110,51 @@ public final class OneToManyOwningFkProcessor implements RelationshipProcessor {
         List<String> fkNames = new ArrayList<>();
         List<String> refNames = new ArrayList<>();
 
-        // loop1: Pre-validation
+        // 준비: PK 이름 → ColumnModel 맵
+        Map<String, ColumnModel> pkByName = ownerPks.stream()
+                .collect(java.util.stream.Collectors.toMap(ColumnModel::getColumnName, c -> c, (a, b) -> a, LinkedHashMap::new));
+
+        Set<String> usedPkNames = new HashSet<>();
+
+        // loop1: Pre-validation with safe referencedColumnName mapping
         for (int i = 0; i < ownerPks.size(); i++) {
-            ColumnModel ownerPk = ownerPks.get(i);
             JoinColumn j = jlist.isEmpty() ? null : jlist.get(i);
 
-            String refName = (j != null && !j.referencedColumnName().isEmpty())
-                    ? j.referencedColumnName() : ownerPk.getColumnName();
+            // 1) referenced PK 결정 (이름 우선, 없으면 인덱스)
+            ColumnModel ownerPk;
+            String refNameRaw = (j != null && j.referencedColumnName() != null) ? j.referencedColumnName().trim() : "";
+            if (!refNameRaw.isEmpty()) {
+                ownerPk = pkByName.get(refNameRaw);
+                if (ownerPk == null) {
+                    context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "referencedColumnName '" + refNameRaw + "' is not a primary key column of "
+                                    + ownerEntity.getTableName(), attr.elementForDiagnostics());
+                    ownerEntity.setValid(false);
+                    return;
+                }
+                if (!usedPkNames.add(refNameRaw)) {
+                    context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "Duplicate referencedColumnName in @JoinColumns: '" + refNameRaw + "'.",
+                            attr.elementForDiagnostics());
+                    ownerEntity.setValid(false);
+                    return;
+                }
+            } else {
+                // 인덱스 기반 fallback (이미 size 일치 검증됨)
+                ownerPk = ownerPks.get(i);
+                if (!usedPkNames.add(ownerPk.getColumnName())) {
+                    context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "Ambiguous PK mapping at index " + i + " – primary key column '" +
+                                    ownerPk.getColumnName() + "' already bound by another @JoinColumn.",
+                            attr.elementForDiagnostics());
+                    ownerEntity.setValid(false);
+                    return;
+                }
+            }
 
-            // 일반 엔티티의 FK 네이밍: 속성명 기반 (fieldName + referencedPK)
+            String refName = ownerPk.getColumnName();
+
+            // 2) FK 컬럼명 결정 (명시적 name 우선)
             String fkName = (j != null && !j.name().isEmpty())
                     ? j.name()
                     : context.getNaming().foreignKeyColumnName(attr.name(), refName);

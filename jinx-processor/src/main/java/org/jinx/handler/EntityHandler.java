@@ -134,10 +134,20 @@ public class EntityHandler {
 
             // Process @MapsId attributes if any
             if (hasMapsIdAttributes(te, child)) {
-                relationshipHandler.processMapsIdAttributes(te, child);
-                // If processing was successful (entity is still valid), remove from deferred set.
-                if (child.isValid()) {
-                    context.getDeferredNames().remove(childName);
+                boolean needsRetry = hasUnresolvedMapsIdDeps(te, child);
+                
+                if (!needsRetry) {
+                    // 의존성이 모두 준비됨 → 실제 처리 진행
+                    relationshipHandler.processMapsIdAttributes(te, child);
+                }
+
+                // 이번 라운드에서는 일단 제거 (성공/실패 관계없이)
+                context.getDeferredNames().remove(childName);
+
+                // 재시도가 필요하고 아직 유효한 엔티티라면 다시 큐에 추가
+                if (needsRetry && child.isValid()) {
+                    context.getDeferredEntities().offer(child);
+                    context.getDeferredNames().add(childName);
                 }
             } else {
                 // If it was in the queue but not for @MapsId, it must be for another reason
@@ -539,6 +549,61 @@ public class EntityHandler {
         
         return descriptors.stream()
                 .anyMatch(desc -> desc.hasAnnotation(MapsId.class) && isRelationshipAttribute(desc));
+    }
+
+    /**
+     * @MapsId 처리 전에 의존성이 해결되지 않은 상태인지 확인
+     * 재시도가 필요한 일시적 문제인지 판단
+     */
+    private boolean hasUnresolvedMapsIdDeps(TypeElement typeElement, EntityModel child) {
+        // 이미 invalid된 엔티티는 재시도 의미 없음
+        if (!child.isValid()) {
+            return false;
+        }
+
+        // 1) 자기 자신의 PK 준비 여부 확인
+        if (context.findAllPrimaryKeyColumns(child).isEmpty()) {
+            return true; // PK 미확정 → 재시도 필요
+        }
+
+        // 2) @MapsId 관계 속성들의 의존성 확인
+        List<AttributeDescriptor> mapsIdDescriptors = context.getCachedDescriptors(typeElement).stream()
+                .filter(d -> d.hasAnnotation(MapsId.class) && isRelationshipAttribute(d))
+                .toList();
+
+        for (AttributeDescriptor descriptor : mapsIdDescriptors) {
+            ManyToOne manyToOne = descriptor.getAnnotation(ManyToOne.class);
+            OneToOne oneToOne = descriptor.getAnnotation(OneToOne.class);
+
+            // 참조 엔티티 타입 해석
+            Optional<TypeElement> refElementOpt = 
+                    relationshipSupport.resolveTargetEntity(descriptor, manyToOne, oneToOne, null, null);
+            
+            if (refElementOpt.isEmpty()) {
+                return true; // 타입 해석 실패 → 재시도 필요
+            }
+
+            TypeElement refElement = refElementOpt.get();
+            String refEntityName = refElement.getQualifiedName().toString();
+            EntityModel refEntity = context.getSchemaModel().getEntities().get(refEntityName);
+
+            // 참조 엔티티가 아직 등록되지 않음
+            if (refEntity == null) {
+                return true; // 재시도 필요
+            }
+
+            // 참조 엔티티가 invalid 상태 (영구 오류)
+            if (!refEntity.isValid()) {
+                return false; // 재시도 불필요 (영구 실패)
+            }
+
+            // 참조 엔티티의 PK가 아직 확정되지 않음
+            if (context.findAllPrimaryKeyColumns(refEntity).isEmpty()) {
+                return true; // 재시도 필요
+            }
+        }
+
+        return false; // 모든 의존성 준비 완료
     }
     
     

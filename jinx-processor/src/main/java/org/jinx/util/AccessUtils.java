@@ -16,70 +16,77 @@ public final class AccessUtils {
     private AccessUtils() {}
 
     public static AccessType determineAccessType(TypeElement typeElement) {
+        // 1) 현재 클래스에 명시적 @Access
         Access classAccess = typeElement.getAnnotation(Access.class);
         if (classAccess != null) {
             return classAccess.value();
         }
 
-        TypeElement superclass = getSuperclass(typeElement);
-        if (superclass != null && !"java.lang.Object".equals(superclass.getQualifiedName().toString())) {
-            AccessType superAccessType = determineAccessType(superclass);
-            if (superAccessType != null) {
-                return superAccessType;
-            }
+        // 2) 상위 체인의 클래스 레벨 @Access만 상속
+        AccessType inherited = findClassLevelAccessInSuperclasses(typeElement);
+        if (inherited != null) {
+            return inherited;
         }
 
-        return inferAccessTypeFromIdPlacementInHierarchy(typeElement);
+        // 3) 계층에서 @Id/@EmbeddedId 배치 기반 추론
+        AccessType inferred = findFirstIdAccessTypeInHierarchy(typeElement);
+        return inferred != null ? inferred : AccessType.FIELD;
     }
 
-    private static AccessType inferAccessTypeFromIdPlacementInHierarchy(TypeElement typeElement) {
-        return findFirstIdAccessTypeInHierarchy(typeElement);
-    }
-    
-    private static AccessType findFirstIdAccessTypeInHierarchy(TypeElement typeElement) {
-        List<TypeElement> hierarchy = buildHierarchyPath(typeElement);
-        
-        for (TypeElement type : hierarchy) {
-            AccessType accessType = findIdAccessTypeInClass(type);
-            if (accessType != null) {
-                return accessType;
-            }
-        }
-        
-        return AccessType.FIELD;
-    }
-    
-    private static List<TypeElement> buildHierarchyPath(TypeElement typeElement) {
-        List<TypeElement> path = new ArrayList<>();
-        TypeElement current = typeElement;
-        
+    /**
+     * 상위 클래스들에서 명시적 클래스 레벨 @Access만 찾아 상속
+     */
+    private static AccessType findClassLevelAccessInSuperclasses(TypeElement typeElement) {
+        TypeElement current = getSuperclass(typeElement);
         while (current != null && !"java.lang.Object".equals(current.getQualifiedName().toString())) {
-            path.add(current);
+            Access access = current.getAnnotation(Access.class);
+            if (access != null) {
+                return access.value();
+            }
             current = getSuperclass(current);
-        }
-        
-        Collections.reverse(path);
-        return path;
-    }
-
-    private static AccessType findIdAccessTypeInClass(TypeElement typeElement) {
-        boolean isEntity = typeElement.getAnnotation(jakarta.persistence.Entity.class) != null;
-        boolean isMappedSuperclass = typeElement.getAnnotation(jakarta.persistence.MappedSuperclass.class) != null;
-        
-        if (!isEntity && !isMappedSuperclass) {
-            return null;
-        }
-        
-        for (Element element : typeElement.getEnclosedElements()) {
-            if (element.getKind() == ElementKind.FIELD && hasIdAnnotation(element)) {
-                return AccessType.FIELD;
-            }
-            if (element.getKind() == ElementKind.METHOD && isGetterMethod(element) && hasIdAnnotation(element)) {
-                return AccessType.PROPERTY;
-            }
         }
         return null;
     }
+
+    /**
+     * 계층 전체에서 @Id/@EmbeddedId 위치(필드/메서드)를 스캔해 첫 일치로 결정
+     */
+    private static AccessType findFirstIdAccessTypeInHierarchy(TypeElement typeElement) {
+        for (TypeElement current = typeElement; 
+             current != null && !"java.lang.Object".equals(current.getQualifiedName().toString()); 
+             current = getSuperclass(current)) {
+
+            // 필드에 @Id/@EmbeddedId?
+            if (hasIdOnFields(current)) {
+                return AccessType.FIELD;
+            }
+            // 메서드(getter)에 @Id/@EmbeddedId?
+            if (hasIdOnMethods(current)) {
+                return AccessType.PROPERTY;
+            }
+        }
+        // 아무 데도 없음 → null 반환 (호출부에서 FIELD로 폴백)
+        return null;
+    }
+
+    private static boolean hasIdOnFields(TypeElement typeElement) {
+        for (Element element : typeElement.getEnclosedElements()) {
+            if (element.getKind() == ElementKind.FIELD && hasIdAnnotation(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasIdOnMethods(TypeElement typeElement) {
+        for (Element element : typeElement.getEnclosedElements()) {
+            if (element.getKind() == ElementKind.METHOD && hasIdAnnotation(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 
     public static boolean hasIdAnnotation(Element element) {
         return element != null && (element.getAnnotation(jakarta.persistence.Id.class) != null ||

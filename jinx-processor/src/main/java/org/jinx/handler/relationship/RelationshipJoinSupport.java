@@ -18,8 +18,9 @@ public final class RelationshipJoinSupport {
     }
 
     public void ensureJoinTableRelationships(EntityModel jt, JoinTableDetails details) {
-        List<String> ownerFks = new ArrayList<>(details.ownerFkToPkMap().keySet());
-        List<String> ownerPks = new ArrayList<>(details.ownerFkToPkMap().values());
+        List<Map.Entry<String, String>> ownerPairs = new ArrayList<>(details.ownerFkToPkMap().entrySet());
+        List<String> ownerFks = ownerPairs.stream().map(Map.Entry::getKey).toList();
+        List<String> ownerPks = ownerPairs.stream().map(Map.Entry::getValue).toList();
         String ownerFkName = details.ownerFkConstraintName() != null
                 ? details.ownerFkConstraintName()
                 : context.getNaming().fkName(details.joinTableName(), ownerFks,
@@ -41,8 +42,9 @@ public final class RelationshipJoinSupport {
             support.addForeignKeyIndex(jt, ownerFks, details.joinTableName());
         }
 
-        List<String> targetFks = new ArrayList<>(details.inverseFkToPkMap().keySet());
-        List<String> targetPks = new ArrayList<>(details.inverseFkToPkMap().values());
+        List<Map.Entry<String, String>> targetPairs = new ArrayList<>(details.inverseFkToPkMap().entrySet());
+        List<String> targetFks = targetPairs.stream().map(Map.Entry::getKey).toList();
+        List<String> targetPks = targetPairs.stream().map(Map.Entry::getValue).toList();
         String targetFkName = details.inverseFkConstraintName() != null
                 ? details.inverseFkConstraintName()
                 : context.getNaming().fkName(details.joinTableName(), targetFks,
@@ -192,8 +194,9 @@ public final class RelationshipJoinSupport {
     }
 
     public void addRelationshipsToJoinTable(EntityModel joinTableEntity, JoinTableDetails details) {
-        List<String> ownerFkColumns = new ArrayList<>(details.ownerFkToPkMap().keySet());
-        List<String> ownerPkColumns = new ArrayList<>(details.ownerFkToPkMap().values());
+        List<Map.Entry<String, String>> ownerPairs = new ArrayList<>(details.ownerFkToPkMap().entrySet());
+        List<String> ownerFkColumns = ownerPairs.stream().map(Map.Entry::getKey).toList();
+        List<String> ownerPkColumns = ownerPairs.stream().map(Map.Entry::getValue).toList();
 
         RelationshipModel ownerRel = RelationshipModel.builder()
                 .type(RelationshipType.MANY_TO_ONE)
@@ -212,8 +215,9 @@ public final class RelationshipJoinSupport {
         // Owner FK 컬럼에 인덱스 생성
         support.addForeignKeyIndex(joinTableEntity, ownerFkColumns, details.joinTableName());
 
-        List<String> targetFkColumns = new ArrayList<>(details.inverseFkToPkMap().keySet());
-        List<String> targetPkColumns = new ArrayList<>(details.inverseFkToPkMap().values());
+        List<Map.Entry<String, String>> targetPairs = new ArrayList<>(details.inverseFkToPkMap().entrySet());
+        List<String> targetFkColumns = targetPairs.stream().map(Map.Entry::getKey).toList();
+        List<String> targetPkColumns = targetPairs.stream().map(Map.Entry::getValue).toList();
 
         RelationshipModel targetRel = RelationshipModel.builder()
                 .type(RelationshipType.MANY_TO_ONE)
@@ -245,13 +249,57 @@ public final class RelationshipJoinSupport {
 
         for (Map.Entry<String,String> e : ownerFkToPkMap.entrySet()) {
             String fkName = e.getKey();
-            ColumnModel pk = pkTypeLookup.get("owner::" + e.getValue());
+            String pkName = e.getValue();
+            ColumnModel pk = pkTypeLookup.get("owner::" + pkName);
+            if (pk == null) {
+                context.getMessager().printMessage(
+                    javax.tools.Diagnostic.Kind.ERROR,
+                    "Unknown owner PK '" + pkName + "' mapped from FK '" + fkName +
+                    "' on join table '" + jt.getTableName() + "'. Known owner PKs: " +
+                    pkTypeLookup.keySet().stream().filter(k -> k.startsWith("owner::")).toList(),
+                    attr.elementForDiagnostics()
+                );
+                jt.setValid(false);
+                return;
+            }
+            if (pk.getJavaType() == null) {
+                context.getMessager().printMessage(
+                    javax.tools.Diagnostic.Kind.ERROR,
+                    "Owner PK '" + pkName + "' has no Java type; cannot create FK '" + fkName +
+                    "' on join table '" + jt.getTableName() + "'.",
+                    attr.elementForDiagnostics()
+                );
+                jt.setValid(false);
+                return;
+            }
             ensureOneColumn(jt, fkName, pk.getJavaType(), jt.getTableName(), attr);
         }
 
         for (Map.Entry<String,String> e : targetFkToPkMap.entrySet()) {
             String fkName = e.getKey();
-            ColumnModel pk = pkTypeLookup.get("target::" + e.getValue());
+            String pkName = e.getValue();
+            ColumnModel pk = pkTypeLookup.get("target::" + pkName);
+            if (pk == null) {
+                context.getMessager().printMessage(
+                    javax.tools.Diagnostic.Kind.ERROR,
+                    "Unknown target PK '" + pkName + "' mapped from FK '" + fkName +
+                    "' on join table '" + jt.getTableName() + "'. Known target PKs: " +
+                    pkTypeLookup.keySet().stream().filter(k -> k.startsWith("target::")).toList(),
+                    attr.elementForDiagnostics()
+                );
+                jt.setValid(false);
+                return;
+            }
+            if (pk.getJavaType() == null) {
+                context.getMessager().printMessage(
+                    javax.tools.Diagnostic.Kind.ERROR,
+                    "Target PK '" + pkName + "' has no Java type; cannot create FK '" + fkName +
+                    "' on join table '" + jt.getTableName() + "'.",
+                    attr.elementForDiagnostics()
+                );
+                jt.setValid(false);
+                return;
+            }
             ensureOneColumn(jt, fkName, pk.getJavaType(), jt.getTableName(), attr);
         }
     }
