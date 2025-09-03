@@ -152,4 +152,37 @@ public final class RelationshipSupport {
         }
         return false;
     }
+
+    /**
+     * @MapsId 등에서 사용할 PK 승격 헬퍼 메소드
+     * 지정된 컬럼들을 PK로 승격하고 관련 제약을 설정
+     */
+    public void promoteColumnsToPrimaryKey(EntityModel entity, String table, List<String> cols) {
+        // 1) 컬럼 존재/타입 보강 및 PK/NULL 고정
+        for (String col : cols) {
+            ColumnModel c = entity.findColumn(table, col);
+            if (c == null) {
+                context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "Missing FK column '" + col + "' for @MapsId promotion on table '" + table + "'.");
+                entity.setValid(false);
+                return;
+            }
+            c.setPrimaryKey(true);
+            c.setNullable(false);
+            if (c.getTableName() == null || c.getTableName().isBlank()) {
+                c.setTableName(table);
+            }
+        }
+
+        // 2) PK 제약 구성/병합
+        String pkName = context.getNaming().pkName(table, cols);
+        entity.getConstraints().put(pkName, ConstraintModel.builder()
+                .name(pkName)
+                .type(ConstraintType.PRIMARY_KEY)
+                .tableName(table)
+                .columns(new ArrayList<>(cols))
+                .build());
+
+        // 3) UNIQUE 중복 커버는 자연스럽게 PK가 대체(있다면 그대로 두어도 무해)
+    }
 }

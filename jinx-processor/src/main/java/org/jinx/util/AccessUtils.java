@@ -80,7 +80,9 @@ public final class AccessUtils {
 
     private static boolean hasIdOnMethods(TypeElement typeElement) {
         for (Element element : typeElement.getEnclosedElements()) {
-            if (element.getKind() == ElementKind.METHOD && hasIdAnnotation(element)) {
+            if (element.getKind() == ElementKind.METHOD
+                && isGetterMethod(element)
+                && hasIdAnnotation(element)) {
                 return true;
             }
         }

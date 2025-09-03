@@ -553,7 +553,7 @@ public class EntityHandler {
 
     /**
      * @MapsId 처리 전에 의존성이 해결되지 않은 상태인지 확인
-     * 재시도가 필요한 일시적 문제인지 판단
+     * 재시도가 필요한 일시적 문제인지 판단 (참조 엔티티 준비 상태만 확인)
      */
     private boolean hasUnresolvedMapsIdDeps(TypeElement typeElement, EntityModel child) {
         // 이미 invalid된 엔티티는 재시도 의미 없음
@@ -561,12 +561,10 @@ public class EntityHandler {
             return false;
         }
 
-        // 1) 자기 자신의 PK 준비 여부 확인
-        if (context.findAllPrimaryKeyColumns(child).isEmpty()) {
-            return true; // PK 미확정 → 재시도 필요
-        }
+        // 자기 자신의 PK는 @MapsId 승격에서 생성/승격하므로 재시도 조건에서 제외
+        // (교착 위험 방지: @MapsId 전용 PK의 경우 이 단계에서 승격됨)
 
-        // 2) @MapsId 관계 속성들의 의존성 확인
+        // @MapsId 관계 속성들의 참조 엔티티 의존성 확인
         List<AttributeDescriptor> mapsIdDescriptors = context.getCachedDescriptors(typeElement).stream()
                 .filter(d -> d.hasAnnotation(MapsId.class) && isRelationshipAttribute(d))
                 .toList();
@@ -580,7 +578,7 @@ public class EntityHandler {
                     relationshipSupport.resolveTargetEntity(descriptor, manyToOne, oneToOne, null, null);
             
             if (refElementOpt.isEmpty()) {
-                return true; // 타입 해석 실패 → 재시도 필요
+                return true; // target TypeElement 아직 없음 → 재시도 필요
             }
 
             TypeElement refElement = refElementOpt.get();
@@ -589,21 +587,21 @@ public class EntityHandler {
 
             // 참조 엔티티가 아직 등록되지 않음
             if (refEntity == null) {
-                return true; // 재시도 필요
+                return true; // target EntityModel 아직 없음 → 재시도 필요
             }
 
             // 참조 엔티티가 invalid 상태 (영구 오류)
             if (!refEntity.isValid()) {
-                return false; // 재시도 불필요 (영구 실패)
+                return false; // 영구 실패 → 재시도X
             }
 
             // 참조 엔티티의 PK가 아직 확정되지 않음
             if (context.findAllPrimaryKeyColumns(refEntity).isEmpty()) {
-                return true; // 재시도 필요
+                return true; // target PK 미확정 → 재시도 필요
             }
         }
 
-        return false; // 모든 의존성 준비 완료
+        return false; // 준비 완료 → 이번 라운드에서 승격 처리
     }
     
     

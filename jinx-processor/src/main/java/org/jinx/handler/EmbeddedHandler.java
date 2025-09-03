@@ -252,13 +252,8 @@ public class EmbeddedHandler {
             boolean colUnique = (oneToOne != null && mapsId == null && (joinColumns.isEmpty() ? refPkList.size() == 1 : joinColumns.size() == 1))
                     && (jc != null ? jc.unique() : true);
 
+            // @MapsId PK 승격은 지연 단계(RelationshipHandler)에서 처리
             boolean makePk = false;
-            if (mapsId != null) {
-                if (mapsIdAttr == null) makePk = true;
-                else {
-                    makePk = pkCol.getColumnName().equalsIgnoreCase(mapsIdAttr) || pkCol.getColumnName().endsWith("_" + mapsIdAttr);
-                }
-            }
 
             String fkTable = resolveJoinColumnTable(jc, ownerEntity);
             if (fkTableName == null) {
@@ -273,8 +268,8 @@ public class EmbeddedHandler {
                     .columnName(fkName)
                     .tableName(fkTable)
                     .javaType(pkCol.getJavaType())
-                    .isPrimaryKey(makePk)
-                    .isNullable(!makePk && colNullable)
+                    .isPrimaryKey(false)
+                    .isNullable(colNullable)
                     // 컬럼 레벨 unique 제거 - 제약 기반으로만 처리
                     .generationStrategy(GenerationStrategy.NONE)
                     .build();
