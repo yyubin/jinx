@@ -44,6 +44,8 @@ public class ElementCollectionHandler {
         private final List<String> errors = new ArrayList<>();
         private final List<ColumnModel> pendingColumns = new ArrayList<>();
         private final List<RelationshipModel> pendingRelationships = new ArrayList<>();
+        private final List<IndexModel> pendingIndexes = new ArrayList<>();
+        private final List<ConstraintModel> pendingConstraints = new ArrayList<>();
         private EntityModel collectionEntity;
         private boolean committed = false; // 재진입 방지 플래그
 
@@ -57,6 +59,14 @@ public class ElementCollectionHandler {
 
         public void addRelationship(RelationshipModel relationship) {
             pendingRelationships.add(relationship);
+        }
+        
+        public void addIndex(IndexModel index) {
+            pendingIndexes.add(index);
+        }
+        
+        public void addConstraint(ConstraintModel constraint) {
+            pendingConstraints.add(constraint);
         }
 
         public void setCollectionEntity(EntityModel entity) {
@@ -145,6 +155,130 @@ public class ElementCollectionHandler {
         public void performFinalValidation() {
             validateColumnNameDuplicates();
             validateConstraintNameDuplicates();
+            validateIndexAndConstraintDuplicates();
+            validateIndexAndConstraintColumnsExist();
+        }
+
+        /**
+         * 인덱스/제약조건 중복 검증 - 이름 중복과 의미 중복 모두 체크
+         */
+        private void validateIndexAndConstraintDuplicates() {
+            // 이름 중복 검증 (대소문자 무시)
+            Set<String> names = new HashSet<>();
+            
+            // 기존 인덱스/제약조건 이름 수집
+            if (collectionEntity != null) {
+                if (collectionEntity.getIndexes() != null) {
+                    for (IndexModel existing : collectionEntity.getIndexes().values()) {
+                        if (existing.getIndexName() != null) {
+                            names.add(existing.getIndexName().toLowerCase(java.util.Locale.ROOT));
+                        }
+                    }
+                }
+                if (collectionEntity.getConstraints() != null) {
+                    for (ConstraintModel existing : collectionEntity.getConstraints().values()) {
+                        if (existing.getName() != null) {
+                            names.add(existing.getName().toLowerCase(java.util.Locale.ROOT));
+                        }
+                    }
+                }
+            }
+            
+            // 대기 중인 인덱스 이름 중복 검증
+            for (IndexModel ix : pendingIndexes) {
+                String k = ix.getIndexName().toLowerCase(java.util.Locale.ROOT);
+                if (!names.add(k)) {
+                    addError("Duplicate index name on collection table: " + ix.getIndexName());
+                }
+            }
+            
+            // 대기 중인 제약조건 이름 중복 검증
+            for (ConstraintModel c : pendingConstraints) {
+                String k = c.getName().toLowerCase(java.util.Locale.ROOT);
+                if (!names.add(k)) {
+                    addError("Duplicate constraint name on collection table: " + c.getName());
+                }
+            }
+            
+            // 의미 중복 검증 (동일 테이블+컬럼셋+유형)
+            Set<String> shapes = new HashSet<>();
+            
+            // 기존 인덱스/제약조건 의미 중복 수집
+            if (collectionEntity != null) {
+                if (collectionEntity.getIndexes() != null) {
+                    for (IndexModel existing : collectionEntity.getIndexes().values()) {
+                        String shape = "IX|" + existing.getTableName().toLowerCase() + "|" + 
+                                      String.join(",", existing.getColumnNames()).toLowerCase() + "|" + existing.isUnique();
+                        shapes.add(shape);
+                    }
+                }
+                if (collectionEntity.getConstraints() != null) {
+                    for (ConstraintModel existing : collectionEntity.getConstraints().values()) {
+                        String shape = existing.getType() + "|" + existing.getTableName().toLowerCase() + "|" + 
+                                      String.join(",", existing.getColumns()).toLowerCase();
+                        shapes.add(shape);
+                    }
+                }
+            }
+            
+            // 대기 중인 인덱스 의미 중복 검증
+            for (IndexModel ix : pendingIndexes) {
+                String shape = "IX|" + ix.getTableName().toLowerCase() + "|" + 
+                              String.join(",", ix.getColumnNames()).toLowerCase() + "|" + ix.isUnique();
+                if (!shapes.add(shape)) {
+                    addError("Duplicate index definition: " + ix.getIndexName());
+                }
+            }
+            
+            // 대기 중인 제약조건 의미 중복 검증
+            for (ConstraintModel c : pendingConstraints) {
+                String shape = c.getType() + "|" + c.getTableName().toLowerCase() + "|" + 
+                              String.join(",", c.getColumns()).toLowerCase();
+                if (!shapes.add(shape)) {
+                    addError("Duplicate constraint definition: " + c.getName());
+                }
+            }
+        }
+
+        /**
+         * 인덱스/제약조건이 참조하는 컬럼 존재성 검증
+         */
+        private void validateIndexAndConstraintColumnsExist() {
+            Set<String> cols = new HashSet<>();
+            
+            // 대기 중인 컬럼들 수집
+            for (ColumnModel cm : pendingColumns) {
+                if (cm.getColumnName() != null) {
+                    cols.add(cm.getColumnName().toLowerCase(java.util.Locale.ROOT));
+                }
+            }
+            
+            // 기존 컬럼들도 포함 (임베디드 선반영 등)
+            if (collectionEntity != null && collectionEntity.getColumns() != null) {
+                for (ColumnModel cm : collectionEntity.getColumns().values()) {
+                    if (cm.getColumnName() != null) {
+                        cols.add(cm.getColumnName().toLowerCase(java.util.Locale.ROOT));
+                    }
+                }
+            }
+            
+            // 인덱스가 참조하는 컬럼 검증
+            for (IndexModel ix : pendingIndexes) {
+                for (String colName : ix.getColumnNames()) {
+                    if (!cols.contains(colName.toLowerCase(java.util.Locale.ROOT))) {
+                        addError("Index '" + ix.getIndexName() + "' refers to unknown column: " + colName);
+                    }
+                }
+            }
+            
+            // 제약조건이 참조하는 컬럼 검증
+            for (ConstraintModel c : pendingConstraints) {
+                for (String colName : c.getColumns()) {
+                    if (!cols.contains(colName.toLowerCase(java.util.Locale.ROOT))) {
+                        addError("Constraint '" + c.getName() + "' refers to unknown column: " + colName);
+                    }
+                }
+            }
         }
 
         /**
@@ -157,9 +291,21 @@ public class ElementCollectionHandler {
             }
             
             // 검증 완료 상태에서만 호출되므로 예외 없음
+            // 컬럼 → 인덱스 → 제약 → 관계 순으로 커밋
+            
             // 모든 컬럼을 일괄 추가
             for (ColumnModel column : pendingColumns) {
                 collectionEntity.putColumn(column);
+            }
+            
+            // 모든 인덱스를 일괄 추가
+            for (IndexModel ix : pendingIndexes) {
+                collectionEntity.getIndexes().put(ix.getIndexName(), ix);
+            }
+            
+            // 모든 제약조건을 일괄 추가
+            for (ConstraintModel c : pendingConstraints) {
+                collectionEntity.getConstraints().put(c.getName(), c);
             }
 
             // 모든 관계를 일괄 추가
@@ -300,25 +446,12 @@ public class ElementCollectionHandler {
         // 1-1. @CollectionTable의 indexes/uniqueConstraints 반영
         if (collectionTable != null) {
             var adapter = new org.jinx.handler.builtins.CollectionTableAdapter(collectionTable, context, tableName);
-            String effectiveName = collectionEntity.getTableName();
-
+            
             for (var ix : adapter.getIndexes()) {
-                var ixCopy = IndexModel.builder()
-                    .indexName(ix.getIndexName())
-                    .tableName(effectiveName)
-                    .columnNames(ix.getColumnNames())
-                    .isUnique(ix.isUnique())
-                    .build();
-                collectionEntity.getIndexes().putIfAbsent(ixCopy.getIndexName(), ixCopy);
+                result.addIndex(ix);
             }
             for (var c : adapter.getConstraints()) {
-                var cCopy = ConstraintModel.builder()
-                    .name(c.getName())
-                    .type(c.getType())
-                    .tableName(effectiveName)
-                    .columns(c.getColumns())
-                    .build();
-                collectionEntity.getConstraints().putIfAbsent(cCopy.getName(), cCopy);
+                result.addConstraint(c);
             }
         }
 
