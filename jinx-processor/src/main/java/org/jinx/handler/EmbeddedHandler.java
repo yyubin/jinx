@@ -5,6 +5,7 @@ import org.jinx.context.ProcessingContext;
 import org.jinx.descriptor.AttributeDescriptor;
 import org.jinx.descriptor.AttributeDescriptorFactory;
 import org.jinx.descriptor.FieldAttributeDescriptor;
+import org.jinx.handler.relationship.RelationshipSupport;
 import org.jinx.model.*;
 
 import javax.lang.model.element.*;
@@ -19,6 +20,7 @@ public class EmbeddedHandler {
     private final ProcessingContext context;
     private final ColumnHandler columnHandler;
     private final RelationshipHandler relationshipHandler;
+    private final RelationshipSupport support;
     private final AttributeDescriptorFactory descriptorFactory;
     private final Types typeUtils;
     private final Elements elementUtils;
@@ -30,11 +32,7 @@ public class EmbeddedHandler {
         this.typeUtils = context.getTypeUtils();
         this.elementUtils = context.getElementUtils();
         this.descriptorFactory = new AttributeDescriptorFactory(typeUtils, elementUtils, context);
-    }
-
-    public void processEmbedded(VariableElement field, EntityModel ownerEntity, Set<String> processedTypes) {
-        AttributeDescriptor fieldDescriptor = new FieldAttributeDescriptor(field, typeUtils, elementUtils);
-        processEmbedded(fieldDescriptor, ownerEntity, processedTypes);
+        this.support = new RelationshipSupport(context);
     }
 
     public void processEmbedded(AttributeDescriptor attribute, EntityModel ownerEntity, Set<String> processedTypes) {
@@ -42,12 +40,7 @@ public class EmbeddedHandler {
         Map<String, String> tableOverrides = new HashMap<>();
         Map<String, List<JoinColumn>> assocOverrides = extractOverrides(attribute, nameOverrides, tableOverrides);
 
-        processEmbeddedInternal(attribute, ownerEntity, processedTypes, false, "", nameOverrides, tableOverrides, assocOverrides);
-    }
-
-    public void processEmbeddedId(VariableElement field, EntityModel ownerEntity, Set<String> processedTypes) {
-        AttributeDescriptor fieldDescriptor = new FieldAttributeDescriptor(field, typeUtils, elementUtils);
-        processEmbeddedId(fieldDescriptor, ownerEntity, processedTypes);
+        processEmbeddedInternal(attribute, ownerEntity, processedTypes, false, "", "", nameOverrides, tableOverrides, assocOverrides);
     }
 
     public void processEmbeddedId(AttributeDescriptor attribute, EntityModel ownerEntity, Set<String> processedTypes) {
@@ -55,79 +48,19 @@ public class EmbeddedHandler {
         Map<String, String> tableOverrides = new HashMap<>();
         Map<String, List<JoinColumn>> assocOverrides = extractOverrides(attribute, nameOverrides, tableOverrides);
 
-        processEmbeddedInternal(attribute, ownerEntity, processedTypes, true, "", nameOverrides, tableOverrides, assocOverrides);
-    }
+        List<ColumnModel> pksBefore = context.findAllPrimaryKeyColumns(ownerEntity);
 
-    public void processEmbeddableFields(TypeElement embeddableType, EntityModel ownerCollectionTable, Set<String> processedTypes, String prefix, VariableElement collectionField) {
-        String typeName = embeddableType.getQualifiedName().toString();
-        if (processedTypes.contains(typeName)) return;
-        processedTypes.add(typeName);
+        processEmbeddedInternal(attribute, ownerEntity, processedTypes, true, "", attribute.name(), nameOverrides, tableOverrides, assocOverrides);
 
-        AttributeDescriptor collectionDescriptor = (collectionField != null) ? new FieldAttributeDescriptor(collectionField, typeUtils, elementUtils) : null;
+        List<ColumnModel> pksAfter = context.findAllPrimaryKeyColumns(ownerEntity);
+        List<String> newPkColumnNames = pksAfter.stream()
+            .filter(c -> !pksBefore.contains(c))
+            .map(ColumnModel::getColumnName)
+            .toList();
 
-        String effectivePrefix = (prefix != null ? prefix : "")
-                + (collectionDescriptor != null ? collectionDescriptor.name() + "_" : "");
-
-        Map<String, String> attrNameOverrides = new HashMap<>();
-        Map<String, String> attrTableOverrides = new HashMap<>();
-        Map<String, List<JoinColumn>> assocOverrides = (collectionDescriptor != null)
-                ? extractOverrides(collectionDescriptor, attrNameOverrides, attrTableOverrides)
-                : Collections.emptyMap();
-
-        List<AttributeDescriptor> embeddedDescriptors = descriptorFactory.createDescriptors(embeddableType);
-
-        for (AttributeDescriptor embeddedDescriptor : embeddedDescriptors) {
-            if (embeddedDescriptor.hasAnnotation(Transient.class)) continue;
-
-            String attributeName = embeddedDescriptor.name();
-
-            if (embeddedDescriptor.hasAnnotation(Embedded.class)) {
-                String childPrefix = attributeName + ".";
-                Map<String, String> childNameOverrides = filterAndRemapOverrides(attrNameOverrides, childPrefix);
-                Map<String, String> childTableOverrides = filterAndRemapOverrides(attrTableOverrides, childPrefix);
-                Map<String, List<JoinColumn>> childAssocOverrides = filterAndRemapAssocOverrides(assocOverrides, childPrefix);
-
-                processEmbeddedInternal(embeddedDescriptor, ownerCollectionTable, processedTypes, false, effectivePrefix, childNameOverrides, childTableOverrides, childAssocOverrides);
-            } else if (embeddedDescriptor.hasAnnotation(ManyToOne.class) || embeddedDescriptor.hasAnnotation(OneToOne.class)) {
-                String childPrefix = attributeName + ".";
-                Map<String, List<JoinColumn>> childAssocOverrides =
-                        filterAndRemapAssocOverrides(assocOverrides, childPrefix);
-                processEmbeddedRelationship(embeddedDescriptor, ownerCollectionTable, childAssocOverrides, effectivePrefix);
-            } else {
-                ColumnModel column = columnHandler.createFromAttribute(embeddedDescriptor, ownerCollectionTable, attrNameOverrides);
-                if (column != null) {
-                    String attrName = embeddedDescriptor.name();
-
-                    String overrideName = attrNameOverrides.get(attrName);
-                    boolean hasOverrideName = (overrideName != null && !overrideName.isEmpty());
-                    Column leafColAnn = embeddedDescriptor.getAnnotation(Column.class);
-                    boolean hasExplicitLeafName = (leafColAnn != null && !leafColAnn.name().isEmpty());
-
-                    String targetTable = attrTableOverrides.get(attrName);
-                    if (targetTable != null && !targetTable.isEmpty()) {
-                        boolean isValidTable = ownerCollectionTable.getTableName().equals(targetTable) ||
-                                ownerCollectionTable.getSecondaryTables().stream().anyMatch(st -> st.getName().equals(targetTable));
-                        if (isValidTable) {
-                            column.setTableName(targetTable);
-                        } else {
-                            context.getMessager().printMessage(javax.tools.Diagnostic.Kind.WARNING,
-                                    "AttributeOverride.table '" + targetTable + "' is not a primary/secondary table of " +
-                                            ownerCollectionTable.getEntityName() + ". Falling back to " + column.getTableName(),
-                                    collectionDescriptor != null ? collectionDescriptor.elementForDiagnostics() : embeddableType);
-                        }
-                    }
-
-                    if (!(hasOverrideName || hasExplicitLeafName)) {
-                        column.setColumnName(effectivePrefix + column.getColumnName());
-                    }
-
-                    if (!ownerCollectionTable.hasColumn(column.getTableName(), column.getColumnName())) {
-                        ownerCollectionTable.putColumn(column);
-                    }
-                }
-            }
+        if (!newPkColumnNames.isEmpty()) {
+            context.registerPkAttributeColumns(ownerEntity.getFqcn(), attribute.name(), newPkColumnNames);
         }
-        processedTypes.remove(typeName);
     }
 
     private void processEmbeddedInternal(
@@ -135,7 +68,8 @@ public class EmbeddedHandler {
             EntityModel ownerEntity,
             Set<String> processedTypes,
             boolean isPrimaryKey,
-            String parentPrefix,
+            String parentColumnPrefix,
+            String parentAttributePath,
             Map<String, String> nameOverrides,
             Map<String, String> tableOverrides,
             Map<String, List<JoinColumn>> assocOverrides) {
@@ -149,36 +83,34 @@ public class EmbeddedHandler {
         if (processedTypes.contains(typeName)) return;
         processedTypes.add(typeName);
 
-        String prefix = parentPrefix + attribute.name() + "_";
+        String columnPrefix = parentColumnPrefix.isEmpty() ? "" : parentColumnPrefix + "_";
 
         List<AttributeDescriptor> embeddedDescriptors = descriptorFactory.createDescriptors(embeddableType);
 
         for (AttributeDescriptor embeddedDescriptor : embeddedDescriptors) {
             if (embeddedDescriptor.hasAnnotation(Transient.class)) continue;
 
-            String attrName = embeddedDescriptor.name();
+            String currentAttributeName = embeddedDescriptor.name();
+            String currentAttributePath = parentAttributePath.isEmpty() ? currentAttributeName : parentAttributePath + "." + currentAttributeName;
 
             if (embeddedDescriptor.hasAnnotation(Embedded.class)) {
-                String childPrefix = attrName + ".";
-                Map<String, String> childNameOverrides = filterAndRemapOverrides(nameOverrides, childPrefix);
-                Map<String, String> childTableOverrides = filterAndRemapOverrides(tableOverrides, childPrefix);
-                Map<String, List<JoinColumn>> childAssocOverrides = filterAndRemapAssocOverrides(assocOverrides, childPrefix);
+                Map<String, String> childNameOverrides = filterAndRemapOverrides(nameOverrides, currentAttributeName + ".");
+                Map<String, String> childTableOverrides = filterAndRemapOverrides(tableOverrides, currentAttributeName + ".");
+                Map<String, List<JoinColumn>> childAssocOverrides = filterAndRemapAssocOverrides(assocOverrides, currentAttributeName + ".");
 
-                processEmbeddedInternal(embeddedDescriptor, ownerEntity, processedTypes, isPrimaryKey, prefix, childNameOverrides, childTableOverrides, childAssocOverrides);
+                processEmbeddedInternal(embeddedDescriptor, ownerEntity, processedTypes, isPrimaryKey, columnPrefix + currentAttributeName, currentAttributePath, childNameOverrides, childTableOverrides, childAssocOverrides);
             } else if (embeddedDescriptor.hasAnnotation(ManyToOne.class) || embeddedDescriptor.hasAnnotation(OneToOne.class)) {
-                String childPrefix = attrName + ".";
-                Map<String, List<JoinColumn>> childAssocOverrides =
-                        filterAndRemapAssocOverrides(assocOverrides, childPrefix);
-                processEmbeddedRelationship(embeddedDescriptor, ownerEntity, childAssocOverrides, prefix);
+                Map<String, List<JoinColumn>> childAssocOverrides = filterAndRemapAssocOverrides(assocOverrides, currentAttributeName + ".");
+                processEmbeddedRelationship(embeddedDescriptor, ownerEntity, childAssocOverrides, columnPrefix);
             } else {
                 ColumnModel column = columnHandler.createFromAttribute(embeddedDescriptor, ownerEntity, nameOverrides);
                 if (column != null) {
-                    String overrideName = nameOverrides.get(attrName);
+                    String overrideName = nameOverrides.get(currentAttributeName);
                     boolean hasOverrideName = (overrideName != null && !overrideName.isEmpty());
                     Column leafColAnn = embeddedDescriptor.getAnnotation(Column.class);
                     boolean hasExplicitLeafName = (leafColAnn != null && !leafColAnn.name().isEmpty());
 
-                    String targetTable = tableOverrides.get(attrName);
+                    String targetTable = tableOverrides.get(currentAttributeName);
                     if (targetTable != null && !targetTable.isEmpty()) {
                         boolean isValidTable = ownerEntity.getTableName().equals(targetTable) ||
                                 ownerEntity.getSecondaryTables().stream().anyMatch(st -> st.getName().equals(targetTable));
@@ -193,12 +125,13 @@ public class EmbeddedHandler {
                     }
 
                     if (!(hasOverrideName || hasExplicitLeafName)) {
-                        column.setColumnName(prefix + column.getColumnName());
+                        column.setColumnName(columnPrefix + column.getColumnName());
                     }
 
                     if (isPrimaryKey) {
                         column.setPrimaryKey(true);
                         column.setNullable(false);
+                        context.registerPkAttributeColumns(ownerEntity.getFqcn(), currentAttributePath, List.of(column.getColumnName()));
                     }
 
                     if (!ownerEntity.hasColumn(column.getTableName(), column.getColumnName())) {
@@ -280,7 +213,7 @@ public class EmbeddedHandler {
                 }
             }
 
-            if (!relationshipHandler.allSameConstraintMode(joinColumns)) {
+            if (!support.allSameConstraintMode(joinColumns)) {
                 context.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
                         "All @JoinColumn.foreignKey.value must be identical for composite FK on embedded relationship " + attribute.name(),
                         attribute.elementForDiagnostics());
@@ -319,13 +252,8 @@ public class EmbeddedHandler {
             boolean colUnique = (oneToOne != null && mapsId == null && (joinColumns.isEmpty() ? refPkList.size() == 1 : joinColumns.size() == 1))
                     && (jc != null ? jc.unique() : true);
 
+            // @MapsId PK 승격은 지연 단계(RelationshipHandler)에서 처리
             boolean makePk = false;
-            if (mapsId != null) {
-                if (mapsIdAttr == null) makePk = true;
-                else {
-                    makePk = pkCol.getColumnName().equalsIgnoreCase(mapsIdAttr) || pkCol.getColumnName().endsWith("_" + mapsIdAttr);
-                }
-            }
 
             String fkTable = resolveJoinColumnTable(jc, ownerEntity);
             if (fkTableName == null) {
@@ -340,8 +268,8 @@ public class EmbeddedHandler {
                     .columnName(fkName)
                     .tableName(fkTable)
                     .javaType(pkCol.getJavaType())
-                    .isPrimaryKey(makePk)
-                    .isNullable(!makePk && colNullable)
+                    .isPrimaryKey(false)
+                    .isNullable(colNullable)
                     // 컬럼 레벨 unique 제거 - 제약 기반으로만 처리
                     .generationStrategy(GenerationStrategy.NONE)
                     .build();
@@ -375,7 +303,7 @@ public class EmbeddedHandler {
         if (oneToOne != null && mapsId == null && fkColumnNames.size() == 1) {
             boolean isJoinColumnUnique = joinColumns.isEmpty() || joinColumns.get(0).unique();
             if (isJoinColumnUnique) {
-                if (!relationshipHandler.coveredByPkOrUnique(ownerEntity, fkTableBase, fkColumnNames)) {
+                if (!support.coveredByPkOrUnique(ownerEntity, fkTableBase, fkColumnNames)) {
                     String uqName = context.getNaming().uqName(fkTableBase, fkColumnNames);
                     ownerEntity.getConstraints().putIfAbsent(uqName, ConstraintModel.builder()
                             .name(uqName)
@@ -405,7 +333,7 @@ public class EmbeddedHandler {
                 .build();
         ownerEntity.getRelationships().put(relationship.getConstraintName(), relationship);
 
-        relationshipHandler.addForeignKeyIndex(ownerEntity, fkColumnNames, fkTableBase);
+        support.addForeignKeyIndex(ownerEntity, fkColumnNames, fkTableBase);
     }
 
     private Optional<TypeElement> resolveTargetEntityForEmbedded(AttributeDescriptor attr, ManyToOne m2o, OneToOne o2o) {

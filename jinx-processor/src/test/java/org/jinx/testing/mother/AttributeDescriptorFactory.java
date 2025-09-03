@@ -15,14 +15,14 @@ import static org.mockito.Mockito.*;
 public final class AttributeDescriptorFactory {
     public static AttributeDescriptor setOf(String elemJavaType, String name, Annotation... anns) {
         AttributeDescriptor ad = mock(AttributeDescriptor.class);
-        when(ad.name()).thenReturn(name);
+        lenient().when(ad.name()).thenReturn(name);
 
         // 타입 모킹
         DeclaredType declared = mock(DeclaredType.class);
         TypeMirror elem = mock(TypeMirror.class);
         lenient().when(elem.toString()).thenReturn(elemJavaType);
-        doReturn(List.of(elem)).when(declared).getTypeArguments();
-        when(ad.type()).thenReturn(declared);
+        lenient().doReturn(List.of(elem)).when(declared).getTypeArguments();
+        lenient().when(ad.type()).thenReturn(declared);
 
         // getAnnotation(Class<A>) 응답 로직 (★ 중요한 부분)
         when(ad.getAnnotation(ArgumentMatchers.<Class<? extends Annotation>>any()))
@@ -81,7 +81,7 @@ public final class AttributeDescriptorFactory {
      * 진단용 Element를 포함한 AttributeDescriptor 생성
      */
     public static AttributeDescriptor withDiagnostic(AttributeDescriptor base, VariableElement diagnostic) {
-        when(base.elementForDiagnostics()).thenReturn(diagnostic);
+        lenient().when(base.elementForDiagnostics()).thenReturn(diagnostic);
         return base;
     }
     

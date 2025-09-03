@@ -5,6 +5,7 @@ import org.jinx.context.ProcessingContext;
 import org.jinx.descriptor.AttributeDescriptor;
 import org.jinx.handler.builtins.SecondaryTableAdapter;
 import org.jinx.handler.builtins.TableAdapter;
+import org.jinx.handler.relationship.RelationshipSupport;
 import org.jinx.model.*;
 
 import javax.lang.model.element.*;
@@ -23,6 +24,7 @@ public class EntityHandler {
     private final ElementCollectionHandler elementCollectionHandler;
     private final TableGeneratorHandler tableGeneratorHandler;
     private final RelationshipHandler relationshipHandler;
+    private final RelationshipSupport relationshipSupport;
 
     public EntityHandler(ProcessingContext context, ColumnHandler columnHandler, EmbeddedHandler embeddedHandler,
                          ConstraintHandler constraintHandler, SequenceHandler sequenceHandler,
@@ -36,6 +38,7 @@ public class EntityHandler {
         this.elementCollectionHandler = elementCollectionHandler;
         this.tableGeneratorHandler = tableGeneratorHandler;
         this.relationshipHandler = relationshipHandler;
+        this.relationshipSupport = new RelationshipSupport(context);
     }
 
     public void handle(TypeElement typeElement) {
@@ -81,8 +84,6 @@ public class EntityHandler {
         }
     }
 
-    // ... (runDeferredJoinedFks and other methods) ...
-
     private void registerSecondaryTableNames(List<SecondaryTable> secondaryTablesAnns, EntityModel entity) {
         for (SecondaryTable stAnn : secondaryTablesAnns) {
             SecondaryTableModel stModel = SecondaryTableModel.builder()
@@ -112,7 +113,7 @@ public class EntityHandler {
         }
     }
 
-    public void runDeferredJoinedFks() {
+    public void runDeferredPostProcessing() {
         int size = context.getDeferredEntities().size();
         for (int i = 0; i < size; i++) {
             EntityModel child = context.getDeferredEntities().poll();
@@ -127,15 +128,33 @@ public class EntityHandler {
                 context.getDeferredEntities().offer(child);
                 continue;
             }
-            
+
             // Process JOINED inheritance
             processInheritanceJoin(te, child);
-            
+
             // Process @MapsId attributes if any
             if (hasMapsIdAttributes(te, child)) {
-                processMapsIdAttributes(te, child);
+                boolean needsRetry = hasUnresolvedMapsIdDeps(te, child);
+                
+                if (!needsRetry) {
+                    // 의존성이 모두 준비됨 → 실제 처리 진행
+                    relationshipHandler.processMapsIdAttributes(te, child);
+                }
+
+                // 이번 라운드에서는 일단 제거 (성공/실패 관계없이)
+                context.getDeferredNames().remove(childName);
+
+                // 재시도가 필요하고 아직 유효한 엔티티라면 다시 큐에 추가
+                if (needsRetry && child.isValid()) {
+                    context.getDeferredEntities().offer(child);
+                    context.getDeferredNames().add(childName);
+                }
+            } else {
+                // If it was in the queue but not for @MapsId, it must be for another reason
+                // (like JOINED) which should have been handled already. We can remove it.
+                context.getDeferredNames().remove(childName);
             }
-            
+
             // 부모가 여전히 없으면 processInheritanceJoin 내부에서 다시 enqueue
             // 하지만 여기서는 '이번 라운드' 스냅샷만 처리해서 무한루프 방지
         }
@@ -310,7 +329,7 @@ public class EntityHandler {
         ensureChildPkColumnsExist(entity, tableName, childCols, parentPkCols);
         
         // FK 인덱스 생성 (PK/UNIQUE로 커버되지 않은 경우에만)
-        relationshipHandler.addForeignKeyIndex(entity, childCols, tableName);
+        relationshipSupport.addForeignKeyIndex(entity, childCols, tableName);
         
         return true;
     }
@@ -531,34 +550,61 @@ public class EntityHandler {
         return descriptors.stream()
                 .anyMatch(desc -> desc.hasAnnotation(MapsId.class) && isRelationshipAttribute(desc));
     }
-    
+
     /**
-     * Process @MapsId attributes during deferred processing
+     * @MapsId 처리 전에 의존성이 해결되지 않은 상태인지 확인
+     * 재시도가 필요한 일시적 문제인지 판단 (참조 엔티티 준비 상태만 확인)
      */
-    public void processMapsIdAttributes(TypeElement typeElement, EntityModel entity) {
-        List<AttributeDescriptor> descriptors = context.getCachedDescriptors(typeElement);
-        
-        for (AttributeDescriptor descriptor : descriptors) {
-            if (descriptor.hasAnnotation(MapsId.class) && isRelationshipAttribute(descriptor)) {
-                processMapsIdAttribute(descriptor, entity);
+    private boolean hasUnresolvedMapsIdDeps(TypeElement typeElement, EntityModel child) {
+        // 이미 invalid된 엔티티는 재시도 의미 없음
+        if (!child.isValid()) {
+            return false;
+        }
+
+        // 자기 자신의 PK는 @MapsId 승격에서 생성/승격하므로 재시도 조건에서 제외
+        // (교착 위험 방지: @MapsId 전용 PK의 경우 이 단계에서 승격됨)
+
+        // @MapsId 관계 속성들의 참조 엔티티 의존성 확인
+        List<AttributeDescriptor> mapsIdDescriptors = context.getCachedDescriptors(typeElement).stream()
+                .filter(d -> d.hasAnnotation(MapsId.class) && isRelationshipAttribute(d))
+                .toList();
+
+        for (AttributeDescriptor descriptor : mapsIdDescriptors) {
+            ManyToOne manyToOne = descriptor.getAnnotation(ManyToOne.class);
+            OneToOne oneToOne = descriptor.getAnnotation(OneToOne.class);
+
+            // 참조 엔티티 타입 해석
+            Optional<TypeElement> refElementOpt = 
+                    relationshipSupport.resolveTargetEntity(descriptor, manyToOne, oneToOne, null, null);
+            
+            if (refElementOpt.isEmpty()) {
+                return true; // target TypeElement 아직 없음 → 재시도 필요
+            }
+
+            TypeElement refElement = refElementOpt.get();
+            String refEntityName = refElement.getQualifiedName().toString();
+            EntityModel refEntity = context.getSchemaModel().getEntities().get(refEntityName);
+
+            // 참조 엔티티가 아직 등록되지 않음
+            if (refEntity == null) {
+                return true; // target EntityModel 아직 없음 → 재시도 필요
+            }
+
+            // 참조 엔티티가 invalid 상태 (영구 오류)
+            if (!refEntity.isValid()) {
+                return false; // 영구 실패 → 재시도X
+            }
+
+            // 참조 엔티티의 PK가 아직 확정되지 않음
+            if (context.findAllPrimaryKeyColumns(refEntity).isEmpty()) {
+                return true; // target PK 미확정 → 재시도 필요
             }
         }
+
+        return false; // 준비 완료 → 이번 라운드에서 승격 처리
     }
     
-    private void processMapsIdAttribute(AttributeDescriptor descriptor, EntityModel entity) {
-        MapsId mapsId = descriptor.getAnnotation(MapsId.class);
-        String mapsIdValue = (mapsId != null && !mapsId.value().isEmpty()) ? mapsId.value() : null;
-        
-        // Find FK columns created by the relationship
-        // Promote them to PK status based on @MapsId specification
-        // This logic would be similar to what's in RelationshipHandler.processToOneRelationship
-        
-        // TODO: Implement the PK promotion logic
-        // For now, just mark that this entity needs MapsId processing
-        context.getMessager().printMessage(Diagnostic.Kind.NOTE,
-                "Processing @MapsId for attribute: " + descriptor.name() + " (value=" + mapsIdValue + ")",
-                descriptor.elementForDiagnostics());
-    }
+    
 
     private ColumnModel resolveParentRef(List<ColumnModel> parentPkCols, PrimaryKeyJoinColumn a, int idx) {
         if (!a.referencedColumnName().isEmpty()) {

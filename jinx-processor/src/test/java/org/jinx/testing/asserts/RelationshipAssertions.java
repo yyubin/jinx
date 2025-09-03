@@ -27,4 +27,23 @@ public final class RelationshipAssertions {
         assertEquals(refCols, r.getReferencedColumns());
         return r;
     }
+
+    public static RelationshipModel assertFkByStructure(
+            EntityModel e,
+            String table, List<String> cols,
+            String refTable, List<String> refCols,
+            RelationshipType type
+    ) {
+        return e.getRelationships().values().stream()
+                .filter(r -> r.getType() == type)
+                .filter(r -> table.equals(r.getTableName()))
+                .filter(r -> cols.equals(r.getColumns()))
+                .filter(r -> refTable.equals(r.getReferencedTable()))
+                .filter(r -> refCols.equals(r.getReferencedColumns()))
+                .findFirst()
+                .orElseThrow(() ->
+                        new AssertionError("missing relationship by structure: " +
+                                type + " " + table + cols + " -> " + refTable + refCols +
+                                ", keys=" + e.getRelationships().keySet()));
+    }
 }

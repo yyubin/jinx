@@ -169,6 +169,62 @@ public class ElementCollectionHandler {
         }
     }
 
+    /**
+     * TypeMirror 기반의 synthetic AttributeDescriptor 구현
+     * @Embeddable 값 타입을 EmbeddedHandler에 전달할 때 사용
+     */
+    private static class SyntheticTypeAttributeDescriptor implements AttributeDescriptor {
+        private final String name;
+        private final TypeMirror type;
+        private final Element elementForDiagnostics;
+
+        SyntheticTypeAttributeDescriptor(String name, TypeMirror type, Element elementForDiagnostics) {
+            this.name = name;
+            this.type = type;
+            this.elementForDiagnostics = elementForDiagnostics;
+        }
+
+        @Override
+        public String name() {
+            return name;
+        }
+
+        @Override
+        public TypeMirror type() {
+            return type;
+        }
+
+        @Override
+        public boolean isCollection() {
+            return false;
+        }
+
+        @Override
+        public java.util.Optional<DeclaredType> genericArg(int idx) {
+            return java.util.Optional.empty();
+        }
+
+        @Override
+        public <A extends java.lang.annotation.Annotation> A getAnnotation(Class<A> annotationClass) {
+            return null;
+        }
+
+        @Override
+        public boolean hasAnnotation(Class<? extends java.lang.annotation.Annotation> annotationClass) {
+            return false;
+        }
+
+        @Override
+        public Element elementForDiagnostics() {
+            return elementForDiagnostics;
+        }
+
+        @Override
+        public AccessKind accessKind() {
+            return AccessKind.FIELD;
+        }
+    }
+
     public ElementCollectionHandler(ProcessingContext context, ColumnHandler columnHandler, EmbeddedHandler embeddedHandler) {
         this.context = context;
         this.columnHandler = columnHandler;
@@ -344,7 +400,12 @@ public class ElementCollectionHandler {
         if (valueElement != null && valueElement.getAnnotation(Embeddable.class) != null) {
             // 값이 Embeddable 타입인 경우 - 현재는 임시 EntityModel에 직접 추가
             // TODO: EmbeddedHandler도 2단계 패턴으로 변경 후 검증 결과 통합 필요
-            embeddedHandler.processEmbeddableFields((TypeElement) valueElement, collectionEntity, new HashSet<>(), null, null);
+            AttributeDescriptor valueAttribute = new SyntheticTypeAttributeDescriptor(
+                attribute.name() + "_value",   // 적절한 진단용/로깅용 이름
+                valueType,                     // DeclaredType 등 실제 값 타입
+                attribute.elementForDiagnostics()
+            );
+            embeddedHandler.processEmbedded(valueAttribute, collectionEntity, new HashSet<>());
             // TODO: Embeddable 필드들의 PK 승격 처리 필요 (Set의 경우)
         } else {
             // 값이 기본 타입인 경우

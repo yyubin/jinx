@@ -6,7 +6,9 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -24,4 +26,9 @@ public class RelationshipModel {
     @Builder.Default private List<CascadeType> cascadeTypes = new ArrayList<>(); // Added for cascade
     @Builder.Default private boolean orphanRemoval = false; // Added for orphanRemoval
     @Builder.Default private FetchType fetchType = FetchType.LAZY; // Added for fetch
+    private String sourceAttributeName; // 소스 엔티티의 속성명
+    
+    // @MapsId 매핑 정보 (지연 처리 패스에서 설정)
+    @Builder.Default private Map<String, String> mapsIdBindings = new HashMap<>(); // FK컬럼 → 소유 PK컬럼
+    private String mapsIdKeyPath; // @MapsId.value() - 빈 문자열이면 전체 PK 공유, 속성명이면 특정 속성 매핑
 }

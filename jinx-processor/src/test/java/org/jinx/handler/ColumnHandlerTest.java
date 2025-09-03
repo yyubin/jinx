@@ -38,8 +38,6 @@ class ColumnHandlerTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        // ColumnHandler는 내부적으로 Resolver를 생성하므로,
-        // 이 테스트에서는 ColumnHandler가 올바른 Resolver를 사용하는지 결과물을 통해 검증합니다.
         columnHandler = new ColumnHandler(context, sequenceHandler);
     }
 
