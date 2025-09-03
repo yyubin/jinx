@@ -5,11 +5,20 @@ import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 
 import java.lang.annotation.Annotation;
+import java.util.Map;
 
 import static org.mockito.Mockito.*;
 
 public final class AnnotationMocks {
     private AnnotationMocks() {}
+
+    public static ForeignKey foreignKey(String name, ConstraintMode mode) {
+        return AnnotationProxies.of(ForeignKey.class, Map.of(
+                "name", name == null ? "" : name,
+                "value", mode == null ? ConstraintMode.PROVIDER_DEFAULT : mode,
+                "foreignKeyDefinition", ""
+        ));
+    }
 
     public static JoinColumn joinColumn(String name, String referencedColumnName) {
         JoinColumn jc = mock(JoinColumn.class);
@@ -18,6 +27,14 @@ public final class AnnotationMocks {
         // 필요없는 속성은 기본값
         lenient().when(jc.nullable()).thenReturn(true);
         lenient().when(jc.unique()).thenReturn(false);
+        lenient().when(jc.foreignKey())
+                .thenReturn(foreignKey("", ConstraintMode.PROVIDER_DEFAULT));
+        return jc;
+    }
+
+    public static JoinColumn joinColumnWithFk(String name, String ref, String fkName, ConstraintMode mode) {
+        JoinColumn jc = joinColumn(name, ref);
+        lenient().when(jc.foreignKey()).thenReturn(foreignKey(fkName, mode));
         return jc;
     }
 

@@ -198,7 +198,7 @@ public class RelationshipHandler {
     /**
      * 개별 @MapsId 속성 처리
      */
-    private void processMapsIdAttribute(AttributeDescriptor descriptor, EntityModel ownerEntity) {
+    public void processMapsIdAttribute(AttributeDescriptor descriptor, EntityModel ownerEntity) {
         MapsId mapsId = descriptor.getAnnotation(MapsId.class);
         String keyPath = (mapsId != null && !mapsId.value().isEmpty()) ? mapsId.value() : "";
 

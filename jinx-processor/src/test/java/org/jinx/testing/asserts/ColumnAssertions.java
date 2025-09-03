@@ -23,9 +23,30 @@ public final class ColumnAssertions {
         return c;
     }
 
+    public static ColumnModel assertNonPkWithType(EntityModel e, String table, String column, String javaType) {
+        ColumnModel c = assertExists(e, table, column);
+        assertEquals(javaType, c.getJavaType(), () -> "type mismatch at " + table + "::" + column);
+        assertFalse(c.isPrimaryKey(), () -> "expected NON-PK at " + table + "::" + column);
+        return c;
+    }
+
+    public static ColumnModel assertPkNonNull(EntityModel e, String table, String column, String javaType) {
+        ColumnModel c = assertExists(e, table, column);
+        assertEquals(javaType, c.getJavaType(), () -> "type mismatch at " + table + "::" + column);
+        assertTrue(c.isPrimaryKey(), () -> "expected PK at " + table + "::" + column);
+        assertFalse(c.isNullable(), () -> "expected NOT NULL at " + table + "::" + column);
+        return c;
+    }
+
     public static ColumnModel assertExists(EntityModel e, String fullKey) {
         ColumnModel c = e.getColumns().get(fullKey);
         assertNotNull(c, () -> "missing: " + fullKey + " keys=" + e.getColumns().keySet());
+        return c;
+    }
+
+    public static ColumnModel assertExists(EntityModel e, String table, String column) {
+        ColumnModel c = e.findColumn(table, column);
+        assertNotNull(c, () -> "missing: " + table + "::" + column + " keys=" + e.getColumns().keySet());
         return c;
     }
 }

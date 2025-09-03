@@ -36,4 +36,14 @@ public final class EntityModelMother {
                 .build());
         return e;
     }
+
+    public static ColumnModel pkColumn(String tableName, String columnName, String javaType) {
+        return ColumnModel.builder()
+                .tableName(tableName)
+                .columnName(columnName)
+                .javaType(javaType)
+                .isPrimaryKey(true)
+                .isNullable(false)
+                .build();
+    }
 }
