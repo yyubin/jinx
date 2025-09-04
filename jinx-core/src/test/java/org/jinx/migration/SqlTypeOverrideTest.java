@@ -123,7 +123,7 @@ class SqlTypeOverrideTest {
                 .javaType("java.lang.Long")
                 .isPrimaryKey(true)
                 .generationStrategy(org.jinx.model.GenerationStrategy.IDENTITY)
-                .sqlTypeOverride("bigint auto_increment")
+                .sqlTypeOverride("bigint")  // AUTO_INCREMENT 없이 테스트
                 .isNullable(false)
                 .build();
 
@@ -131,7 +131,8 @@ class SqlTypeOverrideTest {
         String dropSql = dialect.getDropPrimaryKeySql("test_table", List.of(identityColumn));
 
         // Assert
-        assertThat(dropSql).contains("bigint auto_increment");
+        assertThat(dropSql).contains("MODIFY COLUMN `id` bigint");
+        assertThat(dropSql.toLowerCase()).doesNotContain("auto_increment");
         assertThat(dropSql).doesNotContain("BIGINT"); // 기본 매핑이 사용되지 않아야 함
         assertThat(dropSql).contains("NOT NULL");
         assertThat(dropSql).contains("DROP PRIMARY KEY");
@@ -223,6 +224,115 @@ class SqlTypeOverrideTest {
         // Assert
         assertThat(ddl).contains("varchar(42)");
         assertThat(ddl).doesNotContain("  varchar(42)  ");
+        assertThat(ddl).contains("NOT NULL");
+    }
+
+    @Test
+    @DisplayName("PK 드랍 시 sqlTypeOverride에서 AUTO_INCREMENT가 제거되어야 한다")
+    void getDropPrimaryKeySql_shouldRemoveAutoIncrementFromOverride() {
+        // Arrange
+        ColumnModel col = ColumnModel.builder()
+                .columnName("id")
+                .javaType("java.lang.Long")
+                .isPrimaryKey(true)
+                .generationStrategy(org.jinx.model.GenerationStrategy.IDENTITY)
+                .sqlTypeOverride("BIGINT AUTO_INCREMENT")
+                .isNullable(false)
+                .build();
+
+        // Act
+        String dropSql = dialect.getDropPrimaryKeySql("test_table", List.of(col));
+
+        // Assert
+        assertThat(dropSql).contains("MODIFY COLUMN `id` BIGINT"); // AUTO_INCREMENT 제거됨
+        assertThat(dropSql).doesNotContain("AUTO_INCREMENT");
+        assertThat(dropSql).contains("NOT NULL");
+        assertThat(dropSql).contains("DROP PRIMARY KEY");
+    }
+
+    @Test
+    @DisplayName("PK 드랍 시 대소문자 무관하게 auto_increment가 제거되어야 한다")
+    void getDropPrimaryKeySql_shouldRemoveAutoIncrementCaseInsensitive() {
+        // Arrange
+        ColumnModel col = ColumnModel.builder()
+                .columnName("id")
+                .javaType("java.lang.Long")
+                .isPrimaryKey(true)
+                .generationStrategy(org.jinx.model.GenerationStrategy.IDENTITY)
+                .sqlTypeOverride("bigint   Auto_Increment   NOT NULL")
+                .isNullable(false)
+                .build();
+
+        // Act
+        String dropSql = dialect.getDropPrimaryKeySql("test_table", List.of(col));
+
+        // Assert
+        assertThat(dropSql).contains("MODIFY COLUMN `id` bigint NOT NULL"); // 공백 정리됨
+        assertThat(dropSql).doesNotContain("Auto_Increment");
+        assertThat(dropSql).contains("DROP PRIMARY KEY");
+    }
+
+    @Test
+    @DisplayName("sqlTypeOverride에 AUTO_INCREMENT가 있으면 중복으로 추가하지 않아야 한다")
+    void getColumnDefinitionSql_withAutoIncrementInOverride_shouldNotDuplicate() {
+        // Arrange
+        ColumnModel column = ColumnModel.builder()
+                .columnName("id")
+                .javaType("java.lang.Long")
+                .generationStrategy(org.jinx.model.GenerationStrategy.IDENTITY)
+                .sqlTypeOverride("BIGINT AUTO_INCREMENT")
+                .isPrimaryKey(true)
+                .isNullable(false)
+                .build();
+
+        // Act
+        String ddl = dialect.getColumnDefinitionSql(column);
+
+        // Assert
+        assertThat(ddl).isEqualTo("`id` BIGINT AUTO_INCREMENT NOT NULL");
+        assertThat(ddl).doesNotContain("AUTO_INCREMENT AUTO_INCREMENT"); // 중복 방지
+    }
+
+    @Test
+    @DisplayName("sqlTypeOverride에 대소문자 무관 auto_increment가 있으면 중복 방지해야 한다")
+    void getColumnDefinitionSql_withCaseInsensitiveAutoIncrementInOverride_shouldNotDuplicate() {
+        // Arrange
+        ColumnModel column = ColumnModel.builder()
+                .columnName("id")
+                .javaType("java.lang.Long")
+                .generationStrategy(org.jinx.model.GenerationStrategy.IDENTITY)
+                .sqlTypeOverride("bigint auto_increment")
+                .isPrimaryKey(true)
+                .isNullable(false)
+                .build();
+
+        // Act
+        String ddl = dialect.getColumnDefinitionSql(column);
+
+        // Assert
+        assertThat(ddl).contains("bigint auto_increment");
+        assertThat(ddl).doesNotContain("auto_increment AUTO_INCREMENT"); // 중복 방지
+    }
+
+    @Test
+    @DisplayName("sqlTypeOverride에 AUTO_INCREMENT가 없으면 IDENTITY 전략 시 추가해야 한다")
+    void getColumnDefinitionSql_withoutAutoIncrementInOverride_shouldAddForIdentity() {
+        // Arrange
+        ColumnModel column = ColumnModel.builder()
+                .columnName("id")
+                .javaType("java.lang.Long")
+                .generationStrategy(org.jinx.model.GenerationStrategy.IDENTITY)
+                .sqlTypeOverride("BIGINT UNSIGNED")
+                .isPrimaryKey(true)
+                .isNullable(false)
+                .build();
+
+        // Act
+        String ddl = dialect.getColumnDefinitionSql(column);
+
+        // Assert
+        assertThat(ddl).contains("BIGINT UNSIGNED");
+        assertThat(ddl).contains("AUTO_INCREMENT"); // IDENTITY 전략이므로 추가됨
         assertThat(ddl).contains("NOT NULL");
     }
 }

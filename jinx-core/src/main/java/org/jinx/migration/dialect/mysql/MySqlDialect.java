@@ -142,6 +142,11 @@ public class MySqlDialect extends AbstractDialect
                 } else {
                     sqlTypeForModify = javaType.getSqlType(col.getLength(), col.getPrecision(), col.getScale());
                 }
+                // PK 드랍 전 AUTO_INCREMENT 제거 (MySQL에서 필수)
+                sqlTypeForModify = sqlTypeForModify
+                        .replaceAll("(?i)\\bauto_increment\\b", "")
+                        .replaceAll("\\s{2,}", " ")
+                        .trim();
                 sb.append("ALTER TABLE ").append(quoteIdentifier(table))
                         .append(" MODIFY COLUMN ").append(quoteIdentifier(col.getColumnName())).append(" ")
                         .append(sqlTypeForModify);
@@ -164,8 +169,11 @@ public class MySqlDialect extends AbstractDialect
 
         String sqlType;
         // If sqlTypeOverride is specified, use it directly
+        boolean overrideContainsIdentity = false;
         if (c.getSqlTypeOverride() != null && !c.getSqlTypeOverride().trim().isEmpty()) {
-            sqlType = c.getSqlTypeOverride().trim();
+            String override = c.getSqlTypeOverride().trim();
+            overrideContainsIdentity = override.matches("(?i).*\\bauto_increment\\b.*");
+            sqlType = override;
         } else if (c.isLob()) {
             sqlType = c.getJavaType().equals("java.lang.String") ? "TEXT" : "BLOB";
         } else if (c.isVersion()) {
@@ -186,7 +194,7 @@ public class MySqlDialect extends AbstractDialect
 
         if (!c.isNullable()) sb.append(" NOT NULL");
 
-        if (c.getGenerationStrategy() == GenerationStrategy.IDENTITY) {
+        if (c.getGenerationStrategy() == GenerationStrategy.IDENTITY && !overrideContainsIdentity) {
             sb.append(getIdentityClause(c));
         } else if (c.isManualPrimaryKey()) {
             sb.append(" PRIMARY KEY");
