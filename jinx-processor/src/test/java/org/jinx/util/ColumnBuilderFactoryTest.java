@@ -136,4 +136,44 @@ class ColumnBuilderFactoryTest {
         // Assert
         assertThat(model.isPrimaryKey()).isTrue();
     }
+
+    @Test
+    @DisplayName("@Column(columnDefinition)이 있으면 sqlTypeOverride로 설정해야 한다")
+    void from_withColumnDefinition_setsSqlTypeOverride() {
+        // Arrange: @Column(columnDefinition) 애너테이션이 있는 필드
+        Column mockColumn = mock(Column.class);
+        when(mockColumn.columnDefinition()).thenReturn("varchar(42)");
+        when(mockColumn.name()).thenReturn("");
+        when(mockField.getAnnotation(Column.class)).thenReturn(mockColumn);
+
+        // Act
+        ColumnModel.ColumnModelBuilder builder = ColumnBuilderFactory.from(
+                mockField, null, "testField", mockContext, Collections.emptyMap()
+        );
+        ColumnModel model = builder.build();
+
+        // Assert
+        assertThat(model.getSqlTypeOverride()).isEqualTo("varchar(42)");
+        assertThat(model.getDefaultValue()).isNull(); // defaultValue는 null이어야 함
+    }
+
+    @Test
+    @DisplayName("@Column(columnDefinition)이 빈 문자열이면 sqlTypeOverride를 null로 설정해야 한다")
+    void from_withEmptyColumnDefinition_setsNullSqlTypeOverride() {
+        // Arrange: @Column(columnDefinition="") 애너테이션이 있는 필드
+        Column mockColumn = mock(Column.class);
+        when(mockColumn.columnDefinition()).thenReturn("");
+        when(mockColumn.name()).thenReturn("");
+        when(mockField.getAnnotation(Column.class)).thenReturn(mockColumn);
+
+        // Act
+        ColumnModel.ColumnModelBuilder builder = ColumnBuilderFactory.from(
+                mockField, null, "testField", mockContext, Collections.emptyMap()
+        );
+        ColumnModel model = builder.build();
+
+        // Assert
+        assertThat(model.getSqlTypeOverride()).isNull();
+        assertThat(model.getDefaultValue()).isNull();
+    }
 }

@@ -47,6 +47,7 @@ public class ColumnModel {
     @Builder.Default private String[] mapKeyEnumValues = new String[]{}; // For @MapKeyEnumerated
     @Builder.Default private TemporalType mapKeyTemporalType = null; // For @MapKeyTemporal
     @Builder.Default private ColumnKind columnKind = ColumnKind.NORMAL;
+    @Builder.Default private String sqlTypeOverride = null; // For @Column(columnDefinition)
 
     // Discriminator metadata
     private jakarta.persistence.DiscriminatorType discriminatorType; // optional
@@ -59,6 +60,6 @@ public class ColumnModel {
         return Objects.hash(columnName, javaType, length, precision, scale, isNullable, isUnique, defaultValue,
                 temporalType, enumerationType, enumStringMapping,
                 java.util.Arrays.hashCode(enumValues), mapKeyTemporalType, java.util.Arrays.hashCode(mapKeyEnumValues),
-                columnKind, discriminatorType, columnDefinition, options);
+                columnKind, discriminatorType, columnDefinition, options, sqlTypeOverride);
     }
 }

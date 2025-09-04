@@ -110,4 +110,48 @@ class CollectionElementResolverTest {
         assertThat(result.isEnumStringMapping()).isTrue();
         assertThat(result.getEnumValues()).isEqualTo(enumConstants);
     }
+
+    @Test
+    @DisplayName("@Column(columnDefinition)이 있으면 sqlTypeOverride로 설정해야 한다")
+    void resolve_withColumnDefinition_setsSqlTypeOverride() {
+        // Arrange
+        Column mockColumn = mock(Column.class);
+        when(mockColumn.columnDefinition()).thenReturn("varchar(42)");
+        when(mockColumn.nullable()).thenReturn(true);
+        when(mockColumn.unique()).thenReturn(false);
+        when(mockColumn.length()).thenReturn(255);
+        when(mockColumn.precision()).thenReturn(0);
+        when(mockColumn.scale()).thenReturn(0);
+        when(mockField.getAnnotation(Column.class)).thenReturn(mockColumn);
+        when(mockType.toString()).thenReturn("java.lang.String");
+
+        // Act
+        ColumnModel result = resolver.resolve(mockField, mockType, "items", Collections.emptyMap());
+
+        // Assert
+        assertThat(result.getSqlTypeOverride()).isEqualTo("varchar(42)");
+        assertThat(result.getDefaultValue()).isNull(); // defaultValue는 null이어야 함
+    }
+
+    @Test
+    @DisplayName("@Column(columnDefinition)이 빈 문자열이면 sqlTypeOverride를 null로 설정해야 한다")
+    void resolve_withEmptyColumnDefinition_setsNullSqlTypeOverride() {
+        // Arrange
+        Column mockColumn = mock(Column.class);
+        when(mockColumn.columnDefinition()).thenReturn("");
+        when(mockColumn.nullable()).thenReturn(true);
+        when(mockColumn.unique()).thenReturn(false);
+        when(mockColumn.length()).thenReturn(255);
+        when(mockColumn.precision()).thenReturn(0);
+        when(mockColumn.scale()).thenReturn(0);
+        when(mockField.getAnnotation(Column.class)).thenReturn(mockColumn);
+        when(mockType.toString()).thenReturn("java.lang.String");
+
+        // Act
+        ColumnModel result = resolver.resolve(mockField, mockType, "items", Collections.emptyMap());
+
+        // Assert
+        assertThat(result.getSqlTypeOverride()).isNull();
+        assertThat(result.getDefaultValue()).isNull();
+    }
 }

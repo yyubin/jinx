@@ -476,6 +476,11 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     }
 
     private String getLiquibaseTypeName(ColumnModel c) {
+        // If sqlTypeOverride is specified, use it directly
+        if (c.getSqlTypeOverride() != null && !c.getSqlTypeOverride().trim().isEmpty()) {
+            return c.getSqlTypeOverride().trim();
+        }
+        
         return dialectBundle.liquibase()
                 .map(lb -> lb.getLiquibaseTypeName(c))
                 .orElseGet(() -> {

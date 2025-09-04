@@ -134,11 +134,26 @@ public class MySqlDialect extends AbstractDialect
     public String getDropPrimaryKeySql(String table, Collection<ColumnModel> currentColumns) {
         StringBuilder sb = new StringBuilder();
         for (ColumnModel col : currentColumns) {
-            if (col.isPrimaryKey() && col.getGenerationStrategy() == GenerationStrategy.IDENTITY) {
+            if (col.isPrimaryKey() && shouldUseAutoIncrement(col.getGenerationStrategy())) {
                 JavaTypeMapper.JavaType javaType = getJavaTypeMapper().map(col.getJavaType());
+                String sqlTypeForModify;
+                if (col.getSqlTypeOverride() != null && !col.getSqlTypeOverride().trim().isEmpty()) {
+                    sqlTypeForModify = col.getSqlTypeOverride().trim();
+                } else {
+                    sqlTypeForModify = javaType.getSqlType(col.getLength(), col.getPrecision(), col.getScale());
+                }
+                // PK 드랍 전 AUTO_INCREMENT 제거 (MySQL에서 필수)
+                sqlTypeForModify = sqlTypeForModify
+                        .replaceAll("(?i)\\bauto_increment\\b", "")
+                        .replaceAll("\\s{2,}", " ")
+                        .trim();
+                // 제거 결과가 비었으면 안전하게 기본 매핑으로 폴백
+                if (sqlTypeForModify.isEmpty()) {
+                    sqlTypeForModify = javaType.getSqlType(col.getLength(), col.getPrecision(), col.getScale());
+                }
                 sb.append("ALTER TABLE ").append(quoteIdentifier(table))
                         .append(" MODIFY COLUMN ").append(quoteIdentifier(col.getColumnName())).append(" ")
-                        .append(javaType.getSqlType(col.getLength(), col.getPrecision(), col.getScale()));
+                        .append(sqlTypeForModify);
                 if (!col.isNullable()) sb.append(" NOT NULL");
                 if (col.getDefaultValue() != null) {
                     sb.append(" DEFAULT ").append(getValueTransformer().quote(col.getDefaultValue(), javaType));
@@ -157,7 +172,13 @@ public class MySqlDialect extends AbstractDialect
         JavaTypeMapper.JavaType javaTypeMapped = javaTypeMapper.map(javaType);
 
         String sqlType;
-        if (c.isLob()) {
+        // If sqlTypeOverride is specified, use it directly
+        boolean overrideContainsIdentity = false;
+        if (c.getSqlTypeOverride() != null && !c.getSqlTypeOverride().trim().isEmpty()) {
+            String override = c.getSqlTypeOverride().trim();
+            overrideContainsIdentity = override.matches("(?i).*\\bauto_increment\\b.*");
+            sqlType = override;
+        } else if (c.isLob()) {
             sqlType = c.getJavaType().equals("java.lang.String") ? "TEXT" : "BLOB";
         } else if (c.isVersion()) {
             sqlType = c.getJavaType().equals("java.lang.Long") ? "BIGINT" : "TIMESTAMP";
@@ -177,7 +198,7 @@ public class MySqlDialect extends AbstractDialect
 
         if (!c.isNullable()) sb.append(" NOT NULL");
 
-        if (c.getGenerationStrategy() == GenerationStrategy.IDENTITY) {
+        if (c.getGenerationStrategy() == GenerationStrategy.IDENTITY && !overrideContainsIdentity) {
             sb.append(getIdentityClause(c));
         } else if (c.isManualPrimaryKey()) {
             sb.append(" PRIMARY KEY");
@@ -439,6 +460,11 @@ public class MySqlDialect extends AbstractDialect
 
     // Liquibase helper
     public String getLiquibaseTypeName(ColumnModel column) {
+        // If sqlTypeOverride is specified, use it directly
+        if (column.getSqlTypeOverride() != null && !column.getSqlTypeOverride().trim().isEmpty()) {
+            return column.getSqlTypeOverride().trim();
+        }
+        
         String javaType = column.getJavaType();
         int length = column.getLength();
         int precision = column.getPrecision();

@@ -29,7 +29,7 @@ public class ColumnBuilderFactory {
                 .length(column != null ? column.length() : 255)
                 .precision(column != null ? column.precision() : 0)
                 .scale(column != null ? column.scale() : 0)
-                .defaultValue(column != null && !column.columnDefinition().isEmpty() ? column.columnDefinition() : null)
+                .sqlTypeOverride(column != null && !column.columnDefinition().isEmpty() ? column.columnDefinition() : null)
                 .generationStrategy(GenerationStrategy.NONE);
     }
 
@@ -63,7 +63,7 @@ public class ColumnBuilderFactory {
                 .length(column != null ? column.length() : 255)
                 .precision(column != null ? column.precision() : 0)
                 .scale(column != null ? column.scale() : 0)
-                .defaultValue(column != null && !column.columnDefinition().isEmpty() ? column.columnDefinition() : null)
+                .sqlTypeOverride(column != null && !column.columnDefinition().isEmpty() ? column.columnDefinition() : null)
                 .generationStrategy(genStrategy);
         
         // Apply table name override if provided

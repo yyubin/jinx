@@ -562,8 +562,7 @@ public class ElementCollectionHandler {
                                 keyColumn.setScale(mapKeyColumn.scale());
                             }
                             if (!mapKeyColumn.columnDefinition().isEmpty()) {
-                                // ColumnModel에 columnDefinition 세터가 없으므로 defaultValue 사용
-                                keyColumn.setDefaultValue(mapKeyColumn.columnDefinition());
+                                keyColumn.setSqlTypeOverride(mapKeyColumn.columnDefinition());
                             }
                         }
 
