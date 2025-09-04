@@ -335,4 +335,50 @@ class SqlTypeOverrideTest {
         assertThat(ddl).contains("AUTO_INCREMENT"); // IDENTITY 전략이므로 추가됨
         assertThat(ddl).contains("NOT NULL");
     }
+
+    @Test
+    @DisplayName("PK 드랍 시 sqlTypeOverride가 AUTO_INCREMENT만 포함하면 기본 매핑으로 폴백해야 한다")
+    void getDropPrimaryKeySql_withOnlyAutoIncrementOverride_shouldFallbackToDefault() {
+        // Arrange: 비정상적이지만 가능한 케이스 - sqlTypeOverride가 "AUTO_INCREMENT"만 포함
+        ColumnModel col = ColumnModel.builder()
+                .columnName("id")
+                .javaType("java.lang.Long")
+                .isPrimaryKey(true)
+                .generationStrategy(org.jinx.model.GenerationStrategy.IDENTITY)
+                .sqlTypeOverride("AUTO_INCREMENT")  // 타입 없이 AUTO_INCREMENT만
+                .isNullable(false)
+                .build();
+
+        // Act
+        String dropSql = dialect.getDropPrimaryKeySql("test_table", List.of(col));
+
+        // Assert: AUTO_INCREMENT 제거 후 빈 문자열이 되므로 기본 매핑(BIGINT)으로 폴백
+        assertThat(dropSql).contains("MODIFY COLUMN `id` BIGINT"); // 기본 매핑으로 폴백됨
+        assertThat(dropSql).doesNotContain("AUTO_INCREMENT");
+        assertThat(dropSql).contains("NOT NULL");
+        assertThat(dropSql).contains("DROP PRIMARY KEY");
+    }
+
+    @Test
+    @DisplayName("PK 드랍 시 sqlTypeOverride가 공백과 AUTO_INCREMENT만 포함하면 기본 매핑으로 폴백해야 한다")
+    void getDropPrimaryKeySql_withWhitespaceAndAutoIncrementOnly_shouldFallbackToDefault() {
+        // Arrange: 공백과 AUTO_INCREMENT만 있는 경우
+        ColumnModel col = ColumnModel.builder()
+                .columnName("id")
+                .javaType("java.lang.Long")
+                .isPrimaryKey(true)
+                .generationStrategy(org.jinx.model.GenerationStrategy.IDENTITY)
+                .sqlTypeOverride("  AUTO_INCREMENT  ")  // 공백 + AUTO_INCREMENT만
+                .isNullable(false)
+                .build();
+
+        // Act
+        String dropSql = dialect.getDropPrimaryKeySql("test_table", List.of(col));
+
+        // Assert: 정리 후 빈 문자열이 되므로 기본 매핑으로 폴백
+        assertThat(dropSql).contains("MODIFY COLUMN `id` BIGINT"); // 기본 매핑으로 폴백됨
+        assertThat(dropSql).doesNotContain("AUTO_INCREMENT");
+        assertThat(dropSql).contains("NOT NULL");
+        assertThat(dropSql).contains("DROP PRIMARY KEY");
+    }
 }

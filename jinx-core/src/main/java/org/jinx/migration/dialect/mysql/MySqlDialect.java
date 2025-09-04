@@ -147,6 +147,10 @@ public class MySqlDialect extends AbstractDialect
                         .replaceAll("(?i)\\bauto_increment\\b", "")
                         .replaceAll("\\s{2,}", " ")
                         .trim();
+                // 제거 결과가 비었으면 안전하게 기본 매핑으로 폴백
+                if (sqlTypeForModify.isEmpty()) {
+                    sqlTypeForModify = javaType.getSqlType(col.getLength(), col.getPrecision(), col.getScale());
+                }
                 sb.append("ALTER TABLE ").append(quoteIdentifier(table))
                         .append(" MODIFY COLUMN ").append(quoteIdentifier(col.getColumnName())).append(" ")
                         .append(sqlTypeForModify);
