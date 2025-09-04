@@ -136,9 +136,15 @@ public class MySqlDialect extends AbstractDialect
         for (ColumnModel col : currentColumns) {
             if (col.isPrimaryKey() && col.getGenerationStrategy() == GenerationStrategy.IDENTITY) {
                 JavaTypeMapper.JavaType javaType = getJavaTypeMapper().map(col.getJavaType());
+                String sqlTypeForModify;
+                if (col.getSqlTypeOverride() != null && !col.getSqlTypeOverride().trim().isEmpty()) {
+                    sqlTypeForModify = col.getSqlTypeOverride().trim();
+                } else {
+                    sqlTypeForModify = javaType.getSqlType(col.getLength(), col.getPrecision(), col.getScale());
+                }
                 sb.append("ALTER TABLE ").append(quoteIdentifier(table))
                         .append(" MODIFY COLUMN ").append(quoteIdentifier(col.getColumnName())).append(" ")
-                        .append(javaType.getSqlType(col.getLength(), col.getPrecision(), col.getScale()));
+                        .append(sqlTypeForModify);
                 if (!col.isNullable()) sb.append(" NOT NULL");
                 if (col.getDefaultValue() != null) {
                     sb.append(" DEFAULT ").append(getValueTransformer().quote(col.getDefaultValue(), javaType));
@@ -158,8 +164,8 @@ public class MySqlDialect extends AbstractDialect
 
         String sqlType;
         // If sqlTypeOverride is specified, use it directly
-        if (c.getSqlTypeOverride() != null && !c.getSqlTypeOverride().isEmpty()) {
-            sqlType = c.getSqlTypeOverride();
+        if (c.getSqlTypeOverride() != null && !c.getSqlTypeOverride().trim().isEmpty()) {
+            sqlType = c.getSqlTypeOverride().trim();
         } else if (c.isLob()) {
             sqlType = c.getJavaType().equals("java.lang.String") ? "TEXT" : "BLOB";
         } else if (c.isVersion()) {
@@ -443,8 +449,8 @@ public class MySqlDialect extends AbstractDialect
     // Liquibase helper
     public String getLiquibaseTypeName(ColumnModel column) {
         // If sqlTypeOverride is specified, use it directly
-        if (column.getSqlTypeOverride() != null && !column.getSqlTypeOverride().isEmpty()) {
-            return column.getSqlTypeOverride();
+        if (column.getSqlTypeOverride() != null && !column.getSqlTypeOverride().trim().isEmpty()) {
+            return column.getSqlTypeOverride().trim();
         }
         
         String javaType = column.getJavaType();
