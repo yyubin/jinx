@@ -134,7 +134,7 @@ public class MySqlDialect extends AbstractDialect
     public String getDropPrimaryKeySql(String table, Collection<ColumnModel> currentColumns) {
         StringBuilder sb = new StringBuilder();
         for (ColumnModel col : currentColumns) {
-            if (col.isPrimaryKey() && col.getGenerationStrategy() == GenerationStrategy.IDENTITY) {
+            if (col.isPrimaryKey() && shouldUseAutoIncrement(col.getGenerationStrategy())) {
                 JavaTypeMapper.JavaType javaType = getJavaTypeMapper().map(col.getJavaType());
                 String sqlTypeForModify;
                 if (col.getSqlTypeOverride() != null && !col.getSqlTypeOverride().trim().isEmpty()) {
