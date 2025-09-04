@@ -157,7 +157,10 @@ public class MySqlDialect extends AbstractDialect
         JavaTypeMapper.JavaType javaTypeMapped = javaTypeMapper.map(javaType);
 
         String sqlType;
-        if (c.isLob()) {
+        // If sqlTypeOverride is specified, use it directly
+        if (c.getSqlTypeOverride() != null && !c.getSqlTypeOverride().isEmpty()) {
+            sqlType = c.getSqlTypeOverride();
+        } else if (c.isLob()) {
             sqlType = c.getJavaType().equals("java.lang.String") ? "TEXT" : "BLOB";
         } else if (c.isVersion()) {
             sqlType = c.getJavaType().equals("java.lang.Long") ? "BIGINT" : "TIMESTAMP";
@@ -439,6 +442,11 @@ public class MySqlDialect extends AbstractDialect
 
     // Liquibase helper
     public String getLiquibaseTypeName(ColumnModel column) {
+        // If sqlTypeOverride is specified, use it directly
+        if (column.getSqlTypeOverride() != null && !column.getSqlTypeOverride().isEmpty()) {
+            return column.getSqlTypeOverride();
+        }
+        
         String javaType = column.getJavaType();
         int length = column.getLength();
         int precision = column.getPrecision();
