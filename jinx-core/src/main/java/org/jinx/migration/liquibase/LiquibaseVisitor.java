@@ -541,9 +541,15 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     private String getSequenceDefault(ColumnModel column) {
         if (column.getGenerationStrategy() == GenerationStrategy.SEQUENCE) {
             // Return sequence name from defaultValue when SEQUENCE strategy is used
-            return column.getDefaultValue();
+            return trimToNull(column.getDefaultValue());
         }
         return null;
+    }
+
+    private static String trimToNull(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
     }
     
     /**
