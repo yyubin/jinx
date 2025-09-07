@@ -179,32 +179,6 @@ jinx-cli/               # picocli 기반 CLI
 
 ---
 
-## 완료된 기능들
-
-### ✅ 구현 완료
-* **`@Access(PROPERTY)` 및 혼합 접근 전략 지원**: AttributeDescriptor 기반으로 완전히 지원 (FIELD/PROPERTY 혼합 처리)
-* **복수 `@JoinColumns`/`inverseJoinColumns` 전부 반영 및 검증**: RelationshipHandler에서 완전 지원
-* **SINGLE_TABLE 기본 Discriminator 컬럼/타입/길이 적용**: InheritanceHandler에서 구현 완료
-* **`@OrderBy`/`@MapsId` 매핑 지원**: RelationshipHandler 및 EntityHandler에서 처리
-* **`columnDefinition`/`defaultValue` 처리**: ColumnModel 및 ColumnConfig에 완전 반영
-
-### 🚧 진행 중/부분 구현
-* **JOINED 상속의 `@PrimaryKeyJoinColumn(s)` / `@SecondaryTable.pkJoinColumns` 복합키 처리**: PrimaryKeyJoinColumnModel 구현됨, 복합키 처리 추가 검증 필요
-* **FK 컬럼 생성시 `nullable/unique/precision/scale/columnDefinition` 반영**: 기본 속성은 구현됨, 외래키 컬럼 생성 시 완전 반영 검증 필요
-
-## 남은 작업 항목
-
-* `@JoinColumn.foreignKey`, `@JoinTable.foreignKey` 이름 반영
-* `@SecondaryTable` 의 `indexes`/`uniqueConstraints` 처리  
-* `@CollectionTable(indexes/uniqueConstraints)`, `@MapKeyJoinColumn(s)` 등 Map 확장
-* Dialect 기반 `AUTO` 전략 결정
-* Bean Validation → DDL 힌트(선택)
-* 단방향 `@OneToMany` FK 위치/전략 재검토
-
-> 위 항목들은 이슈로 정리되어 있으며 단계적으로 반영 예정입니다.
-
----
-
 ## 개발 메모
 
 * Java 17+, 빌드 도구는 Gradle/Maven 아무거나 OK
