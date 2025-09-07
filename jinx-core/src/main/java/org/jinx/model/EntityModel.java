@@ -1,5 +1,6 @@
 package org.jinx.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.InheritanceType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -78,6 +79,7 @@ public class EntityModel {
         return columns.containsKey(colKey(tableName, columnName));
     }
 
+    @JsonIgnore
     public boolean isJavaBackedEntity() {
         return fqcn != null && !fqcn.isBlank() && tableType == TableType.ENTITY;
     }

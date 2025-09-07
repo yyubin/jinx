@@ -83,7 +83,9 @@ public class EmbeddedHandler {
         if (processedTypes.contains(typeName)) return;
         processedTypes.add(typeName);
 
-        String columnPrefix = parentColumnPrefix.isEmpty() ? "" : parentColumnPrefix + "_";
+        String columnPrefix = parentColumnPrefix.isEmpty() 
+                ? attribute.name()
+                : parentColumnPrefix + "_" + attribute.name();
 
         List<AttributeDescriptor> embeddedDescriptors = descriptorFactory.createDescriptors(embeddableType);
 
@@ -98,7 +100,7 @@ public class EmbeddedHandler {
                 Map<String, String> childTableOverrides = filterAndRemapOverrides(tableOverrides, currentAttributeName + ".");
                 Map<String, List<JoinColumn>> childAssocOverrides = filterAndRemapAssocOverrides(assocOverrides, currentAttributeName + ".");
 
-                processEmbeddedInternal(embeddedDescriptor, ownerEntity, processedTypes, isPrimaryKey, columnPrefix + currentAttributeName, currentAttributePath, childNameOverrides, childTableOverrides, childAssocOverrides);
+                processEmbeddedInternal(embeddedDescriptor, ownerEntity, processedTypes, isPrimaryKey, columnPrefix, currentAttributePath, childNameOverrides, childTableOverrides, childAssocOverrides);
             } else if (embeddedDescriptor.hasAnnotation(ManyToOne.class) || embeddedDescriptor.hasAnnotation(OneToOne.class)) {
                 Map<String, List<JoinColumn>> childAssocOverrides = filterAndRemapAssocOverrides(assocOverrides, currentAttributeName + ".");
                 processEmbeddedRelationship(embeddedDescriptor, ownerEntity, childAssocOverrides, columnPrefix);
@@ -124,8 +126,17 @@ public class EmbeddedHandler {
                         }
                     }
 
-                    if (!(hasOverrideName || hasExplicitLeafName)) {
-                        column.setColumnName(columnPrefix + column.getColumnName());
+                    if (hasOverrideName) {
+                        // 1. 최우선: AttributeOverride가 있으면 접두사 없이 해당 이름 사용
+                        column.setColumnName(overrideName);
+                    }
+                    else if (hasExplicitLeafName) {
+                        // 2. 차선: 명시적 @Column 이름이 있으면 접두사 없이 해당 이름 사용
+                        // createFromAttribute에서 이미 설정되었으므로 별도 작업 불필요. 이 블록은 로직의 명확성을 위해 존재.
+                    }
+                    else {
+                        // 3. 기본: 접두사와 컬럼명을 조합하여 이름 설정
+                        column.setColumnName(columnPrefix + "_" + column.getColumnName());
                     }
 
                     if (isPrimaryKey) {
@@ -244,7 +255,7 @@ public class EmbeddedHandler {
 
             String fkName = (jc != null && !jc.name().isEmpty())
                     ? jc.name() // Use explicit name as-is
-                    : prefix + attribute.name() + "_" + pkCol.getColumnName(); // Apply prefix only to default-generated name
+                    : prefix + "_" + attribute.name() + "_" + pkCol.getColumnName(); // Apply prefix with proper separator
 
             boolean colNullable = jc != null ? jc.nullable()
                     : (manyToOne != null ? manyToOne.optional() : oneToOne.optional());
@@ -410,13 +421,25 @@ public class EmbeddedHandler {
                 ));
     }
 
-    private Map<String, List<JoinColumn>> filterAndRemapAssocOverrides(Map<String, List<JoinColumn>> parentOverrides, String prefix) {
-        return parentOverrides.entrySet().stream()
-                .filter(e -> e.getKey().startsWith(prefix))
-                .collect(Collectors.toMap(
-                        e -> e.getKey().substring(prefix.length()),
-                        Map.Entry::getValue
-                ));
+    private Map<String, List<JoinColumn>> filterAndRemapAssocOverrides(Map<String, List<JoinColumn>> parentOverrides, String prefixWithDot) {
+        Map<String, List<JoinColumn>> out = new HashMap<>();
+
+        String dotted = prefixWithDot;
+        String exact = dotted.endsWith(".") ? dotted.substring(0, dotted.length() - 1) : dotted;
+
+        // (A) 자식 레벨 정확 일치: "country"
+        if (parentOverrides.containsKey(exact)) {
+            out.put(exact, parentOverrides.get(exact));
+        }
+
+        // (B) 하위 경로 매칭: "country.*" → 접두사 제거해 자식 기준 키로 재매핑
+        for (Map.Entry<String, List<JoinColumn>> e : parentOverrides.entrySet()) {
+            String k = e.getKey();
+            if (k.startsWith(dotted)) {
+                out.put(k.substring(dotted.length()), e.getValue());
+            }
+        }
+        return out;
     }
 
     private static List<CascadeType> toCascadeList(jakarta.persistence.CascadeType[] arr) {

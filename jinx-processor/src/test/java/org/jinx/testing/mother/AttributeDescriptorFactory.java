@@ -66,14 +66,25 @@ public final class AttributeDescriptorFactory {
         doReturn(List.of(keyType, valueType)).when(mapType).getTypeArguments();
         when(ad.type()).thenReturn(mapType);
         // Annotation 모킹 공통 적용
-        when(ad.getAnnotation(
-                ArgumentMatchers.<Class<? extends Annotation>>any()
-        )).thenAnswer(inv -> {
-            @SuppressWarnings("unchecked")
-            Class<? extends Annotation> clazz =
-                    (Class<? extends Annotation>) inv.getArgument(0);
-            return null; // 필요 시 찾은 어노테이션 리턴
-        });
+        when(ad.getAnnotation(ArgumentMatchers.<Class<? extends Annotation>>any()))
+                .thenAnswer(inv -> {
+                    @SuppressWarnings("unchecked")
+                    Class<? extends Annotation> cls = (Class<? extends Annotation>) inv.getArgument(0);
+                    for (Annotation a : anns) {
+                        if (cls.isInstance(a)) return a;
+                    }
+                    return null;
+                });
+
+        lenient().when(ad.hasAnnotation(ArgumentMatchers.<Class<? extends Annotation>>any()))
+                .thenAnswer(inv -> {
+                    @SuppressWarnings("unchecked")
+                    Class<? extends Annotation> cls = (Class<? extends Annotation>) inv.getArgument(0);
+                    for (Annotation a : anns) {
+                        if (cls.isInstance(a)) return true;
+                    }
+                    return false;
+                });
         return ad;
     }
     

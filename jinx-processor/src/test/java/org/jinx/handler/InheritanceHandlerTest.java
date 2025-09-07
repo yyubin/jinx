@@ -95,6 +95,7 @@ class InheritanceHandlerTest {
                 .thenReturn(AnnotationProxies.inheritance(InheritanceType.SINGLE_TABLE));
         when(parentType2.getAnnotation(DiscriminatorColumn.class))
                 .thenReturn(AnnotationProxies.discriminatorColumn("dtype")); // 이미 존재
+        when(parentType2.getAnnotation(DiscriminatorValue.class)).thenReturn(null);
 
         handler.resolveInheritance(parentType2, parent2);
 
