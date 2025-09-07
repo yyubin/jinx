@@ -530,7 +530,7 @@ public class ElementCollectionHandler {
             
             if (actualKeyType != null) {
                 // 키 타입이 엔티티인지 확인
-                Element keyElement = typeUtils.asElement(actualKeyType);
+                Element keyElement = context.getTypeUtils().asElement(actualKeyType);
                 boolean isEntityKey = keyElement != null && keyElement.getAnnotation(Entity.class) != null;
                 
                 if (isEntityKey) {
@@ -578,7 +578,7 @@ public class ElementCollectionHandler {
         // 6. Element (Value) 컬럼 처리 - 메모리상에서만 생성
         boolean isList = context.isSubtype(declaredType, "java.util.List");
         
-        Element valueElement = typeUtils.asElement(valueType);
+        Element valueElement = context.getTypeUtils().asElement(valueType);
         if (valueElement != null && valueElement.getAnnotation(Embeddable.class) != null) {
             // 값이 Embeddable 타입인 경우 - 현재는 임시 EntityModel에 직접 추가
             // TODO: EmbeddedHandler도 2단계 패턴으로 변경 후 검증 결과 통합 필요
@@ -648,7 +648,7 @@ public class ElementCollectionHandler {
     private void processMapKeyJoinColumns(AttributeDescriptor attribute, TypeMirror keyType, 
                                         String tableName, ValidationResult result) {
         // 키 엔티티의 PK 컬럼들 조회
-        Element keyElement = typeUtils.asElement(keyType);
+        Element keyElement = context.getTypeUtils().asElement(keyType);
         if (keyElement == null || !(keyElement instanceof TypeElement keyTypeElement)) {
             result.addError("Cannot resolve key entity type for @MapKeyJoinColumn");
             return;

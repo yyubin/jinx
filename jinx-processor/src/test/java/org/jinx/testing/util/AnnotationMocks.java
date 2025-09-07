@@ -24,6 +24,7 @@ public final class AnnotationMocks {
         JoinColumn jc = mock(JoinColumn.class);
         lenient().when(jc.name()).thenReturn(name);
         lenient().when(jc.referencedColumnName()).thenReturn(referencedColumnName);
+        lenient().when(jc.table()).thenReturn("");
         // 필요없는 속성은 기본값
         lenient().when(jc.nullable()).thenReturn(true);
         lenient().when(jc.unique()).thenReturn(false);

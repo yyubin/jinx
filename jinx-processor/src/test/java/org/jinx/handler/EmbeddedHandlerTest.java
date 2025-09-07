@@ -1,360 +1,369 @@
-//package org.jinx.handler;
-//
-//import jakarta.persistence.*;
-//import org.jinx.context.ProcessingContext;
-//import org.jinx.model.*;
-//import org.junit.jupiter.api.BeforeEach;
-//import org.junit.jupiter.api.DisplayName;
-//import org.junit.jupiter.api.Test;
-//import org.mockito.Mock;
-//import org.mockito.MockitoAnnotations;
-//
-//import javax.lang.model.element.*;
-//import javax.lang.model.type.DeclaredType;
-//import java.util.*;
-//
-//import static org.assertj.core.api.Assertions.assertThat;
-//import static org.mockito.ArgumentMatchers.any;
-//import static org.mockito.ArgumentMatchers.eq;
-//import static org.mockito.Mockito.*;
-//
-//class EmbeddedHandlerTest {
-//
-//    @Mock
-//    private ProcessingContext context;
-//    @Mock
-//    private ColumnHandler columnHandler;
-//    @Mock
-//    private SchemaModel schemaModel;
-//
-//    // Main field annotated with @Embedded
-//    @Mock
-//    private VariableElement embeddedField;
-//    @Mock
-//    private Name embeddedFieldName;
-//
-//    // The @Embeddable class element
-//    @Mock
-//    private TypeElement embeddableTypeElement;
-//    @Mock
-//    private Name embeddableTypeName;
-//    @Mock
-//    private DeclaredType embeddableDeclaredType;
-//
-//    // Fields inside the @Embeddable class
-//    @Mock
-//    private VariableElement simpleFieldInEmbeddable;
-//    @Mock
-//    private Name simpleFieldName;
-//    @Mock
-//    private VariableElement relationshipFieldInEmbeddable;
-//    @Mock
-//    private Name relationshipFieldName;
-//
-//    private EmbeddedHandler embeddedHandler;
-//    private Map<String, ColumnModel> columns;
-//    private List<RelationshipModel> relationships;
-//    private Set<String> processedTypes;
-//
-//    @BeforeEach
-//    void setUp() {
-//        MockitoAnnotations.openMocks(this);
-//        EmbeddedHandler realHandler = new EmbeddedHandler(context, columnHandler);
-//        embeddedHandler = spy(realHandler);
-//
-//        // Initialize collections for each test
-//        columns = new HashMap<>();
-//        relationships = new ArrayList<>();
-//        processedTypes = new HashSet<>();
-//
-//        // Common mock setup
-//        when(context.getSchemaModel()).thenReturn(schemaModel);
-//
-//        // Setup for the main @Embedded field
-//        when(embeddedField.asType()).thenReturn(embeddableDeclaredType);
-//        when(embeddedField.getSimpleName()).thenReturn(embeddedFieldName);
-//        when(embeddedFieldName.toString()).thenReturn("address");
-//
-//        // Setup for the @Embeddable class itself
-//        when(embeddableDeclaredType.asElement()).thenReturn(embeddableTypeElement);
-//        when(embeddableTypeElement.getAnnotation(Embeddable.class)).thenReturn(mock(Embeddable.class));
-//        when(embeddableTypeElement.getQualifiedName()).thenReturn(embeddableTypeName);
-//        when(embeddableTypeName.toString()).thenReturn("com.example.Address");
-//
-//        // Setup for the simple field (e.g., String street) inside @Embeddable
-//        when(simpleFieldInEmbeddable.getKind()).thenReturn(javax.lang.model.element.ElementKind.FIELD);
-//        when(simpleFieldInEmbeddable.getSimpleName()).thenReturn(simpleFieldName);
-//        when(simpleFieldName.toString()).thenReturn("street");
-//
-//        // Setup for the relationship field (e.g., Country country) inside @Embeddable
-//        when(relationshipFieldInEmbeddable.getKind()).thenReturn(javax.lang.model.element.ElementKind.FIELD);
-//        when(relationshipFieldInEmbeddable.getSimpleName()).thenReturn(relationshipFieldName);
-//        when(relationshipFieldName.toString()).thenReturn("country");
-//        when(relationshipFieldInEmbeddable.getAnnotation(ManyToOne.class)).thenReturn(mock(ManyToOne.class));
-//    }
-//
-//    @Test
-//    @DisplayName("Should process a simple field within an embeddable type")
-//    void processEmbedded_WithSimpleField_AddsColumn() {
-//        // Given
-//        doReturn(List.of(simpleFieldInEmbeddable)).when(embeddableTypeElement).getEnclosedElements();
-//        ColumnModel streetColumn = ColumnModel.builder().columnName("street").build();
-//        when(columnHandler.createFrom(eq(simpleFieldInEmbeddable), any())).thenReturn(streetColumn);
-//
-//        // When
-//        embeddedHandler.processEmbedded(embeddedField, columns, relationships, processedTypes);
-//
-//        // Then
-//        assertThat(columns).hasSize(1);
-//        assertThat(columns).containsKey("street");
-//        assertThat(columns.get("street")).isEqualTo(streetColumn);
-//    }
-//
-//    @Test
-//    @DisplayName("Should apply @AttributeOverride to a simple field")
-//    void processEmbedded_WithAttributeOverride_AddsOverriddenColumn() {
-//        // Given
-//        AttributeOverride override = mock(AttributeOverride.class);
-//        Column column = mock(Column.class);
-//        when(override.name()).thenReturn("street");
-//        when(override.column()).thenReturn(column);
-//        when(column.name()).thenReturn("address_street");
-//
-//        AttributeOverrides overrides = mock(AttributeOverrides.class);
-//        when(overrides.value()).thenReturn(new AttributeOverride[]{override});
-//        when(embeddedField.getAnnotation(AttributeOverrides.class)).thenReturn(overrides);
-//
-//        doReturn(List.of(simpleFieldInEmbeddable)).when(embeddableTypeElement).getEnclosedElements();
-//        ColumnModel streetColumn = ColumnModel.builder().columnName("address_street").build();
-//        // The column handler is now expected to be called with the override map
-//        when(columnHandler.createFrom(eq(simpleFieldInEmbeddable), eq(Map.of("street", "address_street")))).thenReturn(streetColumn);
-//
-//        // When
-//        embeddedHandler.processEmbedded(embeddedField, columns, relationships, processedTypes);
-//
-//        // Then
-//        assertThat(columns).hasSize(1);
-//        assertThat(columns).containsKey("address_street");
-//    }
-//
-//    @Test
-//    @DisplayName("Should process a relationship field within an embeddable type")
-//    void processEmbedded_WithRelationshipField_AddsForeignKeyAndRelationship() {
-//        // Given
-//        setupRelationshipMocks();
-//        ManyToOne m2o = mock(ManyToOne.class);
-//        when(m2o.cascade()).thenReturn(new CascadeType[0]);
-//        when(relationshipFieldInEmbeddable.getAnnotation(ManyToOne.class)).thenReturn(m2o);
-//        doReturn(List.of(relationshipFieldInEmbeddable)).when(embeddableTypeElement).getEnclosedElements();
-//
-//        // When
-//        embeddedHandler.processEmbedded(embeddedField, columns, relationships, processedTypes);
-//
-//        // Then
-//        assertThat(columns).hasSize(1);
-//        assertThat(columns).containsKey("country_id");
-//        assertThat(columns.get("country_id").getJavaType()).isEqualTo("java.lang.Long");
-//
-//        assertThat(relationships).hasSize(1);
-//        RelationshipModel rel = relationships.get(0);
-//        assertThat(rel.getType()).isEqualTo(RelationshipType.MANY_TO_ONE);
-//        assertThat(rel.getColumn()).isEqualTo("country_id");
-//        assertThat(rel.getReferencedTable()).isEqualTo("countries");
-//    }
-//
-//    @Test
-//    @DisplayName("Should apply @AssociationOverride to a relationship field")
-//    void processEmbedded_WithAssociationOverride_AddsOverriddenForeignKey() {
-//        // Given
-//        setupRelationshipMocks();
-//        doReturn(List.of(relationshipFieldInEmbeddable)).when(embeddableTypeElement).getEnclosedElements();
-//
-//        AssociationOverride override = mock(AssociationOverride.class);
-//        JoinColumn joinColumn = mock(JoinColumn.class);
-//        when(override.name()).thenReturn("country");
-//        when(joinColumn.name()).thenReturn("country_fk_id");
-//        when(override.joinColumns()).thenReturn(new JoinColumn[]{joinColumn});
-//
-//        when(embeddedField.getAnnotation(AssociationOverride.class)).thenReturn(override);
-//
-//        // When
-//        embeddedHandler.processEmbedded(embeddedField, columns, relationships, processedTypes);
-//
-//        // Then
-//        assertThat(columns).hasSize(1);
-//        // Assert that the overridden column name is used
-//        assertThat(columns).containsKey("country_fk_id");
-//        assertThat(relationships).hasSize(1);
-//        assertThat(relationships.get(0).getColumn()).isEqualTo("country_fk_id");
-//    }
-//
-//    @Test
-//    @DisplayName("Should add prefix to columns when inside @ElementCollection")
-//    void processEmbedded_WithElementCollection_AddsPrefixedColumns() {
-//        // Given
-//        when(embeddedField.getAnnotation(ElementCollection.class)).thenReturn(mock(ElementCollection.class));
-//        doReturn(List.of(simpleFieldInEmbeddable)).when(embeddableTypeElement).getEnclosedElements();
-//        ColumnModel streetColumn = ColumnModel.builder().columnName("street").build();
-//        when(columnHandler.createFrom(eq(simpleFieldInEmbeddable), any())).thenReturn(streetColumn);
-//
-//        // When
-//        embeddedHandler.processEmbedded(embeddedField, columns, relationships, processedTypes);
-//
-//        // Then
-//        assertThat(columns).hasSize(1);
-//        // The column name should be prefixed with the embedding field's name
-//        assertThat(columns).containsKey("address_street");
-//    }
-//
-//    // Helper method to set up common mocks for relationship tests
-//    private void setupRelationshipMocks() {
-//        DeclaredType relFieldType = mock(DeclaredType.class);
-//        TypeElement referencedEntityType = mock(TypeElement.class);
-//        Name referencedEntityName = mock(Name.class);
-//        EntityModel referencedEntityModel = mock(EntityModel.class);
-//        ColumnModel pkColumn = ColumnModel.builder().columnName("id").javaType("java.lang.Long").build();
-//
-//        when(relationshipFieldInEmbeddable.asType()).thenReturn(relFieldType);
-//        when(relFieldType.asElement()).thenReturn(referencedEntityType);
-//        when(referencedEntityType.getQualifiedName()).thenReturn(referencedEntityName);
-//        when(referencedEntityName.toString()).thenReturn("com.example.Country");
-//
-//        when(schemaModel.getEntities()).thenReturn(Map.of("com.example.Country", referencedEntityModel));
-//        when(context.findPrimaryKeyColumnName(referencedEntityModel)).thenReturn(Optional.of("id"));
-//        when(referencedEntityModel.getColumns()).thenReturn(Map.of("id", pkColumn));
-//        when(referencedEntityModel.getTableName()).thenReturn("countries");
-//    }
-//
-//    @Test
-//    @DisplayName("Should skip processing if embeddable type was already processed")
-//    void processEmbedded_WhenAlreadyProcessed_DoesNothing() {
-//        // Given
-//        processedTypes.add("com.example.Address"); // simulate already processed
-//        when(embeddableTypeElement.getQualifiedName()).thenReturn(embeddableTypeName);
-//        when(embeddableTypeName.toString()).thenReturn("com.example.Address");
-//
-//        // When
-//        embeddedHandler.processEmbedded(embeddedField, columns, relationships, processedTypes);
-//
-//        // Then
-//        assertThat(columns).isEmpty();
-//        assertThat(relationships).isEmpty();
-//    }
-//
-//    @Test
-//    @DisplayName("Should recursively process nested @Embedded fields")
-//    void processEmbedded_WithNestedEmbedded_ProcessesRecursively() {
-//        // Given
-//        VariableElement nestedField = mock(VariableElement.class);
-//        Name nestedFieldName = mock(Name.class);
-//
-//        when(nestedField.getKind()).thenReturn(javax.lang.model.element.ElementKind.FIELD);
-//        when(nestedField.getSimpleName()).thenReturn(nestedFieldName);
-//        when(nestedFieldName.toString()).thenReturn("zipCode");
-//        when(nestedField.getAnnotation(Embedded.class)).thenReturn(mock(Embedded.class));
-//        doReturn(List.of(nestedField)).when(embeddableTypeElement).getEnclosedElements();
-//
-//        doNothing().when(embeddedHandler).processEmbedded(eq(nestedField), any(), any(), any());
-//
-//        // When
-//        embeddedHandler.processEmbedded(embeddedField, columns, relationships, processedTypes);
-//
-//        // Then
-//        verify(embeddedHandler).processEmbedded(eq(nestedField), any(), any(), any());
-//    }
-//
-//    @Test
-//    @DisplayName("Should process OneToOne relationship with cascade and orphanRemoval")
-//    void processEmbeddedRelationship_WithOneToOne_SetsCascadeAndOrphan() {
-//        setupRelationshipMocks();
-//
-//        OneToOne oneToOne = mock(OneToOne.class);
-//        when(oneToOne.cascade()).thenReturn(new CascadeType[]{CascadeType.ALL});
-//        when(oneToOne.orphanRemoval()).thenReturn(true);
-//        when(oneToOne.fetch()).thenReturn(FetchType.EAGER);
-//
-//        when(relationshipFieldInEmbeddable.getAnnotation(OneToOne.class)).thenReturn(oneToOne);
-//        when(relationshipFieldInEmbeddable.getAnnotation(ManyToOne.class)).thenReturn(null);
-//        when(relationshipFieldInEmbeddable.getSimpleName()).thenReturn(relationshipFieldName);
-//        when(relationshipFieldName.toString()).thenReturn("country");
-//
-//        doReturn(List.of(relationshipFieldInEmbeddable)).when(embeddableTypeElement).getEnclosedElements();
-//
-//        // When
-//        embeddedHandler.processEmbedded(embeddedField, columns, relationships, processedTypes);
-//
-//        // Then
-//        assertThat(relationships).hasSize(1);
-//        RelationshipModel rel = relationships.get(0);
-//        assertThat(rel.getCascadeTypes()).contains(CascadeType.ALL);
-//        assertThat(rel.isOrphanRemoval()).isTrue();
-//        assertThat(rel.getFetchType()).isEqualTo(FetchType.EAGER);
-//    }
-//
-//    @Test
-//    @DisplayName("Should set isPrimaryKey when @MapsId is present")
-//    void processEmbeddedRelationship_WithMapsId_SetsPrimaryKey() {
-//        setupRelationshipMocks();
-//        when(relationshipFieldInEmbeddable.getAnnotation(MapsId.class)).thenReturn(mock(MapsId.class));
-//        when(relationshipFieldInEmbeddable.getAnnotation(ManyToOne.class)).thenReturn(mock(ManyToOne.class));
-//
-//        doReturn(List.of(relationshipFieldInEmbeddable)).when(embeddableTypeElement).getEnclosedElements();
-//
-//        // When
-//        embeddedHandler.processEmbedded(embeddedField, columns, relationships, processedTypes);
-//
-//        // Then
-//        ColumnModel column = columns.get("country_id");
-//        assertThat(column.isPrimaryKey()).isTrue();
-//    }
-//
-//    @Test
-//    @DisplayName("Should process fields inside embeddable within ElementCollection")
-//    void processEmbeddableFields_WithCollectionField_AddsPrefixedColumn() {
-//        // Given
-//        VariableElement collectionField = mock(VariableElement.class);
-//        Name collectionFieldName = mock(Name.class);
-//        when(collectionField.getSimpleName()).thenReturn(collectionFieldName);
-//        when(collectionFieldName.toString()).thenReturn("locations");
-//
-//        // Mock embedded field
-//        when(simpleFieldInEmbeddable.getKind()).thenReturn(ElementKind.FIELD);
-//        when(simpleFieldInEmbeddable.getSimpleName()).thenReturn(simpleFieldName);
-//        when(simpleFieldName.toString()).thenReturn("street");
-//
-//        // No overrides present
-//        doReturn(List.of(simpleFieldInEmbeddable)).when(embeddableTypeElement).getEnclosedElements();
-//        when(embeddableTypeElement.getQualifiedName()).thenReturn(embeddableTypeName);
-//        when(embeddableTypeName.toString()).thenReturn("com.example.Address");
-//
-//        ColumnModel column = ColumnModel.builder().columnName("street").build();
-//        when(columnHandler.createFrom(eq(simpleFieldInEmbeddable), any())).thenReturn(column);
-//
-//        // When
-//        embeddedHandler.processEmbeddableFields(
-//                embeddableTypeElement, columns, relationships, processedTypes, "", collectionField
-//        );
-//
-//        // Then
-//        assertThat(columns).containsKey("locations_street");
-//        assertThat(columns.get("locations_street").getColumnName()).isEqualTo("locations_street");
-//    }
-//
-//    @Test
-//    @DisplayName("Should skip embeddable field processing if already processed")
-//    void processEmbeddableFields_AlreadyProcessed_DoesNothing() {
-//        // Given
-//        when(embeddableTypeElement.getQualifiedName()).thenReturn(embeddableTypeName);
-//        when(embeddableTypeName.toString()).thenReturn("com.example.Address");
-//        processedTypes.add("com.example.Address");
-//
-//        // When
-//        embeddedHandler.processEmbeddableFields(
-//                embeddableTypeElement, columns, relationships, processedTypes, "prefix_", null
-//        );
-//
-//        // Then
-//        assertThat(columns).isEmpty();
-//    }
-//
-//}
+package org.jinx.handler;
+
+import jakarta.persistence.*;
+import org.jinx.context.ProcessingContext;
+import org.jinx.descriptor.AttributeDescriptor;
+import org.jinx.model.*;
+import org.jinx.testing.asserts.ColumnAssertions;
+import org.jinx.testing.asserts.MessagerAssertions;
+import org.jinx.testing.asserts.RelationshipAssertions;
+import org.jinx.testing.mother.EntityModelMother;
+import org.jinx.testing.util.AnnotationMocks;
+import org.jinx.testing.util.AnnotationProxies;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import javax.annotation.processing.Messager;
+import javax.lang.model.element.Name;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
+import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class EmbeddedHandlerTest {
+
+    @Mock private ProcessingContext context;
+    @Mock private ColumnHandler columnHandler;
+    @Mock private RelationshipHandler relationshipHandler;
+    @Mock private Types typeUtils;
+    @Mock private Elements elementUtils;
+    @Mock private Messager messager;
+    @Mock private SchemaModel schemaModel;
+    @Mock private org.jinx.context.Naming naming;
+    @Mock private org.jinx.descriptor.AttributeDescriptorFactory mockDescriptorFactory;
+
+    private EmbeddedHandler handler;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        // Mock context methods
+        lenient().when(context.getTypeUtils()).thenReturn(typeUtils);
+        lenient().when(context.getElementUtils()).thenReturn(elementUtils);
+        lenient().when(context.getMessager()).thenReturn(messager);
+        lenient().when(context.getSchemaModel()).thenReturn(schemaModel);
+        lenient().when(context.getNaming()).thenReturn(naming);
+
+        // Instantiate the handler
+        handler = new EmbeddedHandler(context, columnHandler, relationshipHandler);
+
+        // Use reflection to inject our mock AttributeDescriptorFactory,
+        // which is crucial for isolating the EmbeddedHandler's logic.
+        Field factoryField = EmbeddedHandler.class.getDeclaredField("descriptorFactory");
+        factoryField.setAccessible(true);
+        factoryField.set(handler, mockDescriptorFactory);
+
+        // Default behavior for ColumnHandler: create a basic column model.
+        // Tests can override this if needed.
+        lenient().when(columnHandler.createFromAttribute(any(), any(), any())).thenAnswer(inv -> {
+            AttributeDescriptor desc = inv.getArgument(0);
+            EntityModel owner = inv.getArgument(1);
+            Column leafCol = desc.getAnnotation(Column.class);
+            String colName = (leafCol != null && !leafCol.name().isEmpty()) ? leafCol.name() : desc.name();
+            return ColumnModel.builder()
+                    .columnName(colName)
+                    .tableName(owner.getTableName())
+                    .javaType(desc.type().toString())
+                    .build();
+        });
+    }
+
+    // A helper to create a mock AttributeDescriptor for testing purposes
+    private AttributeDescriptor mockAttribute(String name, String typeFqcn, Annotation... anns) {
+        AttributeDescriptor ad = mock(AttributeDescriptor.class, name);
+        lenient().when(ad.name()).thenReturn(name);
+
+        TypeMirror type = mock(TypeMirror.class, name + "Type");
+        lenient().when(type.toString()).thenReturn(typeFqcn);
+        lenient().when(ad.type()).thenReturn(type);
+
+        lenient().when(ad.getAnnotation(any())).thenAnswer(inv -> {
+            Class<? extends Annotation> annClass = inv.getArgument(0);
+            return Arrays.stream(anns).filter(annClass::isInstance).findFirst().orElse(null);
+        });
+        lenient().when(ad.hasAnnotation((Class<? extends Annotation>) any())).thenAnswer(inv -> {
+            Class<? extends Annotation> annClass = inv.getArgument(0);
+            return Arrays.stream(anns).anyMatch(annClass::isInstance);
+        });
+
+        // Link type mirror to a mock TypeElement for relationship processing
+        if (Arrays.stream(anns).anyMatch(a -> a instanceof ManyToOne || a instanceof OneToOne)) {
+            TypeElement targetElement = mock(TypeElement.class);
+            Name fqcn = mock(Name.class);
+            lenient().when(fqcn.toString()).thenReturn(typeFqcn);
+            lenient().when(targetElement.getQualifiedName()).thenReturn(fqcn);
+
+            DeclaredType declaredType = mock(DeclaredType.class);
+            lenient().when(declaredType.asElement()).thenReturn(targetElement);
+            lenient().when(ad.type()).thenReturn(declaredType);
+        }
+
+        return ad;
+    }
+
+    // A helper to set up a mock embeddable type
+    private DeclaredType mockEmbeddableType(String fqcn, List<AttributeDescriptor> descriptors) {
+        TypeElement typeElement = mock(TypeElement.class);
+        lenient().when(typeElement.getAnnotation(Embeddable.class)).thenReturn(mock(Embeddable.class));
+        lenient().when(typeElement.getQualifiedName()).thenReturn(mock(javax.lang.model.element.Name.class));
+        lenient().when(typeElement.getQualifiedName().toString()).thenReturn(fqcn);
+
+        DeclaredType declaredType = mock(DeclaredType.class);
+        lenient().when(declaredType.asElement()).thenReturn(typeElement);
+
+        // Configure the mock factory to return our desired descriptors for this type
+        when(mockDescriptorFactory.createDescriptors(typeElement)).thenReturn(descriptors);
+        return declaredType;
+    }
+
+    // =================================================================
+    // ## Basic @Embedded Tests
+    // =================================================================
+
+    @Test
+    void processEmbedded_Simple_AddsPrefixedColumns() {
+        // Arrange
+        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User", "users");
+        AttributeDescriptor streetAttr = mockAttribute("street", "java.lang.String");
+        AttributeDescriptor cityAttr = mockAttribute("city", "java.lang.String");
+        DeclaredType addressType = mockEmbeddableType("com.ex.Address", List.of(streetAttr, cityAttr));
+
+        AttributeDescriptor embedAttr = mock(AttributeDescriptor.class);
+        when(embedAttr.type()).thenReturn(addressType);
+        when(embedAttr.name()).thenReturn("location");
+
+        // Act
+        handler.processEmbedded(embedAttr, owner, new HashSet<>());
+
+        // Assert
+        assertEquals(3, owner.getColumns().size()); // id + street + city
+        ColumnAssertions.assertNonPkWithType(owner, "users", "location_street", "java.lang.String");
+        ColumnAssertions.assertNonPkWithType(owner, "users", "location_city", "java.lang.String");
+    }
+
+    @Test
+    void processEmbedded_Nested_AddsCumulativePrefixes() {
+        // Arrange
+        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User", "users");
+
+        // Innermost embeddable: Coordinates
+        AttributeDescriptor latAttr = mockAttribute("lat", "double");
+        AttributeDescriptor lonAttr = mockAttribute("lon", "double");
+        DeclaredType coordsType = mockEmbeddableType("com.ex.Coordinates", List.of(latAttr, lonAttr));
+
+        // Middle embeddable: Location, which contains Coordinates
+        AttributeDescriptor coordsAttr = mockAttribute("coords", "com.ex.Coordinates", mock(Embedded.class));
+        when(coordsAttr.type()).thenReturn(coordsType);
+        DeclaredType locationType = mockEmbeddableType("com.ex.Location", List.of(coordsAttr));
+
+        // Top-level @Embedded attribute in User
+        AttributeDescriptor embedAttr = mock(AttributeDescriptor.class);
+        when(embedAttr.type()).thenReturn(locationType);
+        when(embedAttr.name()).thenReturn("home");
+
+        // Act
+        handler.processEmbedded(embedAttr, owner, new HashSet<>());
+
+        // Assert
+        assertEquals(3, owner.getColumns().size()); // id + lat + lon
+        ColumnAssertions.assertNonPkWithType(owner, "users", "home_coords_lat", "double");
+        ColumnAssertions.assertNonPkWithType(owner, "users", "home_coords_lon", "double");
+    }
+
+    @Test
+    void processEmbedded_ColumnNamePrecedence_PrefersOverridesAndExplicitNames() {
+        // Arrange
+        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User", "users");
+
+        // field1: default name, should be prefixed
+        AttributeDescriptor field1Attr = mockAttribute("field1", "java.lang.String");
+        // field2: has explicit @Column(name), should NOT be prefixed
+        Column field2ColAnn = AnnotationProxies.of(Column.class, Map.of("name", "FIELD_2_EXPLICIT"));
+        AttributeDescriptor field2Attr = mockAttribute("field2", "java.lang.String", field2ColAnn);
+
+        DeclaredType embeddableType = mockEmbeddableType("com.ex.Embed", List.of(field1Attr, field2Attr));
+
+        // Top-level attribute with an override for 'field1'
+        AttributeOverride override = AnnotationProxies.of(AttributeOverride.class, Map.of(
+                "name", "field1",
+                "column", AnnotationProxies.of(Column.class, Map.of("name", "FIELD_1_OVERRIDE"))
+        ));
+        AttributeDescriptor embedAttr = mock(AttributeDescriptor.class);
+        when(embedAttr.getAnnotation(AttributeOverride.class)).thenReturn(override);
+        when(embedAttr.getAnnotation(AttributeOverrides.class)).thenReturn(null);
+        when(embedAttr.getAnnotation(AssociationOverride.class)).thenReturn(null);
+        when(embedAttr.getAnnotation(AssociationOverrides.class)).thenReturn(null);
+        when(embedAttr.type()).thenReturn(embeddableType);
+        when(embedAttr.name()).thenReturn("data");
+
+
+        // Act
+        handler.processEmbedded(embedAttr, owner, new HashSet<>());
+
+        // Assert
+        assertEquals(3, owner.getColumns().size());
+        // field1 was overridden, so it uses the override name without a prefix.
+        ColumnAssertions.assertNonPkWithType(owner, "users", "FIELD_1_OVERRIDE", "java.lang.String");
+        // field2 had an explicit name, so it uses that name without a prefix.
+        ColumnAssertions.assertNonPkWithType(owner, "users", "FIELD_2_EXPLICIT", "java.lang.String");
+    }
+
+    // =================================================================
+    // ## @EmbeddedId Tests
+    // =================================================================
+
+    @Test
+    void processEmbeddedId_CreatesPkColumnsAndRegistersThem() {
+        // Arrange
+        EntityModel owner = EntityModelMother.javaEntity("com.ex.Order", "orders");
+        AttributeDescriptor customerIdAttr = mockAttribute("customerId", "long");
+        AttributeDescriptor orderNumAttr = mockAttribute("orderNum", "java.lang.String");
+        DeclaredType orderIdType = mockEmbeddableType("com.ex.OrderId", List.of(customerIdAttr, orderNumAttr));
+
+        AttributeDescriptor idAttr = mock(AttributeDescriptor.class);
+        when(idAttr.type()).thenReturn(orderIdType);
+        when(idAttr.name()).thenReturn("pk");
+
+        // Act
+        handler.processEmbeddedId(idAttr, owner, new HashSet<>());
+
+        // Assert - Columns are primary keys and not nullable
+        assertEquals(2, owner.getColumns().size());
+        ColumnAssertions.assertPkNonNull(owner, "orders", "pk_customerId", "long");
+        ColumnAssertions.assertPkNonNull(owner, "orders", "pk_orderNum", "java.lang.String");
+
+        // Assert - Context registration for @MapsId
+        verify(context).registerPkAttributeColumns("com.ex.Order", "pk.customerId", List.of("pk_customerId"));
+        verify(context).registerPkAttributeColumns("com.ex.Order", "pk.orderNum", List.of("pk_orderNum"));
+    }
+
+    // =================================================================
+    // ## Embedded Relationship Tests
+    // =================================================================
+
+    @Test
+    void processEmbeddedRelationship_SimpleManyToOne_CreatesForeignKey() {
+        // Arrange
+        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.Employee", "employees");
+
+        EntityModel countryEntity = EntityModelMother.javaEntity("com.ex.Country", "countries");
+        ColumnModel countryPk = EntityModelMother.pkColumn("countries", "code", "java.lang.String");
+        countryEntity.putColumn(countryPk);
+        when(schemaModel.getEntities()).thenReturn(Map.of("com.ex.Country", countryEntity));
+        when(context.findAllPrimaryKeyColumns(countryEntity)).thenReturn(List.of(countryPk));
+
+        ManyToOne m2oAnn = AnnotationProxies.of(ManyToOne.class, Map.of("country", void.class));
+        AttributeDescriptor countryRelAttr = mockAttribute("country", "com.ex.Country", m2oAnn);
+        DeclaredType addressType = mockEmbeddableType("com.ex.Address", List.of(countryRelAttr));
+
+        AttributeDescriptor embedAttr = mock(AttributeDescriptor.class);
+        when(embedAttr.type()).thenReturn(addressType);
+        when(embedAttr.name()).thenReturn("address");
+
+        when(naming.fkName(any(), any(), any(), any())).thenReturn("FK_emp_country");
+
+        // Act
+        handler.processEmbedded(embedAttr, owner, new HashSet<>());
+
+        // Assert
+        // A foreign key column is created with the default naming convention: prefix_attr_pkcol
+        ColumnAssertions.assertNonPkWithType(owner, "employees", "address_country_code", "java.lang.String");
+
+        // A relationship model is created
+        RelationshipAssertions.assertFk(owner, "FK_emp_country",
+                "employees", List.of("address_country_code"),
+                "countries", List.of("code"),
+                RelationshipType.MANY_TO_ONE);
+    }
+
+    @Test
+    void processEmbeddedRelationship_AssociationOverride_UsesOverriddenJoinColumn() {
+        // Arrange
+        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.Employee", "employees");
+        EntityModel countryEntity = EntityModelMother.javaEntityWithPkIdLong("com.ex.Country", "countries");
+        when(schemaModel.getEntities()).thenReturn(Map.of("com.ex.Country", countryEntity));
+        when(context.findAllPrimaryKeyColumns(countryEntity)).thenReturn(List.of(
+                countryEntity.findColumn("countries", "id")
+        ));
+
+        ManyToOne m2oAnn = AnnotationProxies.of(ManyToOne.class, Map.of("targetEntity", void.class));
+        AttributeDescriptor countryRelAttr = mockAttribute("country", "com.ex.Country", m2oAnn);
+        DeclaredType addressType = mockEmbeddableType("com.ex.Address", List.of(countryRelAttr));
+
+        AssociationOverride override = AnnotationProxies.of(AssociationOverride.class, Map.of(
+                "name", "country",
+                "joinColumns", new JoinColumn[]{
+                        AnnotationMocks.joinColumn("COUNTRY_ID_FK", "id")
+                }
+        ));
+        AttributeDescriptor embedAttr = mock(AttributeDescriptor.class);
+        when(embedAttr.getAnnotation(AssociationOverride.class)).thenReturn(override);
+        when(embedAttr.getAnnotation(AssociationOverrides.class)).thenReturn(null);
+        when(embedAttr.getAnnotation(AttributeOverride.class)).thenReturn(null);
+        when(embedAttr.getAnnotation(AttributeOverrides.class)).thenReturn(null);
+        when(embedAttr.type()).thenReturn(addressType);
+        when(embedAttr.name()).thenReturn("address");
+
+        when(naming.fkName(any(), any(), any(), any())).thenReturn("FK_emp_country_override");
+
+        // Act
+        handler.processEmbedded(embedAttr, owner, new HashSet<>());
+
+        // Assert
+        // 1. 기본 생성 이름(address_country_id)을 가진 컬럼은 없어야 함을 확인
+        assertNull(owner.findColumn("employees", "address_country_id"));
+
+        // 2. @AssociationOverride에 명시된 이름("COUNTRY_ID_FK")을 가진 컬럼이 생성되었는지 확인
+        ColumnAssertions.assertNonPkWithType(owner, "employees", "COUNTRY_ID_FK", "java.lang.Long");
+
+        // 3. Relationship 모델이 올바른 컬럼 이름("COUNTRY_ID_FK")으로 생성되었는지 확인
+        RelationshipAssertions.assertFk(owner, "FK_emp_country_override",
+                "employees", List.of("COUNTRY_ID_FK"), // <--- 수정된 부분!
+                "countries", List.of("id"),
+                RelationshipType.MANY_TO_ONE);
+    }
+
+    @Test
+    void processEmbeddedRelationship_CompositePkWithoutJoinColumns_LogsError() {
+        // Arrange
+        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User", "users");
+
+        EntityModel compositePkEntity = EntityModelMother.javaEntity("com.ex.Composite", "composites");
+        ColumnModel pk1 = EntityModelMother.pkColumn("composites", "pk1", "int");
+        ColumnModel pk2 = EntityModelMother.pkColumn("composites", "pk2", "int");
+        compositePkEntity.putColumn(pk1);
+        compositePkEntity.putColumn(pk2);
+        when(schemaModel.getEntities()).thenReturn(Map.of("com.ex.Composite", compositePkEntity));
+        when(context.findAllPrimaryKeyColumns(compositePkEntity)).thenReturn(List.of(pk1, pk2));
+
+        ManyToOne m2oAnn = AnnotationProxies.of(ManyToOne.class, Map.of("targetEntity", void.class));
+        AttributeDescriptor relAttr = mockAttribute("comp", "com.ex.Composite", m2oAnn);
+        DeclaredType embeddableType = mockEmbeddableType("com.ex.Embed", List.of(relAttr));
+
+        AttributeDescriptor embedAttr = mock(AttributeDescriptor.class);
+        when(embedAttr.type()).thenReturn(embeddableType);
+        lenient().when(embedAttr.name()).thenReturn("data");
+
+        // Act
+        handler.processEmbedded(embedAttr, owner, new HashSet<>());
+
+        // Assert
+        MessagerAssertions.assertErrorContains(messager, "Composite primary key on com.ex.Composite requires explicit @JoinColumns");
+        // No columns or relationships should be added
+        assertEquals(1, owner.getColumns().size()); // Only the original PK
+        assertTrue(owner.getRelationships().isEmpty());
+    }
+}

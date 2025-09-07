@@ -70,6 +70,7 @@ public class ProcessingContext {
     }
 
     public void saveModelToJson() {
+        System.out.println("SchemaModel: " + schemaModel);
         if (schemaModel.getEntities().isEmpty()) {
             return;
         }
@@ -87,6 +88,7 @@ public class ProcessingContext {
             processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
                     "Failed to write schema file: " + e.getMessage());
         }
+        System.out.println("Schema JSON written.");
     }
 
     public Optional<String> findPrimaryKeyColumnName(EntityModel entityModel) {
