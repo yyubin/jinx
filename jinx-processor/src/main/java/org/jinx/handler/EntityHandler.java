@@ -44,7 +44,7 @@ public class EntityHandler {
     public void handle(TypeElement typeElement) {
         // Clear mappedBy visited set for each new entity to allow proper cycle detection
         context.clearMappedByVisited();
-        
+
         // 1. 엔티티 기본 정보 설정
         EntityModel entity = createEntityModel(typeElement);
         if (entity == null) return;
@@ -76,7 +76,7 @@ public class EntityHandler {
         // 9. 보조 테이블 조인 및 상속 관계 처리 (PK 확정 후)
         processSecondaryTableJoins(secondaryTableAnns, typeElement, entity);
         processInheritanceJoin(typeElement, entity);
-        
+
         // 10. Check for @MapsId attributes requiring deferred processing
         if (hasMapsIdAttributes(typeElement, entity)) {
             context.getDeferredEntities().offer(entity);
@@ -135,7 +135,7 @@ public class EntityHandler {
             // Process @MapsId attributes if any
             if (hasMapsIdAttributes(te, child)) {
                 boolean needsRetry = hasUnresolvedMapsIdDeps(te, child);
-                
+
                 if (!needsRetry) {
                     // 의존성이 모두 준비됨 → 실제 처리 진행
                     relationshipHandler.processMapsIdAttributes(te, child);
@@ -201,7 +201,7 @@ public class EntityHandler {
                 entity.getTableName());
     }
 
-    
+
 
     private void processInheritanceJoin(TypeElement type, EntityModel childEntity) {
         TypeMirror superclass = type.getSuperclass();
@@ -265,14 +265,53 @@ public class EntityHandler {
 
     // 다층 상속 방어 유틸
     private Optional<TypeElement> findNearestJoinedParentEntity(TypeElement type) {
+        Set<String> seen = new java.util.HashSet<>();
         TypeMirror sup = type.getSuperclass();
+
         while (sup.getKind() == TypeKind.DECLARED) {
             TypeElement p = (TypeElement) ((DeclaredType) sup).asElement();
-            if (p.getAnnotation(Entity.class) != null) {
-                Inheritance inh = p.getAnnotation(Inheritance.class);
-                if (inh != null && inh.strategy() == InheritanceType.JOINED) return Optional.of(p);
-                return Optional.empty(); // 엔티티인데 JOINED가 아니면 여기서 종료
+            String qn = p.getQualifiedName().toString();
+
+            if (!seen.add(qn)) {
+                // 선택: warning으로 남기고 중단
+                context.getMessager().printMessage(
+                        javax.tools.Diagnostic.Kind.WARNING,
+                        "Detected inheritance cycle near: " + qn + " while scanning for JOINED parent of " +
+                                type.getQualifiedName()
+                );
+                break;
             }
+
+            // 엔티티가 아니면 계속 상위로
+            if (p.getAnnotation(jakarta.persistence.Entity.class) == null) {
+                sup = p.getSuperclass();
+                continue;
+            }
+
+            // 엔티티면 상속 전략 확인
+            jakarta.persistence.Inheritance inh = p.getAnnotation(jakarta.persistence.Inheritance.class);
+            if (inh != null) {
+                switch (inh.strategy()) {
+                    case JOINED:
+                        // 가장 가까운 JOINED 부모 반환
+                        return Optional.of(p);
+                    case SINGLE_TABLE:
+                    case TABLE_PER_CLASS:
+                        // JOINED 탐색과 충돌 → 에러 및 종료
+                        context.getMessager().printMessage(
+                                javax.tools.Diagnostic.Kind.ERROR,
+                                "Found explicit inheritance strategy '" + inh.strategy() +
+                                        "' at '" + qn + "' while searching for a JOINED parent of '" +
+                                        type.getQualifiedName() + "'. Mixed strategies in the same hierarchy are not supported.",
+                                p
+                        );
+                        return Optional.empty();
+                    default:
+                        // 미래 확장 대비: 그냥 계속
+                        break;
+                }
+            }
+            // 명시적 @Inheritance 없으면 계속 상위로
             sup = p.getSuperclass();
         }
         return Optional.empty();
@@ -327,10 +366,10 @@ public class EntityHandler {
 
         // 보조 테이블의 경우엔 일반적으로 자식(보조) 테이블 쪽 컬럼을 생성해야 함
         ensureChildPkColumnsExist(entity, tableName, childCols, parentPkCols);
-        
+
         // FK 인덱스 생성 (PK/UNIQUE로 커버되지 않은 경우에만)
         relationshipSupport.addForeignKeyIndex(entity, childCols, tableName);
-        
+
         return true;
     }
 
@@ -392,14 +431,14 @@ public class EntityHandler {
     public void processFieldsWithAttributeDescriptor(TypeElement typeElement, EntityModel entity) {
         // Get cached AttributeDescriptor list based on Access strategy
         List<AttributeDescriptor> descriptors = context.getCachedDescriptors(typeElement);
-        
+
         Map<String, SecondaryTable> tableMappings = buildTableMappings(entity, collectSecondaryTables(typeElement));
-        
+
         for (AttributeDescriptor descriptor : descriptors) {
             processAttributeDescriptor(descriptor, entity, tableMappings);
         }
     }
-    
+
     private void processAttributeDescriptor(AttributeDescriptor descriptor, EntityModel entity, Map<String, SecondaryTable> tableMappings) {
         if (descriptor.hasAnnotation(ElementCollection.class)) {
             // Use new AttributeDescriptor-based overload
@@ -510,14 +549,14 @@ public class EntityHandler {
 
     private String determineTargetTableFromDescriptor(Column column, Map<String, SecondaryTable> tableMappings, String defaultTable) {
         if (column == null || column.table().isEmpty()) return defaultTable;
-        
+
         String requestedTable = column.table();
-        
+
         // Check if the requested table is the primary table
         if (defaultTable.equals(requestedTable)) {
             return defaultTable;
         }
-        
+
         // Check if it's a known secondary table
         SecondaryTable st = tableMappings.get(requestedTable);
         if (st == null) {
@@ -528,14 +567,14 @@ public class EntityHandler {
         }
         return st.name();
     }
-    
+
     private boolean isRelationshipAttribute(AttributeDescriptor descriptor) {
         return descriptor.hasAnnotation(OneToOne.class) ||
                descriptor.hasAnnotation(OneToMany.class) ||
                descriptor.hasAnnotation(ManyToOne.class) ||
                descriptor.hasAnnotation(ManyToMany.class);
     }
-    
+
     private void processRelationshipAttribute(AttributeDescriptor descriptor, EntityModel entity) {
         relationshipHandler.resolve(descriptor, entity);
     }
@@ -546,7 +585,7 @@ public class EntityHandler {
      */
     private boolean hasMapsIdAttributes(TypeElement typeElement, EntityModel entity) {
         List<AttributeDescriptor> descriptors = context.getCachedDescriptors(typeElement);
-        
+
         return descriptors.stream()
                 .anyMatch(desc -> desc.hasAnnotation(MapsId.class) && isRelationshipAttribute(desc));
     }
@@ -574,9 +613,9 @@ public class EntityHandler {
             OneToOne oneToOne = descriptor.getAnnotation(OneToOne.class);
 
             // 참조 엔티티 타입 해석
-            Optional<TypeElement> refElementOpt = 
+            Optional<TypeElement> refElementOpt =
                     relationshipSupport.resolveTargetEntity(descriptor, manyToOne, oneToOne, null, null);
-            
+
             if (refElementOpt.isEmpty()) {
                 return true; // target TypeElement 아직 없음 → 재시도 필요
             }
@@ -603,8 +642,8 @@ public class EntityHandler {
 
         return false; // 준비 완료 → 이번 라운드에서 승격 처리
     }
-    
-    
+
+
 
     private ColumnModel resolveParentRef(List<ColumnModel> parentPkCols, PrimaryKeyJoinColumn a, int idx) {
         if (!a.referencedColumnName().isEmpty()) {
@@ -615,7 +654,7 @@ public class EntityHandler {
                         String availableColumns = parentPkCols.stream()
                                 .map(ColumnModel::getColumnName)
                                 .collect(java.util.stream.Collectors.joining(", "));
-                        return new IllegalStateException("referencedColumnName '" + a.referencedColumnName() + 
+                        return new IllegalStateException("referencedColumnName '" + a.referencedColumnName() +
                                 "' not found in parent primary key columns: [" + availableColumns + "]");
                     });
         }
