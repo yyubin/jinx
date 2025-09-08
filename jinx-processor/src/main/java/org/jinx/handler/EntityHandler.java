@@ -510,7 +510,7 @@ public class EntityHandler {
         // 5-1) out 내부 중복(테이블/타입/컬럼 동일) 제거
         Map<String, ConstraintModel> dedup = new LinkedHashMap<>();
         for (ConstraintModel c : out) {
-            String key = c.getType() + "|" + c.getTableName() + "|" + String.join(",", c.getColumns());
+            String key = c.getType() + "|" + c.getTableName() + "|" + String.join(",", sorted(c.getColumns()));
             dedup.putIfAbsent(key, c);
         }
         for (ConstraintModel c : dedup.values()) {
@@ -647,19 +647,24 @@ public class EntityHandler {
 
     private ColumnModel resolveParentRef(List<ColumnModel> parentPkCols, PrimaryKeyJoinColumn a, int idx) {
         if (!a.referencedColumnName().isEmpty()) {
-            return parentPkCols.stream()
+            Optional<ColumnModel> found = parentPkCols.stream()
                     .filter(p -> p.getColumnName().equals(a.referencedColumnName()))
-                    .findFirst()
-                    .orElseThrow(() -> {
-                        String availableColumns = parentPkCols.stream()
-                                .map(ColumnModel::getColumnName)
-                                .collect(java.util.stream.Collectors.joining(", "));
-                        return new IllegalStateException("referencedColumnName '" + a.referencedColumnName() +
-                                "' not found in parent primary key columns: [" + availableColumns + "]");
-                    });
+                    .findFirst();
+            if (found.isEmpty()) {
+                String availableColumns = parentPkCols.stream()
+                        .map(ColumnModel::getColumnName)
+                        .collect(java.util.stream.Collectors.joining(", "));
+                context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "referencedColumnName '" + a.referencedColumnName() +
+                        "' not found in parent primary key columns: [" + availableColumns + "]");
+                return null;
+            }
+            return found.get();
         }
         if (idx >= parentPkCols.size()) {
-            throw new IllegalStateException("@PrimaryKeyJoinColumn index " + idx + " exceeds parent PK column count " + parentPkCols.size());
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "@PrimaryKeyJoinColumn index " + idx + " exceeds parent PK column count " + parentPkCols.size());
+            return null;
         }
         return parentPkCols.get(idx);
     }
@@ -714,6 +719,16 @@ public class EntityHandler {
                 if (existing.getComment() == null)      existing.setComment(parentCol.getComment());
             }
         }
+    }
+
+    /**
+     * Returns a sorted copy of the column list to ensure deterministic dedup keys
+     * regardless of input order (Set→List conversions, etc.)
+     */
+    private List<String> sorted(List<String> cols) {
+        var c = new ArrayList<>(cols);
+        Collections.sort(c, String.CASE_INSENSITIVE_ORDER);
+        return c;
     }
 
 

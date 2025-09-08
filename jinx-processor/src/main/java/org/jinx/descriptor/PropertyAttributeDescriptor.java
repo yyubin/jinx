@@ -18,32 +18,34 @@ public record PropertyAttributeDescriptor(
 ) implements AttributeDescriptor {
 
     public PropertyAttributeDescriptor {
-        validateGetter(getter);
+        if (!isValidGetter(getter)) {
+            throw new IllegalArgumentException("Invalid getter: " + getter);
+        }
     }
     
-    private static void validateGetter(ExecutableElement getter) {
+    public static boolean isValidGetter(ExecutableElement getter) {
         // Must have no parameters
         if (getter.getParameters() != null && !getter.getParameters().isEmpty()) {
-            throw new IllegalArgumentException("Getter must have no parameters: " + getter);
+            return false;
         }
         
         // Must have non-void return type
         if (getter.getReturnType().getKind() == TypeKind.VOID) {
-            throw new IllegalArgumentException("Getter must have a non-void return type: " + getter);
+            return false;
         }
         
         String methodName = getter.getSimpleName().toString();
         
         // Exclude getClass() - it's Object method, not a property getter
         if ("getClass".equals(methodName)) {
-            throw new IllegalArgumentException("getClass() is not a valid property getter: " + getter);
+            return false;
         }
         
         // Must start with getXxx or isXxx (getClass 제외)
         boolean isGet = methodName.startsWith("get") && methodName.length() > 3;
         boolean isIs  = methodName.startsWith("is")  && methodName.length() > 2;
         if (!isGet && !isIs) {
-            throw new IllegalArgumentException("Method is not a valid JavaBeans getter: " + getter);
+            return false;
         }
         
         // Validate isXxx methods must return boolean/Boolean
@@ -51,8 +53,7 @@ public record PropertyAttributeDescriptor(
             TypeKind rk = getter.getReturnType().getKind();
             String returnTypeName = getter.getReturnType().toString();
             if (!(rk == TypeKind.BOOLEAN || "java.lang.Boolean".equals(returnTypeName))) {
-                throw new IllegalArgumentException("isXxx getter must return boolean or Boolean, but returns " + 
-                    returnTypeName + ": " + getter);
+                return false;
             }
         }
         
@@ -60,14 +61,16 @@ public record PropertyAttributeDescriptor(
         if (methodName.startsWith("get") && methodName.length() > 3) {
             char firstChar = methodName.charAt(3);
             if (!Character.isUpperCase(firstChar)) {
-                throw new IllegalArgumentException("getXxx method must have uppercase character after 'get': " + getter);
+                return false;
             }
         } else if (methodName.startsWith("is") && methodName.length() > 2) {
             char firstChar = methodName.charAt(2);
             if (!Character.isUpperCase(firstChar)) {
-                throw new IllegalArgumentException("isXxx method must have uppercase character after 'is': " + getter);
+                return false;
             }
         }
+        
+        return true;
     }
 
     @Override

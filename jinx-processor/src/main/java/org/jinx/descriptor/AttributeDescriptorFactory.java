@@ -85,12 +85,12 @@ public class AttributeDescriptorFactory {
                     messager.printMessage(Diagnostic.Kind.ERROR, "No getter found for property '" + candidate.getName() + "' which is explicitly marked for property access.", field);
                     return Optional.empty();
                 }
-                return Optional.of(new PropertyAttributeDescriptor(getter, typeUtils, elements));
+                return createPropertyDescriptor(getter);
             }
         }
         if (getterAccess != null) {
             if (getterAccess.value() == AccessType.PROPERTY) {
-                return Optional.of(new PropertyAttributeDescriptor(getter, typeUtils, elements));
+                return createPropertyDescriptor(getter);
             } else {
                 if (field == null) {
                     messager.printMessage(Diagnostic.Kind.ERROR, "No field found for property '" + candidate.getName() + "' which is explicitly marked for field access.", getter);
@@ -109,18 +109,86 @@ public class AttributeDescriptorFactory {
             return Optional.of(new FieldAttributeDescriptor(field, typeUtils, elements));
         }
         if (getterHasMapping) {
-            return Optional.of(new PropertyAttributeDescriptor(getter, typeUtils, elements));
+            return createPropertyDescriptor(getter);
         }
         if (defaultAccessType == AccessType.PROPERTY && getter != null) {
-            return Optional.of(new PropertyAttributeDescriptor(getter, typeUtils, elements));
+            return createPropertyDescriptor(getter);
         }
         if (field != null) {
             return Optional.of(new FieldAttributeDescriptor(field, typeUtils, elements));
         }
         if (getter != null) {
-             return Optional.of(new PropertyAttributeDescriptor(getter, typeUtils, elements));
+            return createPropertyDescriptor(getter);
         }
         return Optional.empty();
+    }
+    
+    /**
+     * Safely creates a PropertyAttributeDescriptor, validating the getter first
+     * and reporting errors via Messager instead of letting exceptions propagate.
+     */
+    private Optional<AttributeDescriptor> createPropertyDescriptor(ExecutableElement getter) {
+        if (getter == null) {
+            return Optional.empty();
+        }
+        
+        if (!PropertyAttributeDescriptor.isValidGetter(getter)) {
+            String methodName = getter.getSimpleName().toString();
+            String errorMessage = getGetterValidationErrorMessage(getter, methodName);
+            messager.printMessage(Diagnostic.Kind.ERROR, errorMessage, getter);
+            return Optional.empty();
+        }
+        
+        return Optional.of(new PropertyAttributeDescriptor(getter, typeUtils, elements));
+    }
+    
+    private String getGetterValidationErrorMessage(ExecutableElement getter, String methodName) {
+        // Must have no parameters
+        if (getter.getParameters() != null && !getter.getParameters().isEmpty()) {
+            return "Getter must have no parameters: " + getter;
+        }
+        
+        // Must have non-void return type
+        if (getter.getReturnType().getKind() == javax.lang.model.type.TypeKind.VOID) {
+            return "Getter must have a non-void return type: " + getter;
+        }
+        
+        // Exclude getClass() - it's Object method, not a property getter
+        if ("getClass".equals(methodName)) {
+            return "getClass() is not a valid property getter: " + getter;
+        }
+        
+        // Must start with getXxx or isXxx
+        boolean isGet = methodName.startsWith("get") && methodName.length() > 3;
+        boolean isIs  = methodName.startsWith("is")  && methodName.length() > 2;
+        if (!isGet && !isIs) {
+            return "Method is not a valid JavaBeans getter: " + getter;
+        }
+        
+        // Validate isXxx methods must return boolean/Boolean
+        if (methodName.startsWith("is") && methodName.length() > 2) {
+            javax.lang.model.type.TypeKind rk = getter.getReturnType().getKind();
+            String returnTypeName = getter.getReturnType().toString();
+            if (!(rk == javax.lang.model.type.TypeKind.BOOLEAN || "java.lang.Boolean".equals(returnTypeName))) {
+                return "isXxx getter must return boolean or Boolean, but returns " + 
+                    returnTypeName + ": " + getter;
+            }
+        }
+        
+        // Validate proper capitalization after prefix
+        if (methodName.startsWith("get") && methodName.length() > 3) {
+            char firstChar = methodName.charAt(3);
+            if (!Character.isUpperCase(firstChar)) {
+                return "getXxx method must have uppercase character after 'get': " + getter;
+            }
+        } else if (methodName.startsWith("is") && methodName.length() > 2) {
+            char firstChar = methodName.charAt(2);
+            if (!Character.isUpperCase(firstChar)) {
+                return "isXxx method must have uppercase character after 'is': " + getter;
+            }
+        }
+        
+        return "Invalid getter: " + getter;
     }
 
     private boolean hasMappingAnnotation(Element element) {

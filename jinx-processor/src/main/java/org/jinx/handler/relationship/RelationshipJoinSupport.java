@@ -162,9 +162,11 @@ public final class RelationshipJoinSupport {
                 String availablePks = ownerPks.stream()
                         .map(ColumnModel::getColumnName)
                         .collect(java.util.stream.Collectors.joining(", "));
-                throw new IllegalStateException("Owner primary key '" + pkName +
+                context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "Owner primary key '" + pkName +
                         "' not found while creating join table '" + details.joinTableName() +
                         "'. Available PKs: [" + availablePks + "]");
+                return null;
             }
             joinTableEntity.putColumn(ColumnModel.builder()
                     .columnName(fkName).tableName(details.joinTableName()).javaType(pk.getJavaType()).isNullable(false).build());
@@ -182,9 +184,11 @@ public final class RelationshipJoinSupport {
                 String availablePks = referencedPks.stream()
                         .map(ColumnModel::getColumnName)
                         .collect(java.util.stream.Collectors.joining(", "));
-                throw new IllegalStateException("Referenced primary key '" + pkName +
+                context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "Referenced primary key '" + pkName +
                         "' not found while creating join table '" + details.joinTableName() +
                         "'. Available PKs: [" + availablePks + "]");
+                return null;
             }
             joinTableEntity.putColumn(ColumnModel.builder()
                     .columnName(fkName).tableName(details.joinTableName()).javaType(pk.getJavaType()).isNullable(false).build());
@@ -336,7 +340,7 @@ public final class RelationshipJoinSupport {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "JoinTable name '" + joinTableName + "' conflicts with owner entity table name '" + ownerEntity.getTableName() + "'.", 
                     attr.elementForDiagnostics());
-            throw new IllegalStateException("JoinTable name conflicts with owner table");
+            return;
         }
         
         // JoinTable 이름이 referenced 테이블명과 동일한지 검증
@@ -344,7 +348,7 @@ public final class RelationshipJoinSupport {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "JoinTable name '" + joinTableName + "' conflicts with referenced entity table name '" + referencedEntity.getTableName() + "'.", 
                     attr.elementForDiagnostics());
-            throw new IllegalStateException("JoinTable name conflicts with referenced table");
+            return;
         }
     }
 
@@ -379,7 +383,7 @@ public final class RelationshipJoinSupport {
             error.append("Found columns: ").append(existingColumns).append(".");
             
             context.getMessager().printMessage(Diagnostic.Kind.ERROR, error.toString(), attr.elementForDiagnostics());
-            throw new IllegalStateException("JoinTable FK column set mismatch");
+            return;
         }
     }
 }

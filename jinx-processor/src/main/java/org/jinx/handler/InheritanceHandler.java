@@ -214,6 +214,10 @@ public class InheritanceHandler {
         }
 
         List<JoinPair> joinPairs = resolvePrimaryKeyJoinPairs(childType, parentPkCols);
+        if (joinPairs == null) {
+            childEntity.setValid(false);
+            return;
+        }
 
         // 1) 검증 단계: 기존 컬럼과 타입/PK/nullable 조건을 모두 점검하고 추가될 컬럼은 pending 목록에만 만든다.
         List<ColumnModel> pendingAdds = new ArrayList<>();
@@ -322,7 +326,7 @@ public class InheritanceHandler {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     String.format("JOINED inheritance PK mapping mismatch in %s: expected %d columns, but got %d",
                             childType.getQualifiedName(), parentPkCols.size(), annotations.size()));
-            throw new IllegalStateException("PK mapping size mismatch");
+            return null;
         }
 
         List<JoinPair> result = new ArrayList<>();
@@ -330,6 +334,9 @@ public class InheritanceHandler {
             for (int i = 0; i < annotations.size(); i++) {
                 PrimaryKeyJoinColumn anno = annotations.get(i);
                 ColumnModel parentRef = resolveParentReference(parentPkCols, anno, i);
+                if (parentRef == null) {
+                    return null;
+                }
                 String childName = anno.name().isEmpty() ? parentRef.getColumnName() : anno.name();
                 result.add(new JoinPair(parentRef, childName));
             }
@@ -359,14 +366,15 @@ public class InheritanceHandler {
 
     private ColumnModel resolveParentReference(List<ColumnModel> parentPkCols, PrimaryKeyJoinColumn anno, int index) {
         if (!anno.referencedColumnName().trim().isEmpty()) {
-            return parentPkCols.stream()
+            Optional<ColumnModel> found = parentPkCols.stream()
                     .filter(col -> col.getColumnName().equals(anno.referencedColumnName()))
-                    .findFirst()
-                    .orElseThrow(() -> {
-                        context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                                "Referenced column '" + anno.referencedColumnName() + "' not found in parent primary keys");
-                        return new IllegalStateException("Invalid referencedColumnName: " + anno.referencedColumnName());
-                    });
+                    .findFirst();
+            if (found.isEmpty()) {
+                context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "Referenced column '" + anno.referencedColumnName() + "' not found in parent primary keys");
+                return null;
+            }
+            return found.get();
         }
         return parentPkCols.get(index);
     }

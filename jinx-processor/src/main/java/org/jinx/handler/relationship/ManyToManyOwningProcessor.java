@@ -230,7 +230,7 @@ public final class ManyToManyOwningProcessor implements RelationshipProcessor {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                             "Composite primary key requires explicit referencedColumnName for all @" + sideLabel
                                     + " JoinColumns (index " + i + ", pkCount = " + pks.size() + ", joinColumnsCount = " + joinColumns.length  + ").", attr.elementForDiagnostics());
-                    throw new IllegalStateException("invalid joinColumns");
+                    return;
                 }
             }
         }
@@ -244,16 +244,16 @@ public final class ManyToManyOwningProcessor implements RelationshipProcessor {
         String side = isOwnerSide ? "owner" : "target";
         Map<String, String> mapping = new LinkedHashMap<>();
         if (joinColumns == null || joinColumns.length == 0) {
-            referencedPks.forEach(pk -> {
+            for (ColumnModel pk : referencedPks) {
                 // 조인테이블의 FK 네이밍: 참조 테이블명 기반 (entityTableName + referencedPK)
                 String fk = context.getNaming().foreignKeyColumnName(entityTableName, pk.getColumnName());
                 if (mapping.containsKey(fk)) {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                             "Duplicate foreign key column '" + fk + "' in join table mapping for " + entityTableName + " (side=" + side + ")", attr.elementForDiagnostics());
-                    throw new IllegalStateException("duplicate fk");
+                    return null;
                 }
                 mapping.put(fk, pk.getColumnName());
-            });
+            }
         } else {
             Set<String> pkNames = referencedPks.stream().map(ColumnModel::getColumnName).collect(Collectors.toSet());
             for (int i = 0; i < joinColumns.length; i++) {
@@ -264,7 +264,7 @@ public final class ManyToManyOwningProcessor implements RelationshipProcessor {
                 if (!pkNames.contains(pkName)) {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                             "referencedColumnName '" + pkName + "' is not a primary key column of " + entityTableName + " (side=" + side + ")", attr.elementForDiagnostics());
-                    throw new IllegalStateException("invalid referencedColumnName");
+                    return null;
                 }
                 // 조인테이블의 FK 네이밍: 참조 테이블명 기반 (entityTableName + referencedPK)
                 String fkName = jc.name().isEmpty()
@@ -273,7 +273,7 @@ public final class ManyToManyOwningProcessor implements RelationshipProcessor {
                 if (mapping.containsKey(fkName)) {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                             "Duplicate foreign key column '" + fkName + "' in join table mapping for " + entityTableName, attr.elementForDiagnostics());
-                    throw new IllegalStateException("duplicate fk");
+                    return null;
                 }
                 mapping.put(fkName, pkName);
             }
