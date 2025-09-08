@@ -70,14 +70,14 @@ public class EntityHandler {
         // 7. 복합키 처리 (@EmbeddedId)
         if (!processCompositeKeys(typeElement, entity)) return;
 
-        // 8. 필드 처리 (AttributeDescriptor 기반)
+        // 8. 필드 처리 (AttributeDescriptor 기반) - MappedSuperclass 속성 포함
         processFieldsWithAttributeDescriptor(typeElement, entity);
 
-        // 9. 보조 테이블 조인 및 상속 관계 처리 (PK 확정 후)
+        // 10. 보조 테이블 조인 및 상속 관계 처리 (PK 확정 후)
         processSecondaryTableJoins(secondaryTableAnns, typeElement, entity);
         processInheritanceJoin(typeElement, entity);
 
-        // 10. Check for @MapsId attributes requiring deferred processing
+        // 11. Check for @MapsId attributes requiring deferred processing
         if (hasMapsIdAttributes(typeElement, entity)) {
             context.getDeferredEntities().offer(entity);
             context.getDeferredNames().add(entity.getEntityName());

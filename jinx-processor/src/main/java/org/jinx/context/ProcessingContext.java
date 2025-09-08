@@ -1,5 +1,7 @@
 package org.jinx.context;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import lombok.Builder;
 import lombok.Getter;
 import org.jinx.descriptor.AttributeDescriptor;
 import org.jinx.descriptor.AttributeDescriptorFactory;
@@ -32,6 +34,10 @@ public class ProcessingContext {
     private final Queue<EntityModel> deferredEntities = new ArrayDeque<>();
     private final Set<String> deferredNames = new HashSet<>();
     private final AttributeDescriptorFactory attributeDescriptorFactory;
+
+    // 라운드 동안만 유효한 TypeElement 레지스트리
+    private final Map<String, TypeElement> mappedSuperclassElements = new HashMap<>();
+    private final Map<String, TypeElement> embeddableElements = new HashMap<>();
     
     // AttributeDescriptor caching to avoid re-computation during bidirectional relationship resolution
     private final Map<String, List<AttributeDescriptor>> descriptorCache = new HashMap<>();
@@ -180,6 +186,19 @@ public class ProcessingContext {
             .map(attrMap -> attrMap.get(attributePath))
             .orElse(null);
     }
+
+    public void registerMappedSuperclassElement(String fqn, TypeElement el) {
+        mappedSuperclassElements.put(fqn, el);
+    }
+    public void registerEmbeddableElement(String fqn, TypeElement el) {
+        embeddableElements.put(fqn, el);
+    }
+    public TypeElement getMappedSuperclassElement(String fqn) {
+        return mappedSuperclassElements.get(fqn);
+    }
+    public TypeElement getEmbeddableElement(String fqn) {
+        return embeddableElements.get(fqn);
+    }
     
     /**
      * Initialize context state at the beginning of an annotation processing round.
@@ -191,5 +210,7 @@ public class ProcessingContext {
         deferredNames.clear();
         descriptorCache.clear();
         pkAttributeToColumnMap.clear();
+        mappedSuperclassElements.clear();
+        embeddableElements.clear();
     }
 }
