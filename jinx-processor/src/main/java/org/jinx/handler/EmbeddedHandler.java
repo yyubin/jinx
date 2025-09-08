@@ -158,10 +158,11 @@ public class EmbeddedHandler {
                         if (isValidTable) {
                             column.setTableName(targetTable);
                         } else {
-                            context.getMessager().printMessage(javax.tools.Diagnostic.Kind.WARNING,
-                                    "AttributeOverride.table '" + targetTable + "' is not a primary/secondary table of " +
-                                            ownerEntity.getEntityName() + ". Falling back to " + column.getTableName(),
+                            context.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
+                                    "@AssociationOverride(joinTable=...) is not supported in embedded relationships: " + attribute.name(),
                                     attribute.elementForDiagnostics());
+                            ownerEntity.setValid(false);
+                            return;
                         }
                     }
 

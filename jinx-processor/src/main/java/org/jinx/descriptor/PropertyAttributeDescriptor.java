@@ -19,7 +19,7 @@ public record PropertyAttributeDescriptor(
 
     public PropertyAttributeDescriptor {
         if (!isValidGetter(getter)) {
-            throw new IllegalArgumentException("Invalid getter: " + getter);
+            assert isValidGetter(getter) : "Invalid getter: " + getter;
         }
     }
     

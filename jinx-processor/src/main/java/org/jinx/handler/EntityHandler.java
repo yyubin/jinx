@@ -335,19 +335,20 @@ public class EntityHandler {
             entity.setValid(false);
             return false;
         } else {
-            try {
-                for (int i = 0; i < pkjcs.size(); i++) {
-                    PrimaryKeyJoinColumn a = pkjcs.get(i);
-                    ColumnModel parentRef = resolveParentRef(parentPkCols, a, i);
-                    String childCol = a.name().isEmpty() ? parentRef.getColumnName() : a.name();
-                    childCols.add(childCol);
-                    refCols.add(parentRef.getColumnName());
+            for (int i = 0; i < pkjcs.size(); i++) {
+                PrimaryKeyJoinColumn a = pkjcs.get(i);
+                ColumnModel parentRef = resolveParentRef(parentPkCols, a, i, type);
+                if (parentRef == null) {
+                    context.getMessager().printMessage(
+                            Diagnostic.Kind.ERROR,
+                            "Invalid @PrimaryKeyJoinColumn at index " + i + " on " + type.getQualifiedName() + ".",
+                            type);
+                    entity.setValid(false);
+                    return false;
                 }
-            } catch (IllegalStateException ex) {
-                context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "Invalid @PrimaryKeyJoinColumn on " + type.getQualifiedName() + ": " + ex.getMessage(), type);
-                entity.setValid(false);
-                return false;
+                String childCol = a.name().isEmpty() ? parentRef.getColumnName() : a.name();
+                childCols.add(childCol);
+                refCols.add(parentRef.getColumnName());
             }
         }
 
@@ -645,7 +646,7 @@ public class EntityHandler {
 
 
 
-    private ColumnModel resolveParentRef(List<ColumnModel> parentPkCols, PrimaryKeyJoinColumn a, int idx) {
+    private ColumnModel resolveParentRef(List<ColumnModel> parentPkCols, PrimaryKeyJoinColumn a, int idx, TypeElement sourceElement) {
         if (!a.referencedColumnName().isEmpty()) {
             Optional<ColumnModel> found = parentPkCols.stream()
                     .filter(p -> p.getColumnName().equals(a.referencedColumnName()))
@@ -656,14 +657,16 @@ public class EntityHandler {
                         .collect(java.util.stream.Collectors.joining(", "));
                 context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                         "referencedColumnName '" + a.referencedColumnName() +
-                        "' not found in parent primary key columns: [" + availableColumns + "]");
+                        "' not found in parent primary key columns: [" + availableColumns + "]",
+                        sourceElement);
                 return null;
             }
             return found.get();
         }
         if (idx >= parentPkCols.size()) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "@PrimaryKeyJoinColumn index " + idx + " exceeds parent PK column count " + parentPkCols.size());
+                    "@PrimaryKeyJoinColumn index " + idx + " exceeds parent PK column count " + parentPkCols.size(),
+                    sourceElement);
             return null;
         }
         return parentPkCols.get(idx);

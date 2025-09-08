@@ -142,7 +142,7 @@ public final class RelationshipJoinSupport {
         }
     }
 
-    public EntityModel createJoinTableEntity(JoinTableDetails details, List<ColumnModel> ownerPks, List<ColumnModel> referencedPks) {
+    public Optional<EntityModel> createJoinTableEntity(JoinTableDetails details, List<ColumnModel> ownerPks, List<ColumnModel> referencedPks) {
         EntityModel joinTableEntity = EntityModel.builder()
                 .entityName(details.joinTableName())
                 .tableName(details.joinTableName())
@@ -166,7 +166,7 @@ public final class RelationshipJoinSupport {
                         "Owner primary key '" + pkName +
                         "' not found while creating join table '" + details.joinTableName() +
                         "'. Available PKs: [" + availablePks + "]");
-                return null;
+                return Optional.empty();
             }
             joinTableEntity.putColumn(ColumnModel.builder()
                     .columnName(fkName).tableName(details.joinTableName()).javaType(pk.getJavaType()).isNullable(false).build());
@@ -188,13 +188,13 @@ public final class RelationshipJoinSupport {
                         "Referenced primary key '" + pkName +
                         "' not found while creating join table '" + details.joinTableName() +
                         "'. Available PKs: [" + availablePks + "]");
-                return null;
+                return Optional.empty();
             }
             joinTableEntity.putColumn(ColumnModel.builder()
                     .columnName(fkName).tableName(details.joinTableName()).javaType(pk.getJavaType()).isNullable(false).build());
         }
 
-        return joinTableEntity;
+        return Optional.of(joinTableEntity);
     }
 
     public void addRelationshipsToJoinTable(EntityModel joinTableEntity, JoinTableDetails details) {
@@ -334,13 +334,13 @@ public final class RelationshipJoinSupport {
     /**
      * JoinTable 이름이 owner/referenced 엔티티 테이블명과 충돌하는지 검증
      */
-    public void validateJoinTableNameConflict(String joinTableName, EntityModel ownerEntity, EntityModel referencedEntity, AttributeDescriptor attr) {
+    public boolean validateJoinTableNameConflict(String joinTableName, EntityModel ownerEntity, EntityModel referencedEntity, AttributeDescriptor attr) {
         // JoinTable 이름이 owner 테이블명과 동일한지 검증
         if (joinTableName.equals(ownerEntity.getTableName())) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "JoinTable name '" + joinTableName + "' conflicts with owner entity table name '" + ownerEntity.getTableName() + "'.", 
                     attr.elementForDiagnostics());
-            return;
+            return false;
         }
         
         // JoinTable 이름이 referenced 테이블명과 동일한지 검증
@@ -348,14 +348,15 @@ public final class RelationshipJoinSupport {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "JoinTable name '" + joinTableName + "' conflicts with referenced entity table name '" + referencedEntity.getTableName() + "'.", 
                     attr.elementForDiagnostics());
-            return;
+            return false;
         }
+        return true;
     }
 
     /**
      * 기존 JoinTable과 FK 컬럼셋이 일치하는지 검증 (스키마 일관성 보장)
      */
-    public void validateJoinTableFkConsistency(EntityModel existingJoinTable, JoinTableDetails details, AttributeDescriptor attr) {
+    public boolean validateJoinTableFkConsistency(EntityModel existingJoinTable, JoinTableDetails details, AttributeDescriptor attr) {
         // 기존 JoinTable의 컬럼들과 새로 요구되는 FK 컬럼들이 정확히 일치하는지 검증
         Set<String> existingColumns = existingJoinTable.getColumns().keySet();
         Set<String> requiredColumns = new HashSet<>();
@@ -383,7 +384,8 @@ public final class RelationshipJoinSupport {
             error.append("Found columns: ").append(existingColumns).append(".");
             
             context.getMessager().printMessage(Diagnostic.Kind.ERROR, error.toString(), attr.elementForDiagnostics());
-            return;
+            return false;
         }
+        return true;
     }
 }

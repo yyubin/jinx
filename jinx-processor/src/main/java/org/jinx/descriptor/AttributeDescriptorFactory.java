@@ -127,7 +127,7 @@ public class AttributeDescriptorFactory {
      * Safely creates a PropertyAttributeDescriptor, validating the getter first
      * and reporting errors via Messager instead of letting exceptions propagate.
      */
-    private Optional<AttributeDescriptor> createPropertyDescriptor(ExecutableElement getter) {
+    public Optional<AttributeDescriptor> createPropertyDescriptor(ExecutableElement getter) {
         if (getter == null) {
             return Optional.empty();
         }
