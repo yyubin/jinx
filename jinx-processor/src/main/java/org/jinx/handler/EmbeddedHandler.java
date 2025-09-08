@@ -96,103 +96,111 @@ public class EmbeddedHandler {
 
         TypeMirror typeMirror = attribute.type();
         if (!(typeMirror instanceof DeclaredType)) return;
-        
+
         TypeElement embeddableType = (TypeElement) ((DeclaredType) typeMirror).asElement();
         if (embeddableType.getAnnotation(Embeddable.class) == null) return;
 
         String typeName = embeddableType.getQualifiedName().toString();
         if (processedTypes.contains(typeName)) return;
+
         processedTypes.add(typeName);
+        try {
+            String columnPrefix = parentColumnPrefix.isEmpty()
+                    ? attribute.name()
+                    : parentColumnPrefix + "_" + attribute.name();
 
-        String columnPrefix = parentColumnPrefix.isEmpty() 
-                ? attribute.name()
-                : parentColumnPrefix + "_" + attribute.name();
+            // Use cached descriptors in production, factory in tests
+            List<AttributeDescriptor> embeddedDescriptors;
+            TypeElement registryType = context.getEmbeddableElement(typeName);
 
-        // Use cached descriptors in production, factory in tests
-        List<AttributeDescriptor> embeddedDescriptors;
-        TypeElement registryType = context.getEmbeddableElement(typeName);
-        
-        if (registryType != null) {
-            // Production path: use cached descriptors for consistent results
-            embeddedDescriptors = context.getCachedDescriptors(registryType);
-        } else {
-            // Test/fallback path: use factory directly
-            embeddedDescriptors = descriptorFactory.createDescriptors(embeddableType);
-        }
-
-        for (AttributeDescriptor embeddedDescriptor : embeddedDescriptors) {
-            if (embeddedDescriptor.hasAnnotation(Transient.class)) continue;
-
-            String currentAttributeName = embeddedDescriptor.name();
-            String currentAttributePath = parentAttributePath.isEmpty() ? currentAttributeName : parentAttributePath + "." + currentAttributeName;
-
-            if (embeddedDescriptor.hasAnnotation(Embedded.class)) {
-                Map<String, String> childNameOverrides = filterAndRemapOverrides(nameOverrides, currentAttributeName + ".");
-                Map<String, String> childTableOverrides = filterAndRemapOverrides(tableOverrides, currentAttributeName + ".");
-                Map<String, Column> childColumnOverrides = filterAndRemapColumnOverrides(columnOverrides, currentAttributeName + ".");
-                Map<String, AssociationOverrideInfo> childAssocOverrides = filterAndRemapAssocOverrides(assocOverrides, currentAttributeName + ".");
-
-                processEmbeddedInternal(embeddedDescriptor, ownerEntity, processedTypes, isPrimaryKey, columnPrefix, currentAttributePath, childNameOverrides, childTableOverrides, childColumnOverrides, childAssocOverrides);
-            } else if (embeddedDescriptor.hasAnnotation(ManyToOne.class) || embeddedDescriptor.hasAnnotation(OneToOne.class)) {
-                Map<String, AssociationOverrideInfo> childAssocOverrides = filterAndRemapAssocOverrides(assocOverrides, currentAttributeName + ".");
-                processEmbeddedRelationship(embeddedDescriptor, ownerEntity, childAssocOverrides, columnPrefix);
+            if (registryType != null) {
+                // Production path: use cached descriptors for consistent results
+                embeddedDescriptors = context.getCachedDescriptors(registryType);
             } else {
-                // Use empty map for overrides - name/table overrides are applied later
-                ColumnModel column = columnHandler.createFromAttribute(embeddedDescriptor, ownerEntity, Collections.emptyMap());
-                if (column != null) {
-                    String overrideName = nameOverrides.get(currentAttributeName);
-                    boolean hasOverrideName = (overrideName != null && !overrideName.isEmpty());
-                    Column leafColAnn = embeddedDescriptor.getAnnotation(Column.class);
-                    boolean hasExplicitLeafName = (leafColAnn != null && !leafColAnn.name().isEmpty());
+                // Test/fallback path: use factory directly
+                embeddedDescriptors = descriptorFactory.createDescriptors(embeddableType);
+            }
 
-                    // Apply @Column overrides from @AttributeOverride
-                    Column columnOverride = columnOverrides.get(currentAttributeName);
-                    if (columnOverride != null) {
-                        applyColumnOverrides(column, columnOverride, ownerEntity, attribute);
-                    }
+            for (AttributeDescriptor embeddedDescriptor : embeddedDescriptors) {
+                if (embeddedDescriptor.hasAnnotation(Transient.class)) continue;
 
-                    String targetTable = tableOverrides.get(currentAttributeName);
-                    if (targetTable != null && !targetTable.isEmpty()) {
-                        boolean isValidTable = ownerEntity.getTableName().equals(targetTable) ||
-                                ownerEntity.getSecondaryTables().stream().anyMatch(st -> st.getName().equals(targetTable));
-                        if (isValidTable) {
-                            column.setTableName(targetTable);
-                        } else {
-                            context.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
-                                    "@AssociationOverride(joinTable=...) is not supported in embedded relationships: " + attribute.name(),
-                                    attribute.elementForDiagnostics());
-                            ownerEntity.setValid(false);
-                            return;
+                String currentAttributeName = embeddedDescriptor.name();
+                String currentAttributePath = parentAttributePath.isEmpty() ? currentAttributeName : parentAttributePath + "." + currentAttributeName;
+
+                if (embeddedDescriptor.hasAnnotation(Embedded.class)) {
+                    Map<String, String> childNameOverrides = filterAndRemapOverrides(nameOverrides, currentAttributeName + ".");
+                    Map<String, String> childTableOverrides = filterAndRemapOverrides(tableOverrides, currentAttributeName + ".");
+                    Map<String, Column> childColumnOverrides = filterAndRemapColumnOverrides(columnOverrides, currentAttributeName + ".");
+                    Map<String, AssociationOverrideInfo> childAssocOverrides = filterAndRemapAssocOverrides(assocOverrides, currentAttributeName + ".");
+
+                    processEmbeddedInternal(embeddedDescriptor, ownerEntity, processedTypes, isPrimaryKey, columnPrefix, currentAttributePath, childNameOverrides, childTableOverrides, childColumnOverrides, childAssocOverrides);
+                } else if (embeddedDescriptor.hasAnnotation(ManyToOne.class) || embeddedDescriptor.hasAnnotation(OneToOne.class)) {
+                    Map<String, AssociationOverrideInfo> childAssocOverrides = filterAndRemapAssocOverrides(assocOverrides, currentAttributeName + ".");
+                    processEmbeddedRelationship(embeddedDescriptor, ownerEntity, childAssocOverrides, columnPrefix);
+                } else {
+                    // Use empty map for overrides - name/table overrides are applied later
+                    ColumnModel column = columnHandler.createFromAttribute(embeddedDescriptor, ownerEntity, Collections.emptyMap());
+                    if (column != null) {
+                        String overrideName = nameOverrides.get(currentAttributeName);
+                        boolean hasOverrideName = (overrideName != null && !overrideName.isEmpty());
+                        Column leafColAnn = embeddedDescriptor.getAnnotation(Column.class);
+                        boolean hasExplicitLeafName = (leafColAnn != null && !leafColAnn.name().isEmpty());
+
+                        // Apply @Column overrides from @AttributeOverride
+                        Column columnOverride = columnOverrides.get(currentAttributeName);
+                        if (columnOverride != null) {
+                            applyColumnOverrides(column, columnOverride, ownerEntity, attribute);
                         }
-                    }
 
-                    if (hasOverrideName) {
-                        // 1. 최우선: AttributeOverride가 있으면 접두사 없이 해당 이름 사용
-                        column.setColumnName(overrideName);
-                    }
-                    else if (hasExplicitLeafName) {
-                        // 2. 차선: 명시적 @Column 이름이 있으면 접두사 없이 해당 이름 사용
-                        // createFromAttribute에서 이미 설정되었으므로 별도 작업 불필요. 이 블록은 로직의 명확성을 위해 존재.
-                    }
-                    else {
-                        // 3. 기본: 접두사와 컬럼명을 조합하여 이름 설정
-                        column.setColumnName(columnPrefix + "_" + column.getColumnName());
-                    }
+                        String targetTable = tableOverrides.get(currentAttributeName);
+                        if (targetTable != null && !targetTable.isEmpty()) {
+                            boolean isValidTable = ownerEntity.getTableName().equals(targetTable) ||
+                                    ownerEntity.getSecondaryTables().stream().anyMatch(st -> st.getName().equals(targetTable));
+                            if (isValidTable) {
+                                column.setTableName(targetTable);
+                            } else {
+                                String allowed = ownerEntity.getSecondaryTables().stream()
+                                    .map(SecondaryTableModel::getName)
+                                    .collect(java.util.stream.Collectors.joining(", "));
+                                context.getMessager().printMessage(
+                                    javax.tools.Diagnostic.Kind.ERROR,
+                                    " @AttributeOverride(table=...) must target owner's primary or secondary table. " +
+                                    "attribute='" + currentAttributeName + "', requested='" + targetTable + "'. " +
+                                    "Allowed: [" + ownerEntity.getTableName() + (allowed.isEmpty() ? "" : ", " + allowed) + "]",
+                                    embeddedDescriptor.elementForDiagnostics()
+                                );
+                                ownerEntity.setValid(false);
+                            }
+                        }
 
-                    if (isPrimaryKey) {
-                        column.setPrimaryKey(true);
-                        column.setNullable(false);
-                        context.registerPkAttributeColumns(ownerEntity.getFqcn(), currentAttributePath, List.of(column.getColumnName()));
-                    }
+                        if (hasOverrideName) {
+                            // 1. 최우선: AttributeOverride가 있으면 접두사 없이 해당 이름 사용
+                            column.setColumnName(overrideName);
+                        }
+                        else if (hasExplicitLeafName) {
+                            // 2. 차선: 명시적 @Column 이름이 있으면 접두사 없이 해당 이름 사용
+                            // createFromAttribute에서 이미 설정되었으므로 별도 작업 불필요. 이 블록은 로직의 명확성을 위해 존재.
+                        }
+                        else {
+                            // 3. 기본: 접두사와 컬럼명을 조합하여 이름 설정
+                            column.setColumnName(columnPrefix + "_" + column.getColumnName());
+                        }
 
-                    if (!ownerEntity.hasColumn(column.getTableName(), column.getColumnName())) {
-                        ownerEntity.putColumn(column);
+                        if (isPrimaryKey) {
+                            column.setPrimaryKey(true);
+                            column.setNullable(false);
+                            context.registerPkAttributeColumns(ownerEntity.getFqcn(), currentAttributePath, List.of(column.getColumnName()));
+                        }
+
+                        if (!ownerEntity.hasColumn(column.getTableName(), column.getColumnName())) {
+                            ownerEntity.putColumn(column);
+                        }
                     }
                 }
             }
+        } finally {
+            processedTypes.remove(typeName);
         }
-
-        processedTypes.remove(typeName);
     }
 
     private void processEmbeddedRelationship(AttributeDescriptor attribute, EntityModel ownerEntity,
