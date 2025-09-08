@@ -103,7 +103,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 String qualifiedName = typeElement.getQualifiedName().toString();
 
                 // Populate transient map for processing logic
-                context.getSchemaModel().getProcessingMappedSuperclasses().put(qualifiedName, typeElement);
+                context.getMappedSuperclassElements().put(qualifiedName, typeElement);
 
                 // Populate DTO map for JSON serialization
                 ClassInfoModel classInfo = new ClassInfoModel(qualifiedName);
@@ -116,11 +116,14 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 String qualifiedName = typeElement.getQualifiedName().toString();
 
                 // Populate transient map for processing logic
-                context.getSchemaModel().getProcessingEmbeddables().put(qualifiedName, typeElement);
+                context.getEmbeddableElements().put(qualifiedName, typeElement);
 
                 // Populate DTO map for JSON serialization
                 ClassInfoModel classInfo = new ClassInfoModel(qualifiedName);
                 context.getSchemaModel().getEmbeddables().put(qualifiedName, classInfo);
+
+                // Cache descriptors for embedded processing
+                context.getCachedDescriptors(typeElement);
             }
         }
 

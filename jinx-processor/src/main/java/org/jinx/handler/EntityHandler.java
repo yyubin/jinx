@@ -70,14 +70,14 @@ public class EntityHandler {
         // 7. 복합키 처리 (@EmbeddedId)
         if (!processCompositeKeys(typeElement, entity)) return;
 
-        // 8. 필드 처리 (AttributeDescriptor 기반)
+        // 8. 필드 처리 (AttributeDescriptor 기반) - MappedSuperclass 속성 포함
         processFieldsWithAttributeDescriptor(typeElement, entity);
 
-        // 9. 보조 테이블 조인 및 상속 관계 처리 (PK 확정 후)
+        // 10. 보조 테이블 조인 및 상속 관계 처리 (PK 확정 후)
         processSecondaryTableJoins(secondaryTableAnns, typeElement, entity);
         processInheritanceJoin(typeElement, entity);
 
-        // 10. Check for @MapsId attributes requiring deferred processing
+        // 11. Check for @MapsId attributes requiring deferred processing
         if (hasMapsIdAttributes(typeElement, entity)) {
             context.getDeferredEntities().offer(entity);
             context.getDeferredNames().add(entity.getEntityName());
@@ -335,19 +335,20 @@ public class EntityHandler {
             entity.setValid(false);
             return false;
         } else {
-            try {
-                for (int i = 0; i < pkjcs.size(); i++) {
-                    PrimaryKeyJoinColumn a = pkjcs.get(i);
-                    ColumnModel parentRef = resolveParentRef(parentPkCols, a, i);
-                    String childCol = a.name().isEmpty() ? parentRef.getColumnName() : a.name();
-                    childCols.add(childCol);
-                    refCols.add(parentRef.getColumnName());
+            for (int i = 0; i < pkjcs.size(); i++) {
+                PrimaryKeyJoinColumn a = pkjcs.get(i);
+                ColumnModel parentRef = resolveParentRef(parentPkCols, a, i, type);
+                if (parentRef == null) {
+                    context.getMessager().printMessage(
+                            Diagnostic.Kind.ERROR,
+                            "Invalid @PrimaryKeyJoinColumn at index " + i + " on " + type.getQualifiedName() + ".",
+                            type);
+                    entity.setValid(false);
+                    return false;
                 }
-            } catch (IllegalStateException ex) {
-                context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "Invalid @PrimaryKeyJoinColumn on " + type.getQualifiedName() + ": " + ex.getMessage(), type);
-                entity.setValid(false);
-                return false;
+                String childCol = a.name().isEmpty() ? parentRef.getColumnName() : a.name();
+                childCols.add(childCol);
+                refCols.add(parentRef.getColumnName());
             }
         }
 
@@ -510,7 +511,7 @@ public class EntityHandler {
         // 5-1) out 내부 중복(테이블/타입/컬럼 동일) 제거
         Map<String, ConstraintModel> dedup = new LinkedHashMap<>();
         for (ConstraintModel c : out) {
-            String key = c.getType() + "|" + c.getTableName() + "|" + String.join(",", c.getColumns());
+            String key = c.getType() + "|" + c.getTableName() + "|" + String.join(",", sorted(c.getColumns()));
             dedup.putIfAbsent(key, c);
         }
         for (ConstraintModel c : dedup.values()) {
@@ -645,21 +646,28 @@ public class EntityHandler {
 
 
 
-    private ColumnModel resolveParentRef(List<ColumnModel> parentPkCols, PrimaryKeyJoinColumn a, int idx) {
+    private ColumnModel resolveParentRef(List<ColumnModel> parentPkCols, PrimaryKeyJoinColumn a, int idx, TypeElement sourceElement) {
         if (!a.referencedColumnName().isEmpty()) {
-            return parentPkCols.stream()
+            Optional<ColumnModel> found = parentPkCols.stream()
                     .filter(p -> p.getColumnName().equals(a.referencedColumnName()))
-                    .findFirst()
-                    .orElseThrow(() -> {
-                        String availableColumns = parentPkCols.stream()
-                                .map(ColumnModel::getColumnName)
-                                .collect(java.util.stream.Collectors.joining(", "));
-                        return new IllegalStateException("referencedColumnName '" + a.referencedColumnName() +
-                                "' not found in parent primary key columns: [" + availableColumns + "]");
-                    });
+                    .findFirst();
+            if (found.isEmpty()) {
+                String availableColumns = parentPkCols.stream()
+                        .map(ColumnModel::getColumnName)
+                        .collect(java.util.stream.Collectors.joining(", "));
+                context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "referencedColumnName '" + a.referencedColumnName() +
+                        "' not found in parent primary key columns: [" + availableColumns + "]",
+                        sourceElement);
+                return null;
+            }
+            return found.get();
         }
         if (idx >= parentPkCols.size()) {
-            throw new IllegalStateException("@PrimaryKeyJoinColumn index " + idx + " exceeds parent PK column count " + parentPkCols.size());
+            context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "@PrimaryKeyJoinColumn index " + idx + " exceeds parent PK column count " + parentPkCols.size(),
+                    sourceElement);
+            return null;
         }
         return parentPkCols.get(idx);
     }
@@ -714,6 +722,16 @@ public class EntityHandler {
                 if (existing.getComment() == null)      existing.setComment(parentCol.getComment());
             }
         }
+    }
+
+    /**
+     * Returns a sorted copy of the column list to ensure deterministic dedup keys
+     * regardless of input order (Set→List conversions, etc.)
+     */
+    private List<String> sorted(List<String> cols) {
+        var c = new ArrayList<>(cols);
+        Collections.sort(c, String.CASE_INSENSITIVE_ORDER);
+        return c;
     }
 
 

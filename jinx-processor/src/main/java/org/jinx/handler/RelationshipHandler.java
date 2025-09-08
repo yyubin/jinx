@@ -3,7 +3,6 @@ package org.jinx.handler;
 import jakarta.persistence.*;
 import org.jinx.context.ProcessingContext;
 import org.jinx.descriptor.FieldAttributeDescriptor;
-import org.jinx.descriptor.PropertyAttributeDescriptor;
 import org.jinx.handler.relationship.*;
 import org.jinx.model.*;
 import org.jinx.util.AccessUtils;
@@ -95,9 +94,10 @@ public class RelationshipHandler {
         for (Element e : ownerType.getEnclosedElements()) {
             if (e.getKind() == ElementKind.METHOD && e instanceof ExecutableElement ex) {
                 if (AccessUtils.isGetterMethod(ex) && hasRelationshipAnnotation(ex)) {
-                    AttributeDescriptor pd = new PropertyAttributeDescriptor(
-                            ex, context.getTypeUtils(), context.getElementUtils());
-                    resolve(pd, ownerEntity);
+                    Optional<AttributeDescriptor> pdOpt = context.getAttributeDescriptorFactory().createPropertyDescriptor(ex);
+                    if (pdOpt.isPresent()) {
+                        resolve(pdOpt.get(), ownerEntity);
+                    }
                 }
             }
         }
@@ -188,8 +188,10 @@ public class RelationshipHandler {
         for (Element element : ownerType.getEnclosedElements()) {
             if (element.getKind() == ElementKind.METHOD && element instanceof ExecutableElement method) {
                 if (AccessUtils.isGetterMethod(method) && method.getAnnotation(MapsId.class) != null && hasRelationshipAnnotation(method)) {
-                    AttributeDescriptor descriptor = new PropertyAttributeDescriptor(method, context.getTypeUtils(), context.getElementUtils());
-                    processMapsIdAttribute(descriptor, ownerEntity);
+                    Optional<AttributeDescriptor> descriptorOpt = context.getAttributeDescriptorFactory().createPropertyDescriptor(method);
+                    if (descriptorOpt.isPresent()) {
+                        processMapsIdAttribute(descriptorOpt.get(), ownerEntity);
+                    }
                 }
             }
         }

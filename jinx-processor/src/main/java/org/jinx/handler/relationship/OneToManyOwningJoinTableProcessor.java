@@ -107,12 +107,8 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
             return;
         }
 
-        try {
-            validateExplicitJoinColumns(joinColumns, ownerPks, attr, "owner");
-            validateExplicitJoinColumns(inverseJoinColumns, targetPks, attr, "target");
-        } catch (IllegalStateException ex) {
-            return;
-        }
+        if (!validateExplicitJoinColumns(joinColumns, ownerPks, attr, "owner")) return;
+        if (!validateExplicitJoinColumns(inverseJoinColumns, targetPks, attr, "target")) return;
 
         // Validate FK constraint names and ConstraintMode consistency for join table
         String ownerFkConstraint = null;
@@ -161,14 +157,12 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
         boolean inverseNoConstraint = inverseJoinColumns.length > 0 &&
                 inverseJoinColumns[0].foreignKey().value() == ConstraintMode.NO_CONSTRAINT;
 
-        Map<String,String> ownerFkToPkMap;
-        Map<String,String> targetFkToPkMap;
-        try {
-            ownerFkToPkMap = resolveJoinColumnMapping(joinColumns, ownerPks, ownerEntity.getTableName(), attr, true);
-            targetFkToPkMap = resolveJoinColumnMapping(inverseJoinColumns, targetPks, targetEntity.getTableName(), attr, false);
-        } catch (IllegalStateException ex) {
-            return;
-        }
+        Map<String,String> ownerFkToPkMap =
+                resolveJoinColumnMapping(joinColumns, ownerPks, ownerEntity.getTableName(), attr, true);
+        if (ownerFkToPkMap == null) return;
+        Map<String,String> targetFkToPkMap =
+                resolveJoinColumnMapping(inverseJoinColumns, targetPks, targetEntity.getTableName(), attr, false);
+        if (targetFkToPkMap == null) return;
 
         Set<String> ownerFks = new HashSet<>(ownerFkToPkMap.keySet());
         ownerFks.retainAll(targetFkToPkMap.keySet());
@@ -198,11 +192,7 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
         );
 
         // JoinTable 이름이 owner/referenced 엔티티 테이블명과 충돌하는지 검증
-        try {
-            joinSupport.validateJoinTableNameConflict(joinTableName, ownerEntity, targetEntity, attr);
-        } catch (IllegalStateException ex) {
-            return;
-        }
+        if (!joinSupport.validateJoinTableNameConflict(joinTableName, ownerEntity, targetEntity, attr)) return;
 
         EntityModel existing = context.getSchemaModel().getEntities().get(joinTableName);
         if (existing != null) {
@@ -214,11 +204,7 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
             }
 
             // 기존 JoinTable의 FK 컬럼셋이 일치하는지 검증 (스키마 일관성 보장)
-            try {
-                joinSupport.validateJoinTableFkConsistency(existing, details, attr);
-            } catch (IllegalStateException ex) {
-                return;
-            }
+            if (!joinSupport.validateJoinTableFkConsistency(existing, details, attr)) return;
 
             joinSupport.ensureJoinTableColumns(existing, ownerPks, targetPks, ownerFkToPkMap, targetFkToPkMap, attr);
             joinSupport.ensureJoinTableRelationships(existing, details);
@@ -231,7 +217,9 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
             return;
         }
 
-        EntityModel joinTableEntity = joinSupport.createJoinTableEntity(details, ownerPks, targetPks);
+        Optional<EntityModel> joinTableEntityOp = joinSupport.createJoinTableEntity(details, ownerPks, targetPks);
+        if (joinTableEntityOp == null) return;
+        EntityModel joinTableEntity = joinTableEntityOp.get();
         joinSupport.ensureJoinTableColumns(joinTableEntity, ownerPks, targetPks, ownerFkToPkMap, targetFkToPkMap, attr);
         joinSupport.ensureJoinTableRelationships(joinTableEntity, details);
         joinSupport.addOneToManyJoinTableUnique(joinTableEntity, targetFkToPkMap);
@@ -244,8 +232,8 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
         context.getSchemaModel().getEntities().putIfAbsent(joinTableEntity.getEntityName(), joinTableEntity);
     }
 
-    private void validateExplicitJoinColumns(JoinColumn[] joinColumns, List<ColumnModel> pks,
-                                             AttributeDescriptor attr, String sideLabel) {
+    private boolean validateExplicitJoinColumns(JoinColumn[] joinColumns, List<ColumnModel> pks,
+                                                AttributeDescriptor attr, String sideLabel) {
         if (pks.size() > 1 && joinColumns.length > 0) {
             for (int i = 0; i < joinColumns.length; i++) {
                 JoinColumn jc = joinColumns[i];
@@ -253,10 +241,11 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                             "Composite primary key requires explicit referencedColumnName for all @" + sideLabel
                                     + " JoinColumns (index " + i + ", pkCount = " + pks.size() + ", joinColumnsCount = " + joinColumns.length  + ").", attr.elementForDiagnostics());
-                    throw new IllegalStateException("invalid joinColumns");
+                    return false;
                 }
             }
         }
+        return true;
     }
 
     private Map<String, String> resolveJoinColumnMapping(JoinColumn[] joinColumns,
@@ -267,16 +256,16 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
         String side = isOwnerSide ? "owner" : "target";
         Map<String, String> mapping = new LinkedHashMap<>();
         if (joinColumns == null || joinColumns.length == 0) {
-            referencedPks.forEach(pk -> {
+            for (ColumnModel pk : referencedPks) {
                 // 조인테이블의 FK 네이밍: 참조 테이블명 기반 (entityTableName + referencedPK)
                 String fk = context.getNaming().foreignKeyColumnName(entityTableName, pk.getColumnName());
                 if (mapping.containsKey(fk)) {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                             "Duplicate foreign key column '" + fk + "' in join table mapping for " + entityTableName + " (side=" + side + ")", attr.elementForDiagnostics());
-                    throw new IllegalStateException("duplicate fk");
+                    return null;
                 }
                 mapping.put(fk, pk.getColumnName());
-            });
+            }
         } else {
             Set<String> pkNames = referencedPks.stream().map(ColumnModel::getColumnName).collect(Collectors.toSet());
             for (int i = 0; i < joinColumns.length; i++) {
@@ -287,7 +276,7 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
                 if (!pkNames.contains(pkName)) {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                             "referencedColumnName '" + pkName + "' is not a primary key column of " + entityTableName + " (side=" + side + ")", attr.elementForDiagnostics());
-                    throw new IllegalStateException("invalid referencedColumnName");
+                    return null;
                 }
                 // 조인테이블의 FK 네이밍: 참조 테이블명 기반 (entityTableName + referencedPK)
                 String fkName = jc.name().isEmpty()
@@ -296,7 +285,7 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
                 if (mapping.containsKey(fkName)) {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                             "Duplicate foreign key column '" + fkName + "' in join table mapping for " + entityTableName, attr.elementForDiagnostics());
-                    throw new IllegalStateException("duplicate fk");
+                    return null;
                 }
                 mapping.put(fkName, pkName);
             }

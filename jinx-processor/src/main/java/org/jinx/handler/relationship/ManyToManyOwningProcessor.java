@@ -144,22 +144,17 @@ public final class ManyToManyOwningProcessor implements RelationshipProcessor {
             }
         }
 
-        try {
-            validateExplicitJoinColumns(joinColumns, ownerPks, attr, "owner");
-            validateExplicitJoinColumns(inverseJoinColumns, referencedPks, attr, "target");
-        } catch (IllegalStateException ex) {
-            return;
-        }
+        boolean okOwner = validateExplicitJoinColumns(joinColumns, ownerPks, attr, "owner");
+        boolean okInverse = validateExplicitJoinColumns(inverseJoinColumns, referencedPks, attr, "target");
+        if (!(okOwner && okInverse)) return;
 
         Map<String, String> ownerFkToPkMap;
         Map<String, String> inverseFkToPkMap;
 
-        try {
-            ownerFkToPkMap = resolveJoinColumnMapping(joinColumns, ownerPks, ownerEntity.getTableName(), attr, true);
-            inverseFkToPkMap = resolveJoinColumnMapping(inverseJoinColumns, referencedPks, referencedEntity.getTableName(), attr, false);
-        } catch (IllegalStateException ex) {
-            return;
-        }
+        ownerFkToPkMap = resolveJoinColumnMapping(joinColumns, ownerPks, ownerEntity.getTableName(), attr, true);
+        if (ownerFkToPkMap == null) return;
+        inverseFkToPkMap = resolveJoinColumnMapping(inverseJoinColumns, referencedPks, referencedEntity.getTableName(), attr, false);
+        if (inverseFkToPkMap == null) return;
 
         Set<String> overlap = new HashSet<>(ownerFkToPkMap.keySet());
         overlap.retainAll(inverseFkToPkMap.keySet());
@@ -206,7 +201,9 @@ public final class ManyToManyOwningProcessor implements RelationshipProcessor {
             return;
         }
 
-        EntityModel joinTableEntity = joinSupport.createJoinTableEntity(details, ownerPks, referencedPks);
+        Optional<EntityModel> joinTableEntityOp = joinSupport.createJoinTableEntity(details, ownerPks, referencedPks);
+        if (joinTableEntityOp.isEmpty()) return;
+        EntityModel joinTableEntity = joinTableEntityOp.get();
         joinSupport.ensureJoinTableColumns(joinTableEntity, ownerPks, referencedPks, ownerFkToPkMap, inverseFkToPkMap, attr);
         joinSupport.ensureJoinTableRelationships(joinTableEntity, details);
 
@@ -221,8 +218,8 @@ public final class ManyToManyOwningProcessor implements RelationshipProcessor {
         context.getSchemaModel().getEntities().putIfAbsent(joinTableEntity.getEntityName(), joinTableEntity);
     }
 
-    private void validateExplicitJoinColumns(JoinColumn[] joinColumns, List<ColumnModel> pks,
-                                             AttributeDescriptor attr, String sideLabel) {
+    private boolean validateExplicitJoinColumns(JoinColumn[] joinColumns, List<ColumnModel> pks,
+                                                AttributeDescriptor attr, String sideLabel) {
         if (pks.size() > 1 && joinColumns.length > 0) {
             for (int i = 0; i < joinColumns.length; i++) {
                 JoinColumn jc = joinColumns[i];
@@ -230,10 +227,11 @@ public final class ManyToManyOwningProcessor implements RelationshipProcessor {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                             "Composite primary key requires explicit referencedColumnName for all @" + sideLabel
                                     + " JoinColumns (index " + i + ", pkCount = " + pks.size() + ", joinColumnsCount = " + joinColumns.length  + ").", attr.elementForDiagnostics());
-                    throw new IllegalStateException("invalid joinColumns");
+                    return false;
                 }
             }
         }
+        return true;
     }
 
     private Map<String, String> resolveJoinColumnMapping(JoinColumn[] joinColumns,
@@ -244,16 +242,16 @@ public final class ManyToManyOwningProcessor implements RelationshipProcessor {
         String side = isOwnerSide ? "owner" : "target";
         Map<String, String> mapping = new LinkedHashMap<>();
         if (joinColumns == null || joinColumns.length == 0) {
-            referencedPks.forEach(pk -> {
+            for (ColumnModel pk : referencedPks) {
                 // 조인테이블의 FK 네이밍: 참조 테이블명 기반 (entityTableName + referencedPK)
                 String fk = context.getNaming().foreignKeyColumnName(entityTableName, pk.getColumnName());
                 if (mapping.containsKey(fk)) {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                             "Duplicate foreign key column '" + fk + "' in join table mapping for " + entityTableName + " (side=" + side + ")", attr.elementForDiagnostics());
-                    throw new IllegalStateException("duplicate fk");
+                    return null;
                 }
                 mapping.put(fk, pk.getColumnName());
-            });
+            }
         } else {
             Set<String> pkNames = referencedPks.stream().map(ColumnModel::getColumnName).collect(Collectors.toSet());
             for (int i = 0; i < joinColumns.length; i++) {
@@ -264,7 +262,7 @@ public final class ManyToManyOwningProcessor implements RelationshipProcessor {
                 if (!pkNames.contains(pkName)) {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                             "referencedColumnName '" + pkName + "' is not a primary key column of " + entityTableName + " (side=" + side + ")", attr.elementForDiagnostics());
-                    throw new IllegalStateException("invalid referencedColumnName");
+                    return null;
                 }
                 // 조인테이블의 FK 네이밍: 참조 테이블명 기반 (entityTableName + referencedPK)
                 String fkName = jc.name().isEmpty()
@@ -273,7 +271,7 @@ public final class ManyToManyOwningProcessor implements RelationshipProcessor {
                 if (mapping.containsKey(fkName)) {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                             "Duplicate foreign key column '" + fkName + "' in join table mapping for " + entityTableName, attr.elementForDiagnostics());
-                    throw new IllegalStateException("duplicate fk");
+                    return null;
                 }
                 mapping.put(fkName, pkName);
             }

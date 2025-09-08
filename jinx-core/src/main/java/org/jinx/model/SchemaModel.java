@@ -16,7 +16,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Data
 @Builder
-@AllArgsConstructor
 @NoArgsConstructor
 public class SchemaModel {
     private String version;
@@ -32,13 +31,6 @@ public class SchemaModel {
 
     @Builder.Default
     private Map<String, ClassInfoModel> embeddables = new HashMap<>();
-
-    @Builder.Default
-    @JsonIgnore
-    private Map<String, TypeElement> processingMappedSuperclasses = new HashMap<>();
-    @Builder.Default
-    @JsonIgnore
-    private Map<String, TypeElement> processingEmbeddables = new HashMap<>();
 
     @JsonCreator
     public SchemaModel(
