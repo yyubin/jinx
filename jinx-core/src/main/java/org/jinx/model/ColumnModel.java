@@ -27,9 +27,6 @@ public class ColumnModel {
     @Builder.Default
     @JsonProperty("nullable")
     private boolean isNullable = true;
-    @Builder.Default
-    @JsonProperty("unique")
-    private boolean isUnique = false;
     @Builder.Default private int length = 255;
     @Builder.Default private int precision = 0;
     @Builder.Default private int scale = 0;
@@ -80,7 +77,7 @@ public class ColumnModel {
 
     @JsonIgnore
     public long getAttributeHash() {
-        return Objects.hash(columnName, javaType, length, precision, scale, isNullable, isUnique, defaultValue,
+        return Objects.hash(columnName, javaType, length, precision, scale, isNullable, defaultValue,
                 temporalType, enumerationType, enumStringMapping,
                 java.util.Arrays.hashCode(enumValues), mapKeyTemporalType, java.util.Arrays.hashCode(mapKeyEnumValues),
                 columnKind, discriminatorType, columnDefinition, options, sqlTypeOverride);

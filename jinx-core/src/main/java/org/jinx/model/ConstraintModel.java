@@ -3,6 +3,7 @@ package org.jinx.model;
 import lombok.Builder;
 import lombok.Data;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -10,14 +11,15 @@ import java.util.Optional;
 @Builder
 public class ConstraintModel {
     private String name;
+    private String schema;
     private String tableName;
     private ConstraintType type;
-    private List<String> columns;
+    @Builder.Default private List<String> columns = Collections.emptyList();
     private String referencedTable;
-    private List<String> referencedColumns;
+    @Builder.Default private List<String> referencedColumns = Collections.emptyList();
     private OnDeleteAction onDelete;
     private OnUpdateAction onUpdate;
-
-    private Optional<String> checkClause;
-    private Optional<String> options;
+    @Builder.Default private Optional<String> checkClause = Optional.empty();
+    @Builder.Default private Optional<String> where = Optional.empty();
+    @Builder.Default private Optional<String> options = Optional.empty();
 }

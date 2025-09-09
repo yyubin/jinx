@@ -290,12 +290,10 @@ class ColumnDifferTest {
         ColumnModel oldCol = createColumn("nickname", "VARCHAR", true);
         oldCol.setTableName("users");
         oldCol.setLength(255);
-        oldCol.setUnique(false);
 
         ColumnModel newCol = createColumn("nickname", "VARCHAR", true);
         newCol.setTableName("members");
         newCol.setLength(100);        // length 줄임
-        newCol.setUnique(true);       // unique 추가
 
         oldEntity.setColumns(Map.of("nickname", oldCol));
         newEntity.setColumns(Map.of("nickname", newCol));
@@ -308,7 +306,6 @@ class ColumnDifferTest {
         assertAll(
                 () -> assertTrue(detail.contains("tableName changed from users to members")),
                 () -> assertTrue(detail.contains("length changed from 255 to 100")),
-                () -> assertTrue(detail.contains("isUnique changed from false to true")),
                 () -> assertFalse(detail.endsWith(";"))    // 마지막 ‘; ’ 제거됐는지 확인
         );
     }
@@ -525,28 +522,6 @@ class ColumnDifferTest {
     }
 
     @Test
-    @DisplayName("이름 변경과 isUnique 변경은 DROPPED와 ADDED로 감지되어야 함")
-    void shouldDetectDropAndAddWhenCheckedAttributeChangesOnRename() {
-        ColumnModel oldCol = createColumn("old_name", "VARCHAR", false);
-        oldCol.setUnique(false);
-
-        ColumnModel newCol = createColumn("new_name", "VARCHAR", false);
-        newCol.setUnique(true); // isColumnAttributesEqual에서 확인하는 속성
-
-        oldEntity.setColumns(Map.of("old_name", oldCol));
-        newEntity.setColumns(Map.of("new_name", newCol));
-
-        columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
-
-        assertEquals(2, modifiedEntityResult.getColumnDiffs().size());
-        boolean dropped = modifiedEntityResult.getColumnDiffs().stream().anyMatch(d -> d.getType() == DiffResult.ColumnDiff.Type.DROPPED && d.getColumn().getColumnName().equals("old_name"));
-        boolean added = modifiedEntityResult.getColumnDiffs().stream().anyMatch(d -> d.getType() == DiffResult.ColumnDiff.Type.ADDED && d.getColumn().getColumnName().equals("new_name"));
-
-        assertTrue(dropped, "DROPPED diff가 감지되어야 합니다.");
-        assertTrue(added, "ADDED diff가 감지되어야 합니다.");
-    }
-
-    @Test
     @DisplayName("기본값이 non-null에서 null로 변경되면 MODIFIED로 감지해야 함")
     void shouldDetectModificationWhenDefaultValueBecomesNull() {
         ColumnModel oldCol = createColumn("code", "VARCHAR", true);
@@ -625,12 +600,10 @@ class ColumnDifferTest {
         ColumnModel oldCol = createColumn("measurement", "java.math.BigDecimal", false);
         oldCol.setPrecision(10);
         oldCol.setScale(2);
-        oldCol.setUnique(true);
 
         ColumnModel newCol = createColumn("measurement", "java.math.BigDecimal", false);
         newCol.setPrecision(12); // Precision만 변경
         newCol.setScale(2);      // Scale은 동일
-        newCol.setUnique(true);  // Unique는 동일
 
         oldEntity.setColumns(Map.of("measurement", oldCol));
         newEntity.setColumns(Map.of("measurement", newCol));

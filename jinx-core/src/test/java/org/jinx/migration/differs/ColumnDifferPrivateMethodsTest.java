@@ -69,12 +69,11 @@ class ColumnDifferPrivateMethodsTest {
     @Test
     @DisplayName("[getColumnChangeDetail] 여러 속성 변경 시 모든 내역을 포함해야 함")
     void getColumnChangeDetail_shouldDetailMultipleChanges() throws Exception {
-        ColumnModel oldCol = ColumnModel.builder().length(255).isUnique(false).build();
-        ColumnModel newCol = ColumnModel.builder().length(500).isUnique(true).build();
+        ColumnModel oldCol = ColumnModel.builder().length(255).build();
+        ColumnModel newCol = ColumnModel.builder().length(500).build();
 
         String detail = (String) getColumnChangeDetail.invoke(columnDiffer, oldCol, newCol);
 
-        assertTrue(detail.contains("isUnique changed from false to true"));
         assertTrue(detail.contains("length changed from 255 to 500"));
     }
 

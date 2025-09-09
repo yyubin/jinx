@@ -243,8 +243,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         ColumnConfig.ColumnConfigBuilder columnBuilder = ColumnConfig.builder()
                 .name(column.getColumnName())
                 .type(getLiquibaseTypeName(column))
-                .autoIncrement(shouldUseAutoIncrement(column.getGenerationStrategy()))
-                .constraints(LiquibaseUtils.buildConstraints(column, currentTableName));
+                .autoIncrement(shouldUseAutoIncrement(column.getGenerationStrategy()));
         
         // Apply priority-based default value setting
         setDefaultValueWithPriority(columnBuilder, column);
@@ -306,7 +305,6 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                 .config(CreateIndexConfig.builder()
                         .indexName(index.getIndexName())
                         .tableName(index.getTableName() != null ? index.getTableName() : currentTableName)
-                        .unique(index.isUnique())
                         .columns(indexColumns)
                         .build())
                 .build();
@@ -336,7 +334,6 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                 .config(CreateIndexConfig.builder()
                         .indexName(newIndex.getIndexName())
                         .tableName(newIndex.getTableName() != null ? newIndex.getTableName() : currentTableName)
-                        .unique(newIndex.isUnique())
                         .columns(newIndex.getColumnNames().stream()
                                 .map(colName -> ColumnWrapper.builder()
                                         .config(ColumnConfig.builder().name(colName).build())

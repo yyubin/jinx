@@ -35,8 +35,6 @@ public class EntityModel {
 
     @Builder.Default private String discriminatorValue = null;
 
-    public enum ColumnKind { NORMAL, DISCRIMINATOR }
-
     public enum TableType {
         ENTITY, JOIN_TABLE, COLLECTION_TABLE
     }

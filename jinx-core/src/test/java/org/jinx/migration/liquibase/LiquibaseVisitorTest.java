@@ -55,7 +55,6 @@ class LiquibaseVisitorTest {
                 .javaType("java.lang.Long")
                 .isPrimaryKey(true)
                 .isNullable(false)
-                .isUnique(false)
                 .sqlTypeOverride("bigint")   // dialect 의존 제거
                 .build());
         table.putColumn(ColumnModel.builder()
@@ -63,7 +62,6 @@ class LiquibaseVisitorTest {
                 .tableName("users")
                 .javaType("java.lang.String")
                 .isNullable(false)
-                .isUnique(false)
                 .sqlTypeOverride("varchar(255)")
                 .build());
 
@@ -119,7 +117,6 @@ class LiquibaseVisitorTest {
                 .generationStrategy(GenerationStrategy.SEQUENCE)
                 .defaultValue("order_id_seq")           // 시퀀스명
                 .sqlTypeOverride("bigint")
-                .isUnique(false)
                 .isNullable(false)
                 .isPrimaryKey(true) // (참고) AddColumn에서 PK는 즉시 constraints로 갈 수 있으니 정책에 유의
                 .build();
@@ -168,7 +165,6 @@ class LiquibaseVisitorTest {
                 .javaType("java.lang.String")
                 .generationStrategy(GenerationStrategy.NONE)
                 .defaultValue("ACTIVE")                 // literal
-                .isUnique(false)
                 .isNullable(false)
                 .sqlTypeOverride("varchar(50)")
                 .build();

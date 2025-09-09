@@ -25,6 +25,7 @@ public class MySqlDialect extends AbstractDialect
         super();
     }
 
+    // 테스트 용
     public MySqlDialect(JavaTypeMapper javaTypeMapper, ValueTransformer valueTransformer) {
         this.javaTypeMapper = javaTypeMapper;
         this.valueTransformer = valueTransformer;
@@ -221,25 +222,12 @@ public class MySqlDialect extends AbstractDialect
         StringBuilder sb = new StringBuilder();
         sb.append("ALTER TABLE ").append(quoteIdentifier(table)).append(" ADD COLUMN ")
                 .append(getColumnDefinitionSql(col)).append(";\n");
-
-        if (col.isUnique()) {
-            String uniqueIndexName = "uk_" + table + '_' + col.getColumnName();
-            sb.append("ALTER TABLE ").append(quoteIdentifier(table)).append(" ADD UNIQUE INDEX ")
-                    .append(quoteIdentifier(uniqueIndexName))
-                    .append(" (").append(quoteIdentifier(col.getColumnName())).append(");\n");
-        }
         return sb.toString();
     }
 
     @Override
     public String getDropColumnSql(String table, ColumnModel col) {
         StringBuilder sb = new StringBuilder();
-
-        if (col.isUnique()) {
-            String uk = "uk_" + table + "_" + col.getColumnName();
-            sb.append("ALTER TABLE ").append(quoteIdentifier(table))
-                    .append(" DROP INDEX ").append(quoteIdentifier(uk)).append(";\n");
-        }
 
         if (col.isPrimaryKey()) {
             sb.append(getDropPrimaryKeySql(table));
@@ -254,23 +242,9 @@ public class MySqlDialect extends AbstractDialect
     @Override
     public String getModifyColumnSql(String table, ColumnModel newCol, ColumnModel oldCol) {
         StringBuilder sb = new StringBuilder();
-        boolean uniqueChanged = oldCol.isUnique() != newCol.isUnique();
-
-        if (uniqueChanged && oldCol.isUnique()) {
-            String uniqueIndexName = "uk_" + table + "_" + newCol.getColumnName();
-            sb.append("ALTER TABLE ").append(quoteIdentifier(table))
-                    .append(" DROP INDEX ").append(quoteIdentifier(uniqueIndexName)).append(";\n");
-        }
-
         sb.append("ALTER TABLE ").append(quoteIdentifier(table))
                 .append(" MODIFY COLUMN ").append(getColumnDefinitionSql(newCol)).append(";\n");
 
-        if (uniqueChanged && newCol.isUnique()) {
-            String uniqueIndexName = "uk_" + table + "_" + newCol.getColumnName();
-            sb.append("ALTER TABLE ").append(quoteIdentifier(table))
-                    .append(" ADD UNIQUE INDEX ").append(quoteIdentifier(uniqueIndexName))
-                    .append(" (").append(quoteIdentifier(newCol.getColumnName())).append(");\n");
-        }
         return sb.toString();
     }
 
@@ -333,9 +307,8 @@ public class MySqlDialect extends AbstractDialect
 
     @Override
     public String indexStatement(IndexModel idx, String table) {
-        String unique = idx.isUnique() ? "UNIQUE " : "";
         String cols = idx.getColumnNames().stream().map(this::quoteIdentifier).collect(Collectors.joining(", "));
-        return "CREATE " + unique + "INDEX " + quoteIdentifier(idx.getIndexName())
+        return "CREATE INDEX " + quoteIdentifier(idx.getIndexName())
                 + " ON " + quoteIdentifier(table) + " (" + cols + ");\n";
     }
 

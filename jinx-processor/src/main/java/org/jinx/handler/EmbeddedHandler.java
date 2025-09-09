@@ -17,10 +17,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class EmbeddedHandler {
-    
-    /**
-     * Holds information from @AssociationOverride
-     */
+
     public static class AssociationOverrideInfo {
         private final List<JoinColumn> joinColumns;
         private final JoinTable joinTable;
@@ -540,9 +537,8 @@ public class EmbeddedHandler {
                 ));
     }
 
-    /**
-     * Apply @Column attributes from @AttributeOverride to the ColumnModel
-     */
+
+     // Apply @Column attributes from @AttributeOverride to the ColumnModel
     private void applyColumnOverrides(ColumnModel column, Column columnOverride, EntityModel ownerEntity, AttributeDescriptor attribute) {
         // Apply nullable override
         if (columnOverride.nullable() != true) { // JPA default is true
@@ -551,7 +547,12 @@ public class EmbeddedHandler {
 
         // Apply unique override  
         if (columnOverride.unique()) {
-            column.setUnique(columnOverride.unique());
+            context.getConstraintManager().addUniqueIfAbsent(
+                    ownerEntity,
+                    column.getTableName(),
+                    List.of(column.getColumnName()),
+                    Optional.empty()
+            );
         }
 
         // Apply length override

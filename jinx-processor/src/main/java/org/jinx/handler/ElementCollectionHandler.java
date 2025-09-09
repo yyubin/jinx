@@ -208,7 +208,7 @@ public class ElementCollectionHandler {
                 if (collectionEntity.getIndexes() != null) {
                     for (IndexModel existing : collectionEntity.getIndexes().values()) {
                         String shape = "IX|" + existing.getTableName().toLowerCase() + "|" + 
-                                      String.join(",", existing.getColumnNames()).toLowerCase() + "|" + existing.isUnique();
+                                      String.join(",", existing.getColumnNames()).toLowerCase();
                         shapes.add(shape);
                     }
                 }
@@ -224,7 +224,7 @@ public class ElementCollectionHandler {
             // 대기 중인 인덱스 의미 중복 검증
             for (IndexModel ix : pendingIndexes) {
                 String shape = "IX|" + ix.getTableName().toLowerCase() + "|" + 
-                              String.join(",", ix.getColumnNames()).toLowerCase() + "|" + ix.isUnique();
+                              String.join(",", ix.getColumnNames()).toLowerCase();
                 if (!shapes.add(shape)) {
                     addError("Duplicate index definition: " + ix.getIndexName());
                 }

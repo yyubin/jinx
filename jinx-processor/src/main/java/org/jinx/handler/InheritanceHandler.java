@@ -408,7 +408,6 @@ public class InheritanceHandler {
                         .javaType(column.getJavaType())
                         .isPrimaryKey(column.isPrimaryKey())
                         .isNullable(column.isNullable())
-                        .isUnique(column.isUnique())
                         .length(column.getLength())
                         .precision(column.getPrecision())
                         .scale(column.getScale())

@@ -96,7 +96,6 @@ public class ColumnDiffer implements EntityComponentDiffer {
                 Optional.ofNullable(oldCol.getJavaType()).equals(Optional.ofNullable(newCol.getJavaType())) &&
                 oldCol.isPrimaryKey() == newCol.isPrimaryKey() &&
                 oldCol.isNullable() == newCol.isNullable() &&
-                oldCol.isUnique() == newCol.isUnique() &&
                 oldCol.getLength() == newCol.getLength() &&
                 oldCol.getPrecision() == newCol.getPrecision() &&
                 oldCol.getScale() == newCol.getScale() &&
@@ -127,7 +126,6 @@ public class ColumnDiffer implements EntityComponentDiffer {
                 Optional.ofNullable(oldCol.getJavaType()).equals(Optional.ofNullable(newCol.getJavaType())) &&
                 oldCol.isPrimaryKey() == newCol.isPrimaryKey() &&
                 oldCol.isNullable() == newCol.isNullable() &&
-                oldCol.isUnique() == newCol.isUnique() &&
                 oldCol.getLength() == newCol.getLength() &&
                 oldCol.getPrecision() == newCol.getPrecision() &&
                 oldCol.getScale() == newCol.getScale() &&
@@ -157,7 +155,6 @@ public class ColumnDiffer implements EntityComponentDiffer {
         return Optional.ofNullable(oldCol.getJavaType()).equals(Optional.ofNullable(newCol.getJavaType())) &&
                 oldCol.isPrimaryKey() == newCol.isPrimaryKey() &&
                 oldCol.isNullable() == newCol.isNullable() &&
-                oldCol.isUnique() == newCol.isUnique() &&
                 oldCol.getLength() == newCol.getLength() &&
                 oldCol.getPrecision() == newCol.getPrecision() &&
                 oldCol.getScale() == newCol.getScale() &&
@@ -185,9 +182,6 @@ public class ColumnDiffer implements EntityComponentDiffer {
         }
         if (oldCol.isNullable() != newCol.isNullable()) {
             detail.append("isNullable changed from ").append(oldCol.isNullable()).append(" to ").append(newCol.isNullable()).append("; ");
-        }
-        if (oldCol.isUnique() != newCol.isUnique()) {
-            detail.append("isUnique changed from ").append(oldCol.isUnique()).append(" to ").append(newCol.isUnique()).append("; ");
         }
         if (oldCol.getLength() != newCol.getLength()) {
             detail.append("length changed from ").append(oldCol.getLength()).append(" to ").append(newCol.getLength()).append("; ");
