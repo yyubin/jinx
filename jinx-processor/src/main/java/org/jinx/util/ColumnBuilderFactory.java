@@ -100,6 +100,15 @@ public class ColumnBuilderFactory {
         // Priority 4: Attribute name (fallback)
         return attributeName;
     }
+
+    public static ColumnModel fromType(TypeMirror type, String columnName, String tableName) {
+        return ColumnModel.builder()
+                .columnName(columnName)
+                .tableName(tableName)
+                .javaType(type.toString())
+                .isNullable(true)
+                .build();
+    }
     
     private static boolean isNotBlank(String s) {
         return s != null && !s.isEmpty();

@@ -10,7 +10,9 @@ import org.jinx.model.EntityModel;
 import org.jinx.model.IndexModel;
 import org.jinx.model.RelationshipModel;
 import org.jinx.model.RelationshipType;
+import org.jinx.util.ColumnBuilderFactory;
 import org.jinx.util.ColumnUtils;
+import org.jinx.util.ConstraintShapes;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
@@ -202,40 +204,21 @@ public class ElementCollectionHandler {
             
             // 의미 중복 검증 (동일 테이블+컬럼셋+유형)
             Set<String> shapes = new HashSet<>();
-            
-            // 기존 인덱스/제약조건 의미 중복 수집
-            if (collectionEntity != null) {
-                if (collectionEntity.getIndexes() != null) {
-                    for (IndexModel existing : collectionEntity.getIndexes().values()) {
-                        String shape = "IX|" + existing.getTableName().toLowerCase() + "|" + 
-                                      String.join(",", existing.getColumnNames()).toLowerCase();
-                        shapes.add(shape);
-                    }
-                }
-                if (collectionEntity.getConstraints() != null) {
-                    for (ConstraintModel existing : collectionEntity.getConstraints().values()) {
-                        String shape = existing.getType() + "|" + existing.getTableName().toLowerCase() + "|" + 
-                                      String.join(",", existing.getColumns()).toLowerCase();
-                        shapes.add(shape);
-                    }
-                }
+
+            for (ConstraintModel existing : collectionEntity.getConstraints().values()) {
+                shapes.add(ConstraintShapes.shapeKey(existing));
             }
-            
-            // 대기 중인 인덱스 의미 중복 검증
-            for (IndexModel ix : pendingIndexes) {
-                String shape = "IX|" + ix.getTableName().toLowerCase() + "|" + 
-                              String.join(",", ix.getColumnNames()).toLowerCase();
-                if (!shapes.add(shape)) {
-                    addError("Duplicate index definition: " + ix.getIndexName());
-                }
-            }
-            
-            // 대기 중인 제약조건 의미 중복 검증
             for (ConstraintModel c : pendingConstraints) {
-                String shape = c.getType() + "|" + c.getTableName().toLowerCase() + "|" + 
-                              String.join(",", c.getColumns()).toLowerCase();
-                if (!shapes.add(shape)) {
+                if (!shapes.add(ConstraintShapes.shapeKey(c))) {
                     addError("Duplicate constraint definition: " + c.getName());
+                }
+            }
+            for (IndexModel existing : collectionEntity.getIndexes().values()) {
+                shapes.add(ConstraintShapes.shapeKey(existing));
+            }
+            for (IndexModel ix : pendingIndexes) {
+                if (!shapes.add(ConstraintShapes.shapeKey(ix))) {
+                    addError("Duplicate index definition: " + ix.getIndexName());
                 }
             }
         }
@@ -305,7 +288,8 @@ public class ElementCollectionHandler {
             
             // 모든 제약조건을 일괄 추가
             for (ConstraintModel c : pendingConstraints) {
-                collectionEntity.getConstraints().put(c.getName(), c);
+                String key = ConstraintShapes.shapeKey(c);
+                collectionEntity.getConstraints().put(key, c);
             }
 
             // 모든 관계를 일괄 추가
@@ -543,7 +527,7 @@ public class ElementCollectionHandler {
                             ? mapKeyColumn.name()
                             : attribute.name() + "_KEY";
 
-                    ColumnModel keyColumn = createColumnFromType(actualKeyType, mapKeyColumnName, tableName);
+                    ColumnModel keyColumn = ColumnBuilderFactory.fromType(actualKeyType, mapKeyColumnName, tableName);
                     if (keyColumn != null) {
                         keyColumn.setPrimaryKey(true);
                         keyColumn.setMapKey(true);
@@ -596,7 +580,7 @@ public class ElementCollectionHandler {
                     ? columnAnnotation.name()
                     : attribute.name();
 
-            ColumnModel elementColumn = createColumnFromType(valueType, elementColumnName, tableName);
+            ColumnModel elementColumn = ColumnBuilderFactory.fromType(valueType, elementColumnName, tableName);
             if (elementColumn != null) {
                 boolean isSetPk = !isList && !isMap; // Set/Collection의 값은 PK에 포함
                 elementColumn.setPrimaryKey(isSetPk);
@@ -828,20 +812,6 @@ public class ElementCollectionHandler {
         } catch (Throwable t) {
             return null;
         }
-    }
-
-    /**
-     * TypeMirror로부터 ColumnModel을 생성하는 헬퍼 메소드
-     */
-    private ColumnModel createColumnFromType(TypeMirror type, String columnName, String tableName) {
-        String javaTypeName = type.toString();
-        
-        return ColumnModel.builder()
-                .columnName(columnName)
-                .tableName(tableName)
-                .javaType(javaTypeName)
-                .isNullable(true)
-                .build();
     }
 
 }

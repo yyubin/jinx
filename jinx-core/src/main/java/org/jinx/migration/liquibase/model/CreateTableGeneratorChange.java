@@ -8,7 +8,7 @@ import lombok.Data;
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class CreateTableGeneratorChange {
+public class CreateTableGeneratorChange implements Change{
     @JsonProperty("createTable")
     private CreateTableConfig config;
 }

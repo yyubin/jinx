@@ -9,6 +9,7 @@ import org.jinx.model.DiffResult.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Getter
 public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, SequenceVisitor, TableGeneratorVisitor, SqlGeneratingVisitor {
@@ -243,7 +244,8 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         ColumnConfig.ColumnConfigBuilder columnBuilder = ColumnConfig.builder()
                 .name(column.getColumnName())
                 .type(getLiquibaseTypeName(column))
-                .autoIncrement(shouldUseAutoIncrement(column.getGenerationStrategy()));
+                .autoIncrement(shouldUseAutoIncrement(column.getGenerationStrategy()))
+                .constraints(LiquibaseUtils.buildConstraintsWithoutPK(column, currentTableName));
         
         // Apply priority-based default value setting
         setDefaultValueWithPriority(columnBuilder, column);
@@ -272,14 +274,50 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
 
     @Override
     public void visitModifiedColumn(ColumnModel newColumn, ColumnModel oldColumn) {
-        ModifyDataTypeChange modifyDataType = ModifyDataTypeChange.builder()
-                .config(ModifyDataTypeConfig.builder()
-                        .tableName(currentTableName)
-                        .columnName(newColumn.getColumnName())
-                        .newDataType(getLiquibaseTypeName(newColumn))
-                        .build())
-                .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(modifyDataType)));
+        List<Change> changes = new ArrayList<>();
+
+        // (a) 타입 변경
+        if (!Objects.equals(getLiquibaseTypeName(newColumn), getLiquibaseTypeName(oldColumn))) {
+            ModifyDataTypeChange modifyDataType = ModifyDataTypeChange.builder()
+                    .config(ModifyDataTypeConfig.builder()
+                            .tableName(currentTableName)
+                            .columnName(newColumn.getColumnName())
+                            .newDataType(getLiquibaseTypeName(newColumn))
+                            .build())
+                    .build();
+            changes.add(modifyDataType);
+        }
+
+        // (b) NULL 제약 변경
+        boolean oldNullable = oldColumn.isNullable();
+        boolean newNullable = newColumn.isNullable();
+
+        if (oldNullable != newNullable) {
+            if (!newNullable) {
+                // true -> false : NOT NULL 추가
+                AddNotNullConstraintChange addNN = AddNotNullConstraintChange.builder()
+                        .config(AddNotNullConstraintConfig.builder()
+                                .tableName(currentTableName)
+                                .columnName(newColumn.getColumnName())
+                                .build())
+                        .build();
+                changes.add(addNN);
+            } else {
+                // false -> true : NOT NULL 제거
+                DropNotNullConstraintChange dropNN = DropNotNullConstraintChange.builder()
+                        .config(DropNotNullConstraintConfig.builder()
+                                .tableName(currentTableName)
+                                .columnName(newColumn.getColumnName())
+                                .build())
+                        .build();
+                changes.add(dropNN);
+            }
+        }
+
+        // 변경사항이 있을 때만 ChangeSet 생성
+        if (!changes.isEmpty()) {
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), changes));
+        }
     }
 
     @Override

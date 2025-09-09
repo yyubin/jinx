@@ -7,7 +7,7 @@ import lombok.Data;
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class RenameTableChange {
+public class RenameTableChange implements Change {
     @JsonProperty("renameTable")
     private RenameTableConfig config;
 }

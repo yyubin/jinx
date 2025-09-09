@@ -6,7 +6,7 @@ import org.jinx.model.ColumnModel;
 import java.util.List;
 
 public class LiquibaseUtils {
-    public static ChangeSetWrapper createChangeSet(String id, List<Object> changes) {
+    public static ChangeSetWrapper createChangeSet(String id, List<Change> changes) {
         return ChangeSetWrapper.builder()
                 .changeSet(ChangeSet.builder()
                         .id(id)

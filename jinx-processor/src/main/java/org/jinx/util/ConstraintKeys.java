@@ -16,7 +16,7 @@ public final class ConstraintKeys {
         String ty = norm(type);
         String s  = isBlank(schema) ? "_" : norm(schema);
         String t  = norm(table);
-        String c  = columns.stream().map(ConstraintKeys::norm).collect(Collectors.joining(","));
+        String c  = columns == null || columns.isEmpty() ? "_" : columns.stream().map(ConstraintKeys::norm).collect(Collectors.joining(","));
         String w  = isBlank(whereOrNull) ? "_" : norm(whereOrNull);
         return ty + "::" + s + "::" + t + "::" + c + "::" + w;
     }

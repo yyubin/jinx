@@ -6,7 +6,7 @@ import lombok.Data;
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class DropForeignKeyConstraintChange {
+public class DropForeignKeyConstraintChange implements Change{
     @JsonProperty("dropForeignKeyConstraint")
     private DropForeignKeyConstraintConfig config;
 }

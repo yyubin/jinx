@@ -8,7 +8,7 @@ import lombok.Data;
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class DropUniqueConstraintChange {
+public class DropUniqueConstraintChange implements Change {
     @JsonProperty("dropUniqueConstraint")
     private DropUniqueConstraintConfig config;
 }

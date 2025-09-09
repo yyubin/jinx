@@ -3,6 +3,7 @@ package org.jinx.model;
 import lombok.Builder;
 import lombok.Data;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -14,9 +15,9 @@ public class ConstraintModel {
     private String schema;
     private String tableName;
     private ConstraintType type;
-    @Builder.Default private List<String> columns = Collections.emptyList();
+    @Builder.Default private List<String> columns = new ArrayList<>();
     private String referencedTable;
-    @Builder.Default private List<String> referencedColumns = Collections.emptyList();
+    @Builder.Default private List<String> referencedColumns = new ArrayList<>();
     private OnDeleteAction onDelete;
     private OnUpdateAction onUpdate;
     @Builder.Default private Optional<String> checkClause = Optional.empty();

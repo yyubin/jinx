@@ -8,7 +8,7 @@ import lombok.Data;
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class AddCheckConstraintChange {
+public class AddCheckConstraintChange implements Change{
     @JsonProperty("addCheckConstraint")
     private AddCheckConstraintConfig config;
 }

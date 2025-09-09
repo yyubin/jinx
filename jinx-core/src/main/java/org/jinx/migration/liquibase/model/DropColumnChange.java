@@ -6,7 +6,7 @@ import lombok.Data;
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class DropColumnChange {
+public class DropColumnChange implements Change {
     @JsonProperty("dropColumn")
     private DropColumnConfig config;
 }

@@ -8,7 +8,7 @@ import lombok.Data;
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class ModifyDataTypeChange {
+public class ModifyDataTypeChange implements Change {
     @JsonProperty("modifyDataType")
     private ModifyDataTypeConfig config;
 }

@@ -8,7 +8,7 @@ import lombok.Data;
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class DropCheckConstraintChange {
+public class DropCheckConstraintChange implements Change {
     @JsonProperty("dropCheckConstraint")
     private DropCheckConstraintConfig config;
 }
