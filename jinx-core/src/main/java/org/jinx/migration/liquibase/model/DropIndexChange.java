@@ -7,7 +7,7 @@ import lombok.Data;
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class DropIndexChange {
+public class DropIndexChange implements Change{
     @JsonProperty("dropIndex")
     private DropIndexConfig config;
 }

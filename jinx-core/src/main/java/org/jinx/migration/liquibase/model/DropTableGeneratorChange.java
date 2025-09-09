@@ -8,7 +8,7 @@ import lombok.Data;
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class DropTableGeneratorChange {
+public class DropTableGeneratorChange implements Change {
     @JsonProperty("dropTable")
     private DropTableConfig config;
 }

@@ -24,7 +24,6 @@ public class CollectionElementResolver extends AbstractColumnResolver {
                 .javaType(type.toString())
                 .isPrimaryKey(false) // 컬렉션 요소는 기본적으로 PK가 아님
                 .isNullable(column == null || column.nullable())
-                .isUnique(column != null && column.unique())
                 .length(column != null ? column.length() : 255)
                 .precision(column != null ? column.precision() : 0)
                 .scale(column != null ? column.scale() : 0)

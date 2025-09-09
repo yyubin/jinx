@@ -11,5 +11,4 @@ public class IndexModel {
     private String indexName;
     private String tableName;
     private List<String> columnNames;
-    private boolean isUnique;
 }

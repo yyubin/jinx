@@ -94,29 +94,9 @@ class IndexDifferTest {
         assertTrue(diff.getChangeDetail().contains("columns changed from [status] to [status, last_login]"));
     }
 
-    @Test
-    @DisplayName("인덱스의 unique 속성만 변경되었을 때 'MODIFIED'로 감지해야 함")
-    void shouldDetectModifiedIndex_whenUniquenessChanges() {
-        IndexModel oldIdx = createIndex("idx_email", false, List.of("email"));
-        IndexModel newIdx = createIndex("idx_email", true, List.of("email")); // isUnique 변경
-
-        oldEntity.setIndexes(Map.of("idx_email", oldIdx));
-        newEntity.setIndexes(Map.of("idx_email", newIdx));
-
-        indexDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
-
-        assertEquals(1, modifiedEntityResult.getIndexDiffs().size());
-        DiffResult.IndexDiff diff = modifiedEntityResult.getIndexDiffs().get(0);
-        assertEquals(DiffResult.IndexDiff.Type.MODIFIED, diff.getType());
-
-        assertNotNull(diff.getChangeDetail());
-        assertTrue(diff.getChangeDetail().contains("isUnique changed from false to true"));
-    }
-
     private IndexModel createIndex(String name, boolean isUnique, List<String> columns) {
         IndexModel index = IndexModel.builder().build();
         index.setIndexName(name);
-        index.setUnique(isUnique);
         index.setColumnNames(columns);
         return index;
     }

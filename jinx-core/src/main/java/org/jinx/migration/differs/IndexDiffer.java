@@ -39,15 +39,11 @@ public class IndexDiffer implements EntityComponentDiffer {
     }
 
     private boolean isIndexEqual(IndexModel oldIndex, IndexModel newIndex) {
-        return oldIndex.isUnique() == newIndex.isUnique() &&
-                Optional.ofNullable(oldIndex.getColumnNames()).equals(Optional.ofNullable(newIndex.getColumnNames()));
+        return Optional.ofNullable(oldIndex.getColumnNames()).equals(Optional.ofNullable(newIndex.getColumnNames()));
     }
 
     private String getIndexChangeDetail(IndexModel oldIndex, IndexModel newIndex) {
         StringBuilder detail = new StringBuilder();
-        if (oldIndex.isUnique() != newIndex.isUnique()) {
-            detail.append("isUnique changed from ").append(oldIndex.isUnique()).append(" to ").append(newIndex.isUnique()).append("; ");
-        }
         if (!Optional.ofNullable(oldIndex.getColumnNames()).equals(Optional.ofNullable(newIndex.getColumnNames()))) {
             detail.append("columns changed from ").append(oldIndex.getColumnNames()).append(" to ").append(newIndex.getColumnNames()).append("; ");
         }

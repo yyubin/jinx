@@ -9,6 +9,7 @@ import org.jinx.model.DiffResult.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Getter
 public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, SequenceVisitor, TableGeneratorVisitor, SqlGeneratingVisitor {
@@ -244,7 +245,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                 .name(column.getColumnName())
                 .type(getLiquibaseTypeName(column))
                 .autoIncrement(shouldUseAutoIncrement(column.getGenerationStrategy()))
-                .constraints(LiquibaseUtils.buildConstraints(column, currentTableName));
+                .constraints(LiquibaseUtils.buildConstraintsWithoutPK(column, currentTableName));
         
         // Apply priority-based default value setting
         setDefaultValueWithPriority(columnBuilder, column);
@@ -273,14 +274,49 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
 
     @Override
     public void visitModifiedColumn(ColumnModel newColumn, ColumnModel oldColumn) {
-        ModifyDataTypeChange modifyDataType = ModifyDataTypeChange.builder()
-                .config(ModifyDataTypeConfig.builder()
-                        .tableName(currentTableName)
-                        .columnName(newColumn.getColumnName())
-                        .newDataType(getLiquibaseTypeName(newColumn))
-                        .build())
-                .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(modifyDataType)));
+        List<Change> changes = new ArrayList<>();
+
+        // (a) 타입 변경
+        if (!Objects.equals(getLiquibaseTypeName(newColumn), getLiquibaseTypeName(oldColumn))) {
+            ModifyDataTypeChange modifyDataType = ModifyDataTypeChange.builder()
+                    .config(ModifyDataTypeConfig.builder()
+                            .tableName(currentTableName)
+                            .columnName(newColumn.getColumnName())
+                            .newDataType(getLiquibaseTypeName(newColumn))
+                            .build())
+                    .build();
+            changes.add(modifyDataType);
+        }
+
+        // (b) NULL 제약 변경
+        Boolean oldNullable = oldColumn.isNullable();
+        Boolean newNullable = newColumn.isNullable();
+
+        if (!Objects.equals(oldNullable, newNullable)) {
+            if (Boolean.FALSE.equals(newNullable)) {
+                AddNotNullConstraintChange addNN = AddNotNullConstraintChange.builder()
+                        .config(AddNotNullConstraintConfig.builder()
+                                .tableName(currentTableName)
+                                .columnName(newColumn.getColumnName())
+                                .build())
+                        .build();
+                changes.add(addNN);
+            } else if (Boolean.FALSE.equals(oldNullable) && Boolean.TRUE.equals(newNullable)) {
+                // false -> true : NOT NULL 제거
+                DropNotNullConstraintChange dropNN = DropNotNullConstraintChange.builder()
+                        .config(DropNotNullConstraintConfig.builder()
+                                .tableName(currentTableName)
+                                .columnName(newColumn.getColumnName())
+                                .build())
+                        .build();
+                changes.add(dropNN);
+            }
+        }
+
+        // 변경사항이 있을 때만 ChangeSet 생성
+        if (!changes.isEmpty()) {
+            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), changes));
+        }
     }
 
     @Override
@@ -306,7 +342,6 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                 .config(CreateIndexConfig.builder()
                         .indexName(index.getIndexName())
                         .tableName(index.getTableName() != null ? index.getTableName() : currentTableName)
-                        .unique(index.isUnique())
                         .columns(indexColumns)
                         .build())
                 .build();
@@ -336,7 +371,6 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                 .config(CreateIndexConfig.builder()
                         .indexName(newIndex.getIndexName())
                         .tableName(newIndex.getTableName() != null ? newIndex.getTableName() : currentTableName)
-                        .unique(newIndex.isUnique())
                         .columns(newIndex.getColumnNames().stream()
                                 .map(colName -> ColumnWrapper.builder()
                                         .config(ColumnConfig.builder().name(colName).build())

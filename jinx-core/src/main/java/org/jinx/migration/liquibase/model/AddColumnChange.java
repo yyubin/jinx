@@ -6,7 +6,7 @@ import lombok.Data;
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class AddColumnChange {
+public class AddColumnChange implements Change{
     @JsonProperty("addColumn")
     private AddColumnConfig config;
 }

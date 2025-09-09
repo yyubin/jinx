@@ -7,7 +7,7 @@ import lombok.Data;
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class AddPrimaryKeyConstraintChange {
+public class AddPrimaryKeyConstraintChange implements Change{
     @JsonProperty("addPrimaryKey")
     private AddPrimaryKeyConstraintConfig config;
 }

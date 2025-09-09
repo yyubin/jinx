@@ -6,7 +6,7 @@ import lombok.Data;
 
 @Data
 @Builder
-public class CreateIndexChange {
+public class CreateIndexChange implements Change{
     @JsonProperty("createIndex")
     private CreateIndexConfig config;
 }

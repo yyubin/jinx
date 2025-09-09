@@ -86,7 +86,6 @@ class CollectionElementResolverTest {
 
         // Assert
         assertThat(result.isNullable()).isFalse();
-        assertThat(result.isUnique()).isTrue();
         assertThat(result.getLength()).isEqualTo(500);
     }
 

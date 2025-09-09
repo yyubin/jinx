@@ -6,7 +6,7 @@ import lombok.Data;
 
 @Data
 @Builder
-public class AddForeignKeyConstraintChange {
+public class AddForeignKeyConstraintChange implements Change{
     @JsonProperty("addForeignKeyConstraint")
     private AddForeignKeyConstraintConfig config;
 }

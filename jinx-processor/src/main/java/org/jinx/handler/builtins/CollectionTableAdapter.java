@@ -77,7 +77,6 @@ public class CollectionTableAdapter implements TableLike {
                 .indexName(indexName)
                 .tableName(getName())
                 .columnNames(columnNames)
-                .isUnique(index.unique())
                 .build();
             indexes.add(indexModel);
         }

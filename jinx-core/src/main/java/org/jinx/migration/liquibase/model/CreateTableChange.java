@@ -6,7 +6,7 @@ import lombok.Data;
 import java.util.List;
 @Data
 @Builder
-public class CreateTableChange {
+public class CreateTableChange implements Change{
     @JsonProperty("createTable")
     private CreateTableConfig config;
 }

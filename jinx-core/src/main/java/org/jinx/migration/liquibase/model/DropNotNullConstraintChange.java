@@ -7,7 +7,7 @@ import lombok.Data;
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class RenameColumnChange implements Change {
-    @JsonProperty("renameColumn")
-    private RenameColumnConfig config;
+public class DropNotNullConstraintChange implements Change {
+    @JsonProperty("dropNotNullConstraint")
+    private DropNotNullConstraintConfig config;
 }

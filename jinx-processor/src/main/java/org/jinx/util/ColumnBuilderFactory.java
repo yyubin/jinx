@@ -25,7 +25,6 @@ public class ColumnBuilderFactory {
                 .javaType(typeHint != null ? typeHint.toString() : field.asType().toString())
                 .isPrimaryKey(field.getAnnotation(Id.class) != null || field.getAnnotation(EmbeddedId.class) != null)
                 .isNullable(column == null || column.nullable())
-                .isUnique(column != null && column.unique())
                 .length(column != null ? column.length() : 255)
                 .precision(column != null ? column.precision() : 0)
                 .scale(column != null ? column.scale() : 0)
@@ -59,7 +58,6 @@ public class ColumnBuilderFactory {
                 .javaType(effectiveType.toString())
                 .isPrimaryKey(isPk)
                 .isNullable((column == null || column.nullable()) && !isPk)
-                .isUnique(column != null && column.unique())
                 .length(column != null ? column.length() : 255)
                 .precision(column != null ? column.precision() : 0)
                 .scale(column != null ? column.scale() : 0)
@@ -101,6 +99,15 @@ public class ColumnBuilderFactory {
 
         // Priority 4: Attribute name (fallback)
         return attributeName;
+    }
+
+    public static ColumnModel fromType(TypeMirror type, String columnName, String tableName) {
+        return ColumnModel.builder()
+                .columnName(columnName)
+                .tableName(tableName)
+                .javaType(type.toString())
+                .isNullable(true)
+                .build();
     }
     
     private static boolean isNotBlank(String s) {

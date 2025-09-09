@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Getter;
 import org.jinx.descriptor.AttributeDescriptor;
 import org.jinx.descriptor.AttributeDescriptorFactory;
+import org.jinx.manager.ConstraintManager;
 import org.jinx.model.ColumnModel;
 import org.jinx.model.EntityModel;
 import org.jinx.model.SchemaModel;
@@ -34,6 +35,8 @@ public class ProcessingContext {
     private final Queue<EntityModel> deferredEntities = new ArrayDeque<>();
     private final Set<String> deferredNames = new HashSet<>();
     private final AttributeDescriptorFactory attributeDescriptorFactory;
+
+    private final ConstraintManager constraintManager = new ConstraintManager(this);
 
     // 라운드 동안만 유효한 TypeElement 레지스트리
     private final Map<String, TypeElement> mappedSuperclassElements = new HashMap<>();

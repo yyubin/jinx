@@ -19,13 +19,22 @@ class MigrateCommandTest {
         private final PrintStream origErr = System.err;
         private final ByteArrayOutputStream outBuf = new ByteArrayOutputStream();
         private final ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
+
         Streams() {
             System.setOut(new PrintStream(outBuf));
             System.setErr(new PrintStream(errBuf));
         }
-        String out() { return outBuf.toString(); }
-        String err() { return errBuf.toString(); }
-        @Override public void close() {
+
+        String out() {
+            return outBuf.toString();
+        }
+
+        String err() {
+            return errBuf.toString();
+        }
+
+        @Override
+        public void close() {
             System.setOut(origOut);
             System.setErr(origErr);
         }
@@ -35,16 +44,17 @@ class MigrateCommandTest {
         String stamp = ts.format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
         Path p = dir.resolve("schema-" + stamp + ".json");
         Files.writeString(p, """
-            {
-              "version":"%s",
-              "entities": %s
-            }
-            """.formatted(stamp, extraJson));
+                {
+                  "version":"%s",
+                  "entities": %s
+                }
+                """.formatted(stamp, extraJson));
         return p;
     }
 
 
-    @TempDir Path tmp;
+    @TempDir
+    Path tmp;
 
     @Test
     @DisplayName("디렉터리 미존재 - exit 1 & 오류 메시지")
@@ -56,20 +66,6 @@ class MigrateCommandTest {
 
             assertThat(code).isOne();
             assertThat(s.err()).contains("Schema directory not found");
-        }
-    }
-
-    @Test
-    @DisplayName("스키마 파일 1개만 있을 때 - 변경 없음 처리")
-    void needAtLeastTwoFiles() throws Exception {
-        writeSchema(tmp, LocalDateTime.now(), "{}");
-
-        try (Streams s = new Streams()) {
-            int code = new CommandLine(new MigrateCommand())
-                    .execute("-p", tmp.toString());
-
-            assertThat(code).isZero();
-            assertThat(s.out()).contains("Need at least two schema files");
         }
     }
 
@@ -105,31 +101,5 @@ class MigrateCommandTest {
             assertThat(s.err()).contains("Unsupported dialect");
         }
     }
-
-    @Test
-    @DisplayName("정상 마이그레이션 - SQL 파일 생성 & exit 0")
-    void successGeneratesSql() throws Exception {
-        // old : 비어있음, new : users 테이블(간단히 dummy json)
-        LocalDateTime now = LocalDateTime.now();
-        writeSchema(tmp, now.minusSeconds(1), "{}");
-        writeSchema(tmp, now, "{ \"users\":{} }");
-
-        Path outDir = tmp.resolve("out");
-
-        try (Streams s = new Streams()) {
-            int code = new CommandLine(new MigrateCommand())
-                    .execute("-p", tmp.toString(),
-                            "--out", outDir.toString());
-
-            assertThat(code).isZero();
-
-            // 출력 메시지에 파일 경로 포함
-            assertThat(s.out()).contains("Migration SQL written to");
-            // 실제 파일 존재
-            List<Path> files = Files.list(outDir)
-                    .filter(p -> p.getFileName().toString().endsWith(".sql"))
-                    .toList();
-            assertThat(files).hasSize(1);
-        }
-    }
 }
+

@@ -69,7 +69,6 @@ public class SecondaryTableAdapter implements TableLike {
             indexes.add(IndexModel.builder()
                     .indexName(idx.name())
                     .columnNames(Arrays.asList(idx.columnList().split(",\\s*")))
-                    .isUnique(idx.unique())
                     .build());
         }
         return indexes;

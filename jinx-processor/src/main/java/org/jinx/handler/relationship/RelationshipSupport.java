@@ -128,7 +128,7 @@ public final class RelationshipSupport {
 
         IndexModel ix = IndexModel.builder()
                 .indexName(indexName).tableName(tableName)
-                .columnNames(colsInOrder).isUnique(false).build();
+                .columnNames(colsInOrder).build();
         entity.getIndexes().put(indexName, ix);
     }
 
