@@ -14,6 +14,8 @@ import java.util.Objects;
  * - display: 원본 대소문자를 보존한 표시/로그 용도
  */
 public final class ColumnKey {
+    private static final String DELIMITER = "::";
+    
     private final String canonical;  // 정규화된 키 (DB 비교용)
     private final String display;    // 원본 키 (표시용)
     
@@ -29,8 +31,8 @@ public final class ColumnKey {
         String normalizedTableName = (tableName == null || tableName.isBlank()) ? "" : tableName.trim();
         String normalizedColumnName = (columnName == null) ? "" : columnName.trim();
         
-        String displayKey = normalizedTableName + "::" + normalizedColumnName;
-        String canonicalKey = normalizedTableName.toLowerCase(java.util.Locale.ROOT) + "::" + 
+        String displayKey = normalizedTableName + DELIMITER + normalizedColumnName;
+        String canonicalKey = normalizedTableName.toLowerCase(java.util.Locale.ROOT) + DELIMITER + 
                              normalizedColumnName.toLowerCase(java.util.Locale.ROOT);
         
         return new ColumnKey(canonicalKey, displayKey);
@@ -40,11 +42,12 @@ public final class ColumnKey {
      * IdentifierPolicy를 사용하여 ColumnKey 생성
      */
     public static ColumnKey of(String tableName, String columnName, IdentifierPolicy policy) {
+        Objects.requireNonNull(policy, "policy must not be null");
         String normalizedTableName = (tableName == null || tableName.isBlank()) ? "" : tableName.trim();
         String normalizedColumnName = (columnName == null) ? "" : columnName.trim();
         
-        String displayKey = normalizedTableName + "::" + normalizedColumnName;
-        String canonicalKey = policy.normalizeCase(normalizedTableName) + "::" + 
+        String displayKey = normalizedTableName + DELIMITER + normalizedColumnName;
+        String canonicalKey = policy.normalizeCase(normalizedTableName) + DELIMITER + 
                              policy.normalizeCase(normalizedColumnName);
         
         return new ColumnKey(canonicalKey, displayKey);
@@ -77,10 +80,10 @@ public final class ColumnKey {
      */
     @JsonCreator
     public static ColumnKey fromJsonValue(String value) {
-        if (value == null || !value.contains("::")) {
+        if (value == null || !value.contains(DELIMITER)) {
             return ColumnKey.of("", "");
         }
-        String[] parts = value.split("::", 2);
+        String[] parts = value.split(DELIMITER, 2);
         return ColumnKey.of(parts[0], parts[1]);
     }
     

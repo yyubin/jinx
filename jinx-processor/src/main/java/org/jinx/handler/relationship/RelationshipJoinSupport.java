@@ -358,8 +358,8 @@ public final class RelationshipJoinSupport {
      */
     public boolean validateJoinTableFkConsistency(EntityModel existingJoinTable, JoinTableDetails details, AttributeDescriptor attr) {
         // 기존 JoinTable의 컬럼들과 새로 요구되는 FK 컬럼들이 정확히 일치하는지 검증
-        Set<String> existingColumns = existingJoinTable.getColumns().keySet().stream()
-            .map(Object::toString)
+        Set<String> existingColumns = existingJoinTable.getColumns().values().stream()
+            .map(ColumnModel::getColumnName)
             .collect(java.util.stream.Collectors.toSet());
         Set<String> requiredColumns = new HashSet<>();
         requiredColumns.addAll(details.ownerFkToPkMap().keySet());

@@ -49,7 +49,7 @@ class ColumnDifferTest {
     @DisplayName("새로운 컬럼이 추가되었을 때 'ADDED'로 감지해야 함")
     void shouldDetectAddedColumn() {
         ColumnModel newCol = createColumn("email", "VARCHAR", false);
-        oldEntity.setColumns(Collections.emptyMap());
+        oldEntity.clearColumns();
         newEntity.setColumnFromMap(Map.of("email", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
@@ -65,7 +65,7 @@ class ColumnDifferTest {
     void shouldDetectDroppedColumn() {
         ColumnModel oldCol = createColumn("last_login", "TIMESTAMP", true);
         oldEntity.setColumnFromMap(Map.of("last_login", oldCol));
-        newEntity.setColumns(Collections.emptyMap());
+        newEntity.clearColumns();
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
