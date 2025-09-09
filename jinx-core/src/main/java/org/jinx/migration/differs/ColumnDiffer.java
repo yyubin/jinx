@@ -1,5 +1,6 @@
 package org.jinx.migration.differs;
 
+import org.jinx.model.ColumnKey;
 import org.jinx.model.ColumnModel;
 import org.jinx.model.DiffResult;
 import org.jinx.model.EntityModel;
@@ -9,8 +10,10 @@ import java.util.*;
 public class ColumnDiffer implements EntityComponentDiffer {
     @Override
     public void diff(EntityModel oldEntity, EntityModel newEntity, DiffResult.ModifiedEntity result) {
-        Map<String, ColumnModel> oldColumns = new HashMap<>(oldEntity.getColumns());
-        Map<String, ColumnModel> newColumns = new HashMap<>(newEntity.getColumns());
+        Map<String, ColumnModel> oldColumns = new HashMap<>();
+        oldEntity.getColumns().forEach((key, value) -> oldColumns.put(key.display(), value));
+        Map<String, ColumnModel> newColumns = new HashMap<>();
+        newEntity.getColumns().forEach((key, value) -> newColumns.put(key.display(), value));
         Set<String> processedNewColumns = new HashSet<>();
 
         for (Map.Entry<String, ColumnModel> newEntry : newColumns.entrySet()) {

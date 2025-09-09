@@ -148,7 +148,7 @@ class OneToManyOwningFkProcessorTest {
                 RelationshipType.ONE_TO_MANY
         );
 
-        ColumnModel col = child.getColumns().get("child::children_id");
+        ColumnModel col = child.findColumn("child", "children_id");
         assertNotNull(col, "FK column should be added to child");
         assertEquals("java.lang.Long", col.getJavaType());
 

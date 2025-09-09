@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -26,7 +27,8 @@ public class EntityModel {
     private String parentEntity;
     @Builder.Default private String fqcn = null;
     @Builder.Default private TableType tableType = TableType.ENTITY;
-    @Builder.Default private Map<String, ColumnModel> columns = new HashMap<>();
+    @Setter(lombok.AccessLevel.NONE)
+    @Builder.Default private Map<ColumnKey, ColumnModel> columns = new HashMap<>();
     @Builder.Default private Map<String, IndexModel> indexes = new HashMap<>();
     @Builder.Default private Map<String, ConstraintModel> constraints = new HashMap<>();
     @Builder.Default private Map<String, RelationshipModel> relationships = new HashMap<>();
@@ -58,27 +60,57 @@ public class EntityModel {
                 .anyMatch(name -> t.equalsIgnoreCase(name));
     }
 
-    private String colKey(String tableName, String columnName) {
+    private ColumnKey colKey(String tableName, String columnName) {
         String normalizedTableName = (tableName == null || tableName.isBlank()) ? this.tableName : tableName;
-        String t = normalizedTableName == null ? "" : normalizedTableName.trim().toLowerCase(java.util.Locale.ROOT);
-        String c = columnName == null ? "" : columnName.trim().toLowerCase(java.util.Locale.ROOT);
-        return t + "::" + c;
+        return ColumnKey.of(normalizedTableName, columnName);
     }
 
     public ColumnModel findColumn(String tableName, String columnName) {
+        if (columnName == null || columnName.isBlank()) {
+            return null; // null/blank 컬럼명은 찾을 수 없음
+        }
         return columns.get(colKey(tableName, columnName));
     }
 
     public void putColumn(ColumnModel column) {
+        if (column == null || column.getColumnName() == null || column.getColumnName().isBlank()) {
+            throw new IllegalArgumentException("columnName must not be null/blank");
+        }
         columns.put(colKey(column.getTableName(), column.getColumnName()), column);
     }
 
     public boolean hasColumn(String tableName, String columnName) {
+        if (columnName == null || columnName.isBlank()) {
+            return false; // null/blank 컬럼명은 존재하지 않음
+        }
         return columns.containsKey(colKey(tableName, columnName));
     }
 
     @JsonIgnore
     public boolean isJavaBackedEntity() {
         return fqcn != null && !fqcn.isBlank() && tableType == TableType.ENTITY;
+    }
+    
+    /**
+     * 읽기 전용 컬럼 맵 반환 (외부에서 수정 불가)
+     */
+    @JsonIgnore
+    public Map<ColumnKey, ColumnModel> getColumnsReadOnly() {
+        return java.util.Collections.unmodifiableMap(columns);
+    }
+    
+    /**
+     * 모든 컬럼 제거
+     */
+    public void clearColumns() {
+        this.columns.clear();
+    }
+    
+    /**
+     * 테스트 전용 helper 메서드: String 키를 ColumnKey로 변환하여 컬럼 추가
+     */
+    public void setColumnFromMap(Map<String, ColumnModel> columnMap) {
+        this.columns.clear();
+        columnMap.forEach((key, column) -> putColumn(column));
     }
 }

@@ -1,5 +1,6 @@
 package org.jinx.testing.asserts;
 
+import org.jinx.model.ColumnKey;
 import org.jinx.model.ColumnModel;
 import org.jinx.model.EntityModel;
 
@@ -39,7 +40,14 @@ public final class ColumnAssertions {
     }
 
     public static ColumnModel assertExists(EntityModel e, String fullKey) {
-        ColumnModel c = e.getColumns().get(fullKey);
+        // fullKey를 파싱하여 테이블명과 컬럼명을 분리
+        String[] parts = fullKey.split("::");
+        if (parts.length != 2) {
+            throw new IllegalArgumentException("Invalid fullKey format. Expected 'table::column', got: " + fullKey);
+        }
+        String table = parts[0];
+        String column = parts[1];
+        ColumnModel c = e.findColumn(table, column);
         assertNotNull(c, () -> "missing: " + fullKey + " keys=" + e.getColumns().keySet());
         return c;
     }

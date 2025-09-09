@@ -30,7 +30,7 @@ class BasicEntityProcessingTest extends AbstractProcessorTest {
         assertThat(userEntity.getColumns()).hasSize(3);
 
         // ID 컬럼 검증
-        assertThat(userEntity.getColumns().get("users::id")).isNotNull()
+        assertThat(userEntity.findColumn("users", "id")).isNotNull()
                 .satisfies(col -> {
                     assertThat(col.getColumnName()).isEqualTo("id");
                     assertThat(col.isPrimaryKey()).isTrue();
@@ -38,7 +38,7 @@ class BasicEntityProcessingTest extends AbstractProcessorTest {
                 });
 
         // Name 컬럼 검증
-        assertThat(userEntity.getColumns().get("users::user_name")).isNotNull()
+        assertThat(userEntity.findColumn("users", "user_name")).isNotNull()
                 .satisfies(col -> {
                     assertThat(col.getColumnName()).isEqualTo("user_name");
                     assertThat(col.isNullable()).isFalse();
@@ -46,7 +46,7 @@ class BasicEntityProcessingTest extends AbstractProcessorTest {
                 });
 
         // Email 컬럼 검증 (기본값)
-        assertThat(userEntity.getColumns().get("users::email")).isNotNull()
+        assertThat(userEntity.findColumn("users", "email")).isNotNull()
                 .satisfies(col -> {
                     assertThat(col.getColumnName()).isEqualTo("email");
                     assertThat(col.isNullable()).isTrue(); // @Column(nullable=false)가 없으므로 true
