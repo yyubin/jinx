@@ -289,12 +289,11 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         }
 
         // (b) NULL 제약 변경
-        boolean oldNullable = oldColumn.isNullable();
-        boolean newNullable = newColumn.isNullable();
+        Boolean oldNullable = oldColumn.isNullable();
+        Boolean newNullable = newColumn.isNullable();
 
-        if (oldNullable != newNullable) {
-            if (!newNullable) {
-                // true -> false : NOT NULL 추가
+        if (!Objects.equals(oldNullable, newNullable)) {
+            if (Boolean.FALSE.equals(newNullable)) {
                 AddNotNullConstraintChange addNN = AddNotNullConstraintChange.builder()
                         .config(AddNotNullConstraintConfig.builder()
                                 .tableName(currentTableName)
@@ -302,7 +301,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                                 .build())
                         .build();
                 changes.add(addNN);
-            } else {
+            } else if (Boolean.FALSE.equals(oldNullable) && Boolean.TRUE.equals(newNullable)) {
                 // false -> true : NOT NULL 제거
                 DropNotNullConstraintChange dropNN = DropNotNullConstraintChange.builder()
                         .config(DropNotNullConstraintConfig.builder()

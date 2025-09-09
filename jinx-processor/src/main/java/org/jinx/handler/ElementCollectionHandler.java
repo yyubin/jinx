@@ -205,16 +205,20 @@ public class ElementCollectionHandler {
             // 의미 중복 검증 (동일 테이블+컬럼셋+유형)
             Set<String> shapes = new HashSet<>();
 
-            for (ConstraintModel existing : collectionEntity.getConstraints().values()) {
-                shapes.add(ConstraintShapes.shapeKey(existing));
+            if (collectionEntity != null && collectionEntity.getConstraints() != null) {
+                for (ConstraintModel existing : collectionEntity.getConstraints().values()) {
+                    shapes.add(ConstraintShapes.shapeKey(existing));
+                }
             }
             for (ConstraintModel c : pendingConstraints) {
                 if (!shapes.add(ConstraintShapes.shapeKey(c))) {
                     addError("Duplicate constraint definition: " + c.getName());
                 }
             }
-            for (IndexModel existing : collectionEntity.getIndexes().values()) {
-                shapes.add(ConstraintShapes.shapeKey(existing));
+            if (collectionEntity != null && collectionEntity.getIndexes() != null) {
+                for (IndexModel existing : collectionEntity.getIndexes().values()) {
+                    shapes.add(ConstraintShapes.shapeKey(existing));
+                }
             }
             for (IndexModel ix : pendingIndexes) {
                 if (!shapes.add(ConstraintShapes.shapeKey(ix))) {

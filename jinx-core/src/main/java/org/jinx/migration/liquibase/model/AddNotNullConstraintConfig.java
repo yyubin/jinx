@@ -3,13 +3,15 @@ package org.jinx.migration.liquibase.model;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NonNull;
 
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class AddNotNullConstraintConfig {
+    @NonNull
     private String tableName;          // 필수
-    private String columnName;         // 필수
+    @NonNull private String columnName;         // 필수
 
     // 일부 DB/드라이버에서 필요할 수 있음
     private String columnDataType;     // 선택
