@@ -183,10 +183,10 @@ class TableDifferTest {
         entity.setEntityName(entityName);
         entity.setTableName(tableName);
         if (columns != null) {
-            entity.setColumns(Arrays.stream(columns)
+            entity.setColumnFromMap(Arrays.stream(columns)
                     .collect(Collectors.toMap(ColumnModel::getColumnName, c -> c)));
         } else {
-            entity.setColumns(Collections.emptyMap());
+            entity.setColumnFromMap(Collections.emptyMap());
         }
         return entity;
     }

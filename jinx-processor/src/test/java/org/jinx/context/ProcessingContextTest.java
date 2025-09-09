@@ -22,7 +22,6 @@ class ProcessingContextTest {
     void findPrimaryKeyColumnName_withEmptyColumnsMap_returnsEmpty() {
         EntityModel entity = EntityModel.builder()
                 .entityName("EmptyEntity")
-                .columns(Map.of())
                 .build();
 
         SchemaModel schema = SchemaModel.builder().build();
@@ -53,8 +52,10 @@ class ProcessingContextTest {
 
         EntityModel entity = EntityModel.builder()
                 .entityName("OrderLine")
-                .columns(Map.of("order_id", pk1, "line_no", pk2, "sku", data))
                 .build();
+        entity.putColumn(pk1);
+        entity.putColumn(pk2);
+        entity.putColumn(data);
 
         SchemaModel schema = SchemaModel.builder().build();
         ProcessingEnvironment mockEnv = Mockito.mock(ProcessingEnvironment.class);
@@ -80,8 +81,9 @@ class ProcessingContextTest {
 
         EntityModel entity = EntityModel.builder()
                 .entityName("Account")
-                .columns(Map.of("user_pk", pk, "email", other))
                 .build();
+        entity.putColumn(pk);
+        entity.putColumn(other);
 
         SchemaModel schema = SchemaModel.builder().build();
         ProcessingEnvironment mockEnv = Mockito.mock(ProcessingEnvironment.class);
@@ -102,8 +104,8 @@ class ProcessingContextTest {
 
         EntityModel entity = EntityModel.builder()
                 .entityName("User")
-                .columns(Map.of("user_id", col))
                 .build();
+        entity.putColumn(col);
 
         SchemaModel schema = SchemaModel.builder().build();
         ProcessingEnvironment mockEnv = Mockito.mock(ProcessingEnvironment.class);
@@ -175,8 +177,8 @@ class ProcessingContextTest {
 
         EntityModel entity = EntityModel.builder()
                 .entityName("Test")
-                .columns(Map.of("id", idCol))
                 .build();
+        entity.putColumn(idCol);
 
         SchemaModel schema = SchemaModel.builder().build();
         ProcessingEnvironment mockEnv = Mockito.mock(ProcessingEnvironment.class);

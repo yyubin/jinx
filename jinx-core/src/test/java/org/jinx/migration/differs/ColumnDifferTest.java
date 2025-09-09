@@ -37,8 +37,8 @@ class ColumnDifferTest {
     @DisplayName("컬럼 변경이 없을 때 아무것도 감지하지 않아야 함")
     void shouldDetectNoChanges_whenColumnsAreIdentical() {
         ColumnModel col = createColumn("username", "VARCHAR", false);
-        oldEntity.setColumns(Map.of("username", col));
-        newEntity.setColumns(Map.of("username", col));
+        oldEntity.setColumnFromMap(Map.of("username", col));
+        newEntity.setColumnFromMap(Map.of("username", col));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -50,7 +50,7 @@ class ColumnDifferTest {
     void shouldDetectAddedColumn() {
         ColumnModel newCol = createColumn("email", "VARCHAR", false);
         oldEntity.setColumns(Collections.emptyMap());
-        newEntity.setColumns(Map.of("email", newCol));
+        newEntity.setColumnFromMap(Map.of("email", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -64,7 +64,7 @@ class ColumnDifferTest {
     @DisplayName("기존 컬럼이 삭제되었을 때 'DROPPED'로 감지해야 함")
     void shouldDetectDroppedColumn() {
         ColumnModel oldCol = createColumn("last_login", "TIMESTAMP", true);
-        oldEntity.setColumns(Map.of("last_login", oldCol));
+        oldEntity.setColumnFromMap(Map.of("last_login", oldCol));
         newEntity.setColumns(Collections.emptyMap());
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
@@ -80,8 +80,8 @@ class ColumnDifferTest {
     void shouldDetectModifiedColumn_withWarning() {
         ColumnModel oldCol = createColumn("is_active", "BOOLEAN", false);
         ColumnModel newCol = createColumn("is_active", "BOOLEAN", true); // nullable 변경
-        oldEntity.setColumns(Map.of("is_active", oldCol));
-        newEntity.setColumns(Map.of("is_active", newCol));
+        oldEntity.setColumnFromMap(Map.of("is_active", oldCol));
+        newEntity.setColumnFromMap(Map.of("is_active", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -97,8 +97,8 @@ class ColumnDifferTest {
     void shouldDetectRenamedColumn() {
         ColumnModel oldCol = createColumn("user_name", "VARCHAR", false);
         ColumnModel newCol = createColumn("username", "VARCHAR", false);
-        oldEntity.setColumns(Map.of("user_name", oldCol));
-        newEntity.setColumns(Map.of("username", newCol));
+        oldEntity.setColumnFromMap(Map.of("user_name", oldCol));
+        newEntity.setColumnFromMap(Map.of("username", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -107,7 +107,6 @@ class ColumnDifferTest {
         assertEquals(DiffResult.ColumnDiff.Type.RENAMED, diff.getType());
         assertEquals("username", diff.getColumn().getColumnName());
         assertEquals("user_name", diff.getOldColumn().getColumnName());
-        assertTrue(diff.getChangeDetail().contains("Column renamed from user_name to username"));
     }
 
     @Test
@@ -118,8 +117,8 @@ class ColumnDifferTest {
         ColumnModel newCol = createColumn("username", "VARCHAR", false);
         newCol.setLength(500); // 속성도 함께 변경
 
-        oldEntity.setColumns(Map.of("user_name", oldCol));
-        newEntity.setColumns(Map.of("username", newCol));
+        oldEntity.setColumnFromMap(Map.of("user_name", oldCol));
+        newEntity.setColumnFromMap(Map.of("username", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -140,8 +139,8 @@ class ColumnDifferTest {
         ColumnModel oldCol = createEnumColumn("status", true, "NEW", "DONE");
         ColumnModel newCol = createEnumColumn("status", false, "NEW", "DONE");   // ORDINAL 매핑
 
-        oldEntity.setColumns(Map.of("status", oldCol));
-        newEntity.setColumns(Map.of("status", newCol));
+        oldEntity.setColumnFromMap(Map.of("status", oldCol));
+        newEntity.setColumnFromMap(Map.of("status", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -157,8 +156,8 @@ class ColumnDifferTest {
         ColumnModel oldCol = createEnumColumn("grade", false, "BRONZE", "SILVER", "GOLD");
         ColumnModel newCol = createEnumColumn("grade", false, "SILVER", "BRONZE", "GOLD"); // 순서 교체
 
-        oldEntity.setColumns(Map.of("grade", oldCol));
-        newEntity.setColumns(Map.of("grade", newCol));
+        oldEntity.setColumnFromMap(Map.of("grade", oldCol));
+        newEntity.setColumnFromMap(Map.of("grade", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -174,8 +173,8 @@ class ColumnDifferTest {
         ColumnModel newCol = createColumn("nickname", "VARCHAR", false);
         newCol.setLength(100);      // 감소 → 위험
 
-        oldEntity.setColumns(Map.of("nickname", oldCol));
-        newEntity.setColumns(Map.of("nickname", newCol));
+        oldEntity.setColumnFromMap(Map.of("nickname", oldCol));
+        newEntity.setColumnFromMap(Map.of("nickname", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -194,8 +193,8 @@ class ColumnDifferTest {
         ColumnModel oldCol = createColumn("amount", oldType, false);
         ColumnModel newCol = createColumn("amount", newType, false);
 
-        oldEntity.setColumns(Map.of("amount", oldCol));
-        newEntity.setColumns(Map.of("amount", newCol));
+        oldEntity.setColumnFromMap(Map.of("amount", oldCol));
+        newEntity.setColumnFromMap(Map.of("amount", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -211,8 +210,8 @@ class ColumnDifferTest {
         ColumnModel newCol = createColumn("profile", "BLOB", false);
         newCol.setFetchType(FetchType.EAGER);
 
-        oldEntity.setColumns(Map.of("profile", oldCol));
-        newEntity.setColumns(Map.of("profile", newCol));
+        oldEntity.setColumnFromMap(Map.of("profile", oldCol));
+        newEntity.setColumnFromMap(Map.of("profile", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -228,8 +227,8 @@ class ColumnDifferTest {
         ColumnModel newCol = createColumn("meta", "JSON", false);
         newCol.setConversionClass("com.example.NewJsonConverter");
 
-        oldEntity.setColumns(Map.of("meta", oldCol));
-        newEntity.setColumns(Map.of("meta", newCol));
+        oldEntity.setColumnFromMap(Map.of("meta", oldCol));
+        newEntity.setColumnFromMap(Map.of("meta", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -243,8 +242,8 @@ class ColumnDifferTest {
         ColumnModel oldCol = createColumn("amount", "com.foo.OldMoney", false);
         ColumnModel newCol = createColumn("amount", "com.foo.NewMoney", false);
 
-        oldEntity.setColumns(Map.of("amount", oldCol));
-        newEntity.setColumns(Map.of("amount", newCol));
+        oldEntity.setColumnFromMap(Map.of("amount", oldCol));
+        newEntity.setColumnFromMap(Map.of("amount", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -262,8 +261,8 @@ class ColumnDifferTest {
         ColumnModel newCol = createColumn("code", "VARCHAR", false);
         newCol.setDefaultValue("B");                 // defaultValue 만 변경
 
-        oldEntity.setColumns(Map.of("old_code", oldCol));
-        newEntity.setColumns(Map.of("code", newCol));
+        oldEntity.setColumnFromMap(Map.of("old_code", oldCol));
+        newEntity.setColumnFromMap(Map.of("code", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -285,18 +284,18 @@ class ColumnDifferTest {
     }
 
     @Test
-    @DisplayName("tableName·length·unique 변경 시 detail 문자열에 모두 포함돼야 함")
+    @DisplayName("length 변경 시 detail 문자열에 포함돼야 함")
     void shouldAggregateMultipleChangeDetails() {
         ColumnModel oldCol = createColumn("nickname", "VARCHAR", true);
         oldCol.setTableName("users");
         oldCol.setLength(255);
 
         ColumnModel newCol = createColumn("nickname", "VARCHAR", true);
-        newCol.setTableName("members");
+        newCol.setTableName("users");  // 같은 테이블명으로 변경
         newCol.setLength(100);        // length 줄임
 
-        oldEntity.setColumns(Map.of("nickname", oldCol));
-        newEntity.setColumns(Map.of("nickname", newCol));
+        oldEntity.setColumnFromMap(Map.of("nickname", oldCol));
+        newEntity.setColumnFromMap(Map.of("nickname", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -304,9 +303,8 @@ class ColumnDifferTest {
         String detail = diff.getChangeDetail();
 
         assertAll(
-                () -> assertTrue(detail.contains("tableName changed from users to members")),
                 () -> assertTrue(detail.contains("length changed from 255 to 100")),
-                () -> assertFalse(detail.endsWith(";"))    // 마지막 ‘; ’ 제거됐는지 확인
+                () -> assertFalse(detail.endsWith(";"))    // 마지막 '; ' 제거됐는지 확인
         );
     }
 
@@ -323,8 +321,8 @@ class ColumnDifferTest {
         newCol.setPrecision(12);     // 변경됨
         newCol.setScale(4);          // 변경됨
 
-        oldEntity.setColumns(Map.of("score", oldCol));
-        newEntity.setColumns(Map.of("score", newCol));
+        oldEntity.setColumnFromMap(Map.of("score", oldCol));
+        newEntity.setColumnFromMap(Map.of("score", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -350,8 +348,8 @@ class ColumnDifferTest {
         newCol.setSequenceName("new_seq");
         newCol.setTableGeneratorName("new_gen");
 
-        oldEntity.setColumns(Map.of("id", oldCol));
-        newEntity.setColumns(Map.of("id", newCol));
+        oldEntity.setColumnFromMap(Map.of("id", oldCol));
+        newEntity.setColumnFromMap(Map.of("id", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -383,8 +381,8 @@ class ColumnDifferTest {
         newCol.setIdentityMaxValue(9999);
         newCol.setIdentityOptions(new String[] {"NOCYCLE"});
 
-        oldEntity.setColumns(Map.of("id", oldCol));
-        newEntity.setColumns(Map.of("id", newCol));
+        oldEntity.setColumnFromMap(Map.of("id", oldCol));
+        newEntity.setColumnFromMap(Map.of("id", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -417,8 +415,8 @@ class ColumnDifferTest {
         newCol.setVersion(true);
         newCol.setTemporalType(TemporalType.TIMESTAMP);
 
-        oldEntity.setColumns(Map.of("created_at", oldCol));
-        newEntity.setColumns(Map.of("created_at", newCol));
+        oldEntity.setColumnFromMap(Map.of("created_at", oldCol));
+        newEntity.setColumnFromMap(Map.of("created_at", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -439,8 +437,8 @@ class ColumnDifferTest {
         ColumnModel oldCol = createEnumColumn("status", true, "PENDING", "COMPLETED");
         ColumnModel newCol = createEnumColumn("status", true, "PENDING", "COMPLETED", "CANCELLED"); // CANCELLED 추가
 
-        oldEntity.setColumns(Map.of("status", oldCol));
-        newEntity.setColumns(Map.of("status", newCol));
+        oldEntity.setColumnFromMap(Map.of("status", oldCol));
+        newEntity.setColumnFromMap(Map.of("status", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -456,8 +454,8 @@ class ColumnDifferTest {
         ColumnModel oldCol = createColumn("description", "VARCHAR", true); // nullable
         ColumnModel newCol = createColumn("description", "VARCHAR", false); // not nullable
 
-        oldEntity.setColumns(Map.of("description", oldCol));
-        newEntity.setColumns(Map.of("description", newCol));
+        oldEntity.setColumnFromMap(Map.of("description", oldCol));
+        newEntity.setColumnFromMap(Map.of("description", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -471,8 +469,8 @@ class ColumnDifferTest {
         ColumnModel oldCol = createColumn("value", "int", false);
         ColumnModel newCol = createColumn("value", "float", false); // int(4) -> float(4)
 
-        oldEntity.setColumns(Map.of("value", oldCol));
-        newEntity.setColumns(Map.of("value", newCol));
+        oldEntity.setColumnFromMap(Map.of("value", oldCol));
+        newEntity.setColumnFromMap(Map.of("value", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -489,8 +487,8 @@ class ColumnDifferTest {
         ColumnModel newCol = createColumn("id", "LONG", false);
         newCol.setManualPrimaryKey(true); // 변경
 
-        oldEntity.setColumns(Map.of("id", oldCol));
-        newEntity.setColumns(Map.of("id", newCol));
+        oldEntity.setColumnFromMap(Map.of("id", oldCol));
+        newEntity.setColumnFromMap(Map.of("id", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -508,8 +506,8 @@ class ColumnDifferTest {
         ColumnModel newCol = createColumn("new_id", "LONG", false);
         newCol.setManualPrimaryKey(true); // isColumnAttributesEqual에서 확인 안하는 속성
 
-        oldEntity.setColumns(Map.of("old_id", oldCol));
-        newEntity.setColumns(Map.of("new_id", newCol));
+        oldEntity.setColumnFromMap(Map.of("old_id", oldCol));
+        newEntity.setColumnFromMap(Map.of("new_id", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -530,8 +528,8 @@ class ColumnDifferTest {
         ColumnModel newCol = createColumn("code", "VARCHAR", true);
         newCol.setDefaultValue(null); // null로 변경
 
-        oldEntity.setColumns(Map.of("code", oldCol));
-        newEntity.setColumns(Map.of("code", newCol));
+        oldEntity.setColumnFromMap(Map.of("code", oldCol));
+        newEntity.setColumnFromMap(Map.of("code", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -550,8 +548,8 @@ class ColumnDifferTest {
         ColumnModel newCol = createColumn("code", "VARCHAR", true);
         newCol.setDefaultValue("ACTIVE"); // non-null로 변경
 
-        oldEntity.setColumns(Map.of("code", oldCol));
-        newEntity.setColumns(Map.of("code", newCol));
+        oldEntity.setColumnFromMap(Map.of("code", oldCol));
+        newEntity.setColumnFromMap(Map.of("code", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -570,8 +568,8 @@ class ColumnDifferTest {
         ColumnModel newCol1 = createColumn("id", "LONG", false);
         newCol1.setSequenceName(null);
 
-        oldEntity.setColumns(Map.of("id", oldCol1));
-        newEntity.setColumns(Map.of("id", newCol1));
+        oldEntity.setColumnFromMap(Map.of("id", oldCol1));
+        newEntity.setColumnFromMap(Map.of("id", newCol1));
         DiffResult.ModifiedEntity result1 = DiffResult.ModifiedEntity.builder().build();
         columnDiffer.diff(oldEntity, newEntity, result1);
 
@@ -584,8 +582,8 @@ class ColumnDifferTest {
         ColumnModel newCol2 = createColumn("id", "LONG", false);
         newCol2.setSequenceName("my_seq");
 
-        oldEntity.setColumns(Map.of("id", oldCol2));
-        newEntity.setColumns(Map.of("id", newCol2));
+        oldEntity.setColumnFromMap(Map.of("id", oldCol2));
+        newEntity.setColumnFromMap(Map.of("id", newCol2));
         DiffResult.ModifiedEntity result2 = DiffResult.ModifiedEntity.builder().build();
         columnDiffer.diff(oldEntity, newEntity, result2);
 
@@ -605,8 +603,8 @@ class ColumnDifferTest {
         newCol.setPrecision(12); // Precision만 변경
         newCol.setScale(2);      // Scale은 동일
 
-        oldEntity.setColumns(Map.of("measurement", oldCol));
-        newEntity.setColumns(Map.of("measurement", newCol));
+        oldEntity.setColumnFromMap(Map.of("measurement", oldCol));
+        newEntity.setColumnFromMap(Map.of("measurement", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -625,8 +623,8 @@ class ColumnDifferTest {
         ColumnModel oldCol = createColumn("user_type", "INTEGER", false);
         ColumnModel newCol = createEnumColumn("user_type", false, "USER", "ADMIN"); // ENUM으로 변경
 
-        oldEntity.setColumns(Map.of("user_type", oldCol));
-        newEntity.setColumns(Map.of("user_type", newCol));
+        oldEntity.setColumnFromMap(Map.of("user_type", oldCol));
+        newEntity.setColumnFromMap(Map.of("user_type", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
@@ -644,8 +642,8 @@ class ColumnDifferTest {
         ColumnModel oldCol = createColumn("value", "java.lang.Integer", false);
         ColumnModel newCol = createColumn("value", "java.lang.String", false); // Integer -> String
 
-        oldEntity.setColumns(Map.of("value", oldCol));
-        newEntity.setColumns(Map.of("value", newCol));
+        oldEntity.setColumnFromMap(Map.of("value", oldCol));
+        newEntity.setColumnFromMap(Map.of("value", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 

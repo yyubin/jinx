@@ -1,5 +1,6 @@
 package org.jinx.processor;
 
+import org.jinx.model.ColumnKey;
 import org.jinx.model.EntityModel;
 import org.jinx.model.SchemaModel;
 import org.junit.jupiter.api.Test;
@@ -29,9 +30,10 @@ class InheritanceProcessingTest extends AbstractProcessorTest {
 
         // BaseEntity의 필드(id, createdAt)와 Product의 필드(productName)가 모두 포함되었는지 확인
         assertThat(productEntity.getColumns()).hasSize(3);
-        assertThat(productEntity.getColumns().keySet()).contains("product::id", "product::createdat", "product::productname");
+        assertThat(productEntity.getColumns().keySet().stream().map(Object::toString))
+            .contains("Product::id", "Product::createdAt", "Product::productName");
 
         // PK가 잘 상속되었는지 확인
-        assertThat(productEntity.getColumns().get("product::id").isPrimaryKey()).isTrue();
+        assertThat(productEntity.findColumn("Product", "id").isPrimaryKey()).isTrue();
     }
 }

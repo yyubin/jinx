@@ -164,9 +164,9 @@ class ColumnDifferPrivateMethodsTest {
         ColumnModel newCol = ColumnModel.builder().columnName("status").enumValues(new String[]{"A", "B"}).enumStringMapping(true).build();  // STRING
 
         EntityModel oldEntity = new EntityModel();
-        oldEntity.setColumns(Map.of("status", oldCol));
+        oldEntity.setColumnFromMap(Map.of("status", oldCol));
         EntityModel newEntity = new EntityModel();
-        newEntity.setColumns(Map.of("status", newCol));
+        newEntity.setColumnFromMap(Map.of("status", newCol));
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 

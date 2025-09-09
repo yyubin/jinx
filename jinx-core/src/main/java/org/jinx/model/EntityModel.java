@@ -26,7 +26,7 @@ public class EntityModel {
     private String parentEntity;
     @Builder.Default private String fqcn = null;
     @Builder.Default private TableType tableType = TableType.ENTITY;
-    @Builder.Default private Map<String, ColumnModel> columns = new HashMap<>();
+    @Builder.Default private Map<ColumnKey, ColumnModel> columns = new HashMap<>();
     @Builder.Default private Map<String, IndexModel> indexes = new HashMap<>();
     @Builder.Default private Map<String, ConstraintModel> constraints = new HashMap<>();
     @Builder.Default private Map<String, RelationshipModel> relationships = new HashMap<>();
@@ -58,11 +58,9 @@ public class EntityModel {
                 .anyMatch(name -> t.equalsIgnoreCase(name));
     }
 
-    private String colKey(String tableName, String columnName) {
+    private ColumnKey colKey(String tableName, String columnName) {
         String normalizedTableName = (tableName == null || tableName.isBlank()) ? this.tableName : tableName;
-        String t = normalizedTableName == null ? "" : normalizedTableName.trim().toLowerCase(java.util.Locale.ROOT);
-        String c = columnName == null ? "" : columnName.trim().toLowerCase(java.util.Locale.ROOT);
-        return t + "::" + c;
+        return ColumnKey.of(normalizedTableName, columnName);
     }
 
     public ColumnModel findColumn(String tableName, String columnName) {
@@ -80,5 +78,13 @@ public class EntityModel {
     @JsonIgnore
     public boolean isJavaBackedEntity() {
         return fqcn != null && !fqcn.isBlank() && tableType == TableType.ENTITY;
+    }
+    
+    /**
+     * 테스트 전용 helper 메서드: String 키를 ColumnKey로 변환하여 컬럼 추가
+     */
+    public void setColumnFromMap(Map<String, ColumnModel> columnMap) {
+        this.columns.clear();
+        columnMap.forEach((key, column) -> putColumn(column));
     }
 }
