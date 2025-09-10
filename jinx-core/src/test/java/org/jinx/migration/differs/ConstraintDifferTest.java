@@ -1,178 +1,205 @@
-//package org.jinx.migration.differs;
-//
-//import org.jinx.model.ConstraintModel;
-//import org.jinx.model.ConstraintType;
-//import org.jinx.model.DiffResult;
-//import org.jinx.model.EntityModel;
-//import org.junit.jupiter.api.BeforeEach;
-//import org.junit.jupiter.api.DisplayName;
-//import org.junit.jupiter.api.Test;
-//
-//import java.util.Collections;
-//import java.util.List;
-//
-//import static org.junit.jupiter.api.Assertions.*;
-//
-//
-//class ConstraintDifferTest {
-//
-//    private ConstraintDiffer constraintDiffer;
-//    private EntityModel oldEntity;
-//    private EntityModel newEntity;
-//    private DiffResult.ModifiedEntity modifiedEntityResult;
-//
-//    @BeforeEach
-//    void setUp() {
-//        constraintDiffer = new ConstraintDiffer();
-//        oldEntity = new EntityModel();
-//        newEntity = new EntityModel();
-//        modifiedEntityResult = DiffResult.ModifiedEntity.builder()
-//                .oldEntity(oldEntity)
-//                .newEntity(newEntity)
-//                .build();
-//    }
-//
-//    @Test
-//    @DisplayName("제약 조건 변경이 없을 때 아무것도 감지하지 않아야 함")
-//    void shouldDetectNoChanges_whenConstraintsAreIdentical() {
-//        ConstraintModel constraint = createUniqueConstraint("uk_email", List.of("email"));
-//        oldEntity.setConstraints(List.of(constraint));
-//        newEntity.setConstraints(List.of(constraint));
-//
-//        constraintDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
-//
-//        assertTrue(modifiedEntityResult.getConstraintDiffs().isEmpty(), "변경 사항이 없어야 합니다.");
-//    }
-//
-//    @Test
-//    @DisplayName("새로운 제약 조건이 추가되었을 때 'ADDED'로 감지해야 함")
-//    void shouldDetectAddedConstraint() {
-//        ConstraintModel newConstraint = createUniqueConstraint("uk_email", List.of("email"));
-//        oldEntity.setConstraints(Collections.emptyList());
-//        newEntity.setConstraints(List.of(newConstraint));
-//
-//        constraintDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
-//
-//        assertEquals(1, modifiedEntityResult.getConstraintDiffs().size());
-//        DiffResult.ConstraintDiff diff = modifiedEntityResult.getConstraintDiffs().get(0);
-//        assertEquals(DiffResult.ConstraintDiff.Type.ADDED, diff.getType());
-//        assertEquals("uk_email", diff.getConstraint().getName());
-//    }
-//
-//    @Test
-//    @DisplayName("기존 제약 조건이 삭제되었을 때 'DROPPED'로 감지해야 함")
-//    void shouldDetectDroppedConstraint() {
-//        ConstraintModel oldConstraint = createUniqueConstraint("uk_email", List.of("email"));
-//        oldEntity.setConstraints(List.of(oldConstraint));
-//        newEntity.setConstraints(Collections.emptyList());
-//
-//        constraintDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
-//
-//        assertEquals(1, modifiedEntityResult.getConstraintDiffs().size());
-//        DiffResult.ConstraintDiff diff = modifiedEntityResult.getConstraintDiffs().get(0);
-//        assertEquals(DiffResult.ConstraintDiff.Type.DROPPED, diff.getType());
-//        assertEquals("uk_email", diff.getConstraint().getName());
-//    }
-//
-//    @Test
-//    @DisplayName("제약 조건의 이름만 변경되었을 때 'MODIFIED'로 감지해야 함")
-//    void shouldDetectModifiedConstraint_whenOnlyNameChanges() {
-//        ConstraintModel oldConstraint = createUniqueConstraint("uk_email_old", List.of("email"));
-//        ConstraintModel newConstraint = createUniqueConstraint("uk_email_new", List.of("email"));
-//        oldEntity.setConstraints(List.of(oldConstraint));
-//        newEntity.setConstraints(List.of(newConstraint));
-//
-//        constraintDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
-//
-//        assertEquals(1, modifiedEntityResult.getConstraintDiffs().size());
-//        DiffResult.ConstraintDiff diff = modifiedEntityResult.getConstraintDiffs().get(0);
-//        assertEquals(DiffResult.ConstraintDiff.Type.MODIFIED, diff.getType());
-//        assertEquals("uk_email_old", diff.getOldConstraint().getName());
-//        assertEquals("uk_email_new", diff.getConstraint().getName());
-//        assertEquals("name changed from uk_email_old to uk_email_new", diff.getChangeDetail());
-//    }
-//
-//    @Test
-//    @DisplayName("제약 조건의 컬럼이 변경되면 'DROPPED'과 'ADDED'로 감지해야 함")
-//    void shouldDetectAsDropAndAdd_whenColumnChanges() {
-//        // 이름은 같지만, 대상 컬럼이 달라 속성이 다름
-//        ConstraintModel oldConstraint = createUniqueConstraint("uk_user_info", List.of("email"));
-//        ConstraintModel newConstraint = createUniqueConstraint("uk_user_info", List.of("phone_number"));
-//        oldEntity.setConstraints(List.of(oldConstraint));
-//        newEntity.setConstraints(List.of(newConstraint));
-//
-//        constraintDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
-//
-//        assertEquals(2, modifiedEntityResult.getConstraintDiffs().size(), "2개의 변경(drop, add)이 감지되어야 합니다.");
-//
-//        boolean droppedFound = modifiedEntityResult.getConstraintDiffs().stream()
-//                .anyMatch(d -> d.getType() == DiffResult.ConstraintDiff.Type.DROPPED && d.getConstraint().getColumns().contains("email"));
-//        boolean addedFound = modifiedEntityResult.getConstraintDiffs().stream()
-//                .anyMatch(d -> d.getType() == DiffResult.ConstraintDiff.Type.ADDED && d.getConstraint().getColumns().contains("phone_number"));
-//
-//        assertTrue(droppedFound, "기존 제약 조건이 'DROPPED'로 감지되어야 합니다.");
-//        assertTrue(addedFound, "새로운 제약 조건이 'ADDED'로 감지되어야 합니다.");
-//    }
-//
-//    @Test
-//    @DisplayName("UNIQUE 제약 조건의 column 순서만 바뀐 경우에도 동일하다고 간주해야 함")
-//    void shouldTreatColumnOrderAsIrrelevant() {
-//        ConstraintModel oldConstraint = createUniqueConstraint("uk_composite", List.of("email", "phone"));
-//        ConstraintModel newConstraint = createUniqueConstraint("uk_composite", List.of("phone", "email")); // 순서만 바뀜
-//
-//        oldEntity.setConstraints(List.of(oldConstraint));
-//        newEntity.setConstraints(List.of(newConstraint));
-//
-//        constraintDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
-//
-//        assertTrue(modifiedEntityResult.getConstraintDiffs().isEmpty(), "컬럼 순서 변경만 있을 경우 변경으로 간주하지 않아야 합니다.");
-//    }
-//
-//    @Test
-//    @DisplayName("타입이 다른 제약조건은 다른 것으로 간주되어야 함 (DROP+ADD)")
-//    void shouldNotMatchConstraintsWithDifferentTypes() {
-//        ConstraintModel oldConstraint = createUniqueConstraint("user_constraint", List.of("id"));
-//
-//        ConstraintModel newConstraint = ConstraintModel.builder().build();
-//        newConstraint.setName("user_constraint");
-//        newConstraint.setType(ConstraintType.PRIMARY_KEY); // 타입을 UNIQUE에서 PRIMARY_KEY로 변경
-//        newConstraint.setColumns(List.of("id"));
-//
-//        oldEntity.setConstraints(List.of(oldConstraint));
-//        newEntity.setConstraints(List.of(newConstraint));
-//
-//        constraintDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
-//
-//        assertEquals(2, modifiedEntityResult.getConstraintDiffs().size(), "타입이 다르면 별개의 제약조건으로 취급되어야 합니다.");
-//        boolean dropped = modifiedEntityResult.getConstraintDiffs().stream()
-//                .anyMatch(d -> d.getType() == DiffResult.ConstraintDiff.Type.DROPPED && d.getConstraint().getType() == ConstraintType.UNIQUE);
-//        boolean added = modifiedEntityResult.getConstraintDiffs().stream()
-//                .anyMatch(d -> d.getType() == DiffResult.ConstraintDiff.Type.ADDED && d.getConstraint().getType() == ConstraintType.PRIMARY_KEY);
-//
-//        assertTrue(dropped, "기존 UNIQUE 제약조건이 DROPPED 되어야 합니다.");
-//        assertTrue(added, "새 PRIMARY_KEY 제약조건이 ADDED 되어야 합니다.");
-//    }
-//
-//    @Test
-//    @DisplayName("컬럼 리스트가 null인 제약조건은 다른 것으로 간주되어야 함")
-//    void shouldHandleNullColumnLists() {
-//        ConstraintModel oldConstraint = createUniqueConstraint("uk_user", List.of("id"));
-//        ConstraintModel newConstraint = createUniqueConstraint("uk_user", null); // columns를 null로 설정
-//
-//        oldEntity.setConstraints(List.of(oldConstraint));
-//        newEntity.setConstraints(List.of(newConstraint));
-//
-//        constraintDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
-//
-//        // 컬럼 속성이 달라졌으므로 Drop + Add로 처리되어야 합니다.
-//        assertEquals(2, modifiedEntityResult.getConstraintDiffs().size());
-//    }
-//
-//    private ConstraintModel createUniqueConstraint(String name, List<String> columns) {
-//        ConstraintModel constraint = ConstraintModel.builder().build();
-//        constraint.setName(name);
-//        constraint.setType(ConstraintType.UNIQUE);
-//        constraint.setColumns(columns);
-//        return constraint;
-//    }
-//}
+package org.jinx.migration.differs;
+
+import org.jinx.model.ConstraintModel;
+import org.jinx.model.ConstraintType;
+import org.jinx.model.DiffResult;
+import org.jinx.model.EntityModel;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.*;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class ConstraintDifferTest {
+
+    private static EntityModel entity(String name, Map<String, ConstraintModel> constraints) {
+        return EntityModel.builder()
+                .entityName(name)
+                .tableName(name)
+                .constraints(constraints != null ? new LinkedHashMap<>(constraints) : new LinkedHashMap<>())
+                .build();
+    }
+
+    private static ConstraintModel cons(String name, ConstraintType type, List<String> columns) {
+        return ConstraintModel.builder()
+                .name(name)
+                .tableName("T")
+                .type(type)
+                .columns(new ArrayList<>(columns))
+                .build();
+    }
+
+    private static DiffResult.ModifiedEntity newResult(EntityModel e) {
+        return DiffResult.ModifiedEntity.builder()
+                .newEntity(e)
+                .build();
+    }
+
+    @Test
+    @DisplayName("ADDED: 새 PK 제약 추가")
+    void added_pk_constraint() {
+        var oldE = entity("T", Map.of());
+        var newE = entity("T", Map.of(
+                "PK_T", cons("PK_T", ConstraintType.PRIMARY_KEY, List.of("ID"))
+        ));
+
+        var differ = new ConstraintDiffer();
+        var result = newResult(newE);
+        differ.diff(oldE, newE, result);
+
+        assertThat(result.getConstraintDiffs()).hasSize(1);
+        var diff = result.getConstraintDiffs().get(0);
+        assertThat(diff.getType()).isEqualTo(DiffResult.ConstraintDiff.Type.ADDED);
+        assertThat(diff.getConstraint().getName()).isEqualTo("PK_T");
+    }
+
+    @Test
+    @DisplayName("DROPPED: 기존 UNIQUE 제약 삭제")
+    void dropped_unique_constraint() {
+        var oldE = entity("T", Map.of(
+                "UQ_T_A_B", cons("UQ_T_A_B", ConstraintType.UNIQUE, List.of("A", "B"))
+        ));
+        var newE = entity("T", Map.of());
+
+        var differ = new ConstraintDiffer();
+        var result = newResult(newE);
+        differ.diff(oldE, newE, result);
+
+        assertThat(result.getConstraintDiffs()).hasSize(1);
+        var diff = result.getConstraintDiffs().get(0);
+        assertThat(diff.getType()).isEqualTo(DiffResult.ConstraintDiff.Type.DROPPED);
+        assertThat(diff.getConstraint().getName()).isEqualTo("UQ_T_A_B");
+    }
+
+    @Test
+    @DisplayName("MODIFIED(이름 변경): 타입/컬럼 동일 + 이름만 변경 → MODIFIED")
+    void renamed_constraint_reports_modified_due_to_name_change() {
+        var oldE = entity("T", Map.of(
+                "PK_OLD", cons("PK_OLD", ConstraintType.PRIMARY_KEY, List.of("ID"))
+        ));
+        var newE = entity("T", Map.of(
+                "PK_NEW", cons("PK_NEW", ConstraintType.PRIMARY_KEY, List.of("ID"))
+        ));
+
+        var differ = new ConstraintDiffer();
+        var result = newResult(newE);
+        differ.diff(oldE, newE, result);
+
+        assertThat(result.getConstraintDiffs()).hasSize(1);
+        var diff = result.getConstraintDiffs().get(0);
+        assertThat(diff.getType()).isEqualTo(DiffResult.ConstraintDiff.Type.MODIFIED);
+        assertThat(diff.getOldConstraint().getName()).isEqualTo("PK_OLD");
+        assertThat(diff.getConstraint().getName()).isEqualTo("PK_NEW");
+        assertThat(diff.getChangeDetail()).contains("name changed from PK_OLD to PK_NEW");
+    }
+
+    @Test
+    @DisplayName("컬럼 순서 변경은 동일로 간주(집합 비교) → 변경 없음")
+    void only_column_order_changed_is_not_modified() {
+        var oldE = entity("T", Map.of(
+                "UQ_AB", cons("UQ_AB", ConstraintType.UNIQUE, List.of("A", "B"))
+        ));
+        var newE = entity("T", Map.of(
+                "UQ_AB", cons("UQ_AB", ConstraintType.UNIQUE, List.of("B", "A"))
+        ));
+
+        var differ = new ConstraintDiffer();
+        var result = newResult(newE);
+        differ.diff(oldE, newE, result);
+
+        // 타입 동일 + 컬럼 집합 동일 + 이름 동일 -> 변경 없음
+        assertThat(result.getConstraintDiffs()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("CHECK 절 변경 → MODIFIED")
+    void check_clause_change_is_detected_as_modified() {
+        var oldCk = ConstraintModel.builder()
+                .name("CK_POSITIVE")
+                .tableName("T")
+                .type(ConstraintType.CHECK)
+                .columns(new ArrayList<>(List.of("A")))
+                .checkClause(Optional.of("( A  >  0 )"))
+                .build();
+
+        var newCk = ConstraintModel.builder()
+                .name("CK_POSITIVE")
+                .tableName("T")
+                .type(ConstraintType.CHECK)
+                .columns(new ArrayList<>(List.of("A")))
+                .checkClause(Optional.of("a>=1")) // 의미/표현 달라짐
+                .build();
+
+        var oldE = entity("T", Map.of("CK_POSITIVE", oldCk));
+        var newE = entity("T", Map.of("CK_POSITIVE", newCk));
+
+        var differ = new ConstraintDiffer();
+        var result = newResult(newE);
+        differ.diff(oldE, newE, result);
+
+        assertThat(result.getConstraintDiffs()).hasSize(1);
+        var diff = result.getConstraintDiffs().get(0);
+        assertThat(diff.getType()).isEqualTo(DiffResult.ConstraintDiff.Type.MODIFIED);
+        assertThat(diff.getChangeDetail()).contains("checkClause changed");
+    }
+
+
+    @Test
+    @DisplayName("INDEX 이름만 변경(다른 속성은 동일) → MODIFIED(이름 변경)")
+    void index_rename_is_modified_by_name_change() {
+        var oldIdx = ConstraintModel.builder()
+                .name("IX_OLD")
+                .tableName("T")
+                .type(ConstraintType.INDEX)
+                .columns(new ArrayList<>(List.of("A", "B")))
+                .options(Optional.of("NONUNIQUE")) // 현 구현은 비교에 사용 안 함
+                .build();
+
+        var newIdx = ConstraintModel.builder()
+                .name("IX_NEW")
+                .tableName("T")
+                .type(ConstraintType.INDEX)
+                .columns(new ArrayList<>(List.of("A", "B")))
+                .options(Optional.of("UNIQUE")) // 변경되어도 이름 비교 외엔 반영 안 됨
+                .build();
+
+        var oldE = entity("T", Map.of("IX_OLD", oldIdx));
+        var newE = entity("T", Map.of("IX_NEW", newIdx));
+
+        var differ = new ConstraintDiffer();
+        var result = newResult(newE);
+        differ.diff(oldE, newE, result);
+
+        assertThat(result.getConstraintDiffs()).hasSize(1);
+        var diff = result.getConstraintDiffs().get(0);
+        assertThat(diff.getType()).isEqualTo(DiffResult.ConstraintDiff.Type.MODIFIED);
+        assertThat(diff.getOldConstraint().getName()).isEqualTo("IX_OLD");
+        assertThat(diff.getConstraint().getName()).isEqualTo("IX_NEW");
+        assertThat(diff.getChangeDetail()).contains("name changed from IX_OLD to IX_NEW");
+    }
+
+    @Test
+    @DisplayName("동형 제약 다중 리네임: 1:1로 페어링되어 모두 MODIFIED로 기록")
+    void multiple_renames_pairing() {
+        var oldE = entity("T", new LinkedHashMap<>(Map.of(
+                "UQ_A", cons("UQ_A", ConstraintType.UNIQUE, List.of("A")),
+                "UQ_B", cons("UQ_B", ConstraintType.UNIQUE, List.of("B"))
+        )));
+        var newE = entity("T", new LinkedHashMap<>(Map.of(
+                "UQ_A_NEW", cons("UQ_A_NEW", ConstraintType.UNIQUE, List.of("A")),
+                "UQ_B_NEW", cons("UQ_B_NEW", ConstraintType.UNIQUE, List.of("B"))
+        )));
+
+        var differ = new ConstraintDiffer();
+        var result = newResult(newE);
+        differ.diff(oldE, newE, result);
+
+        assertThat(result.getConstraintDiffs()).hasSize(2);
+        assertThat(result.getConstraintDiffs())
+                .allMatch(d -> d.getType() == DiffResult.ConstraintDiff.Type.MODIFIED);
+        assertThat(result.getConstraintDiffs())
+                .extracting(d -> d.getConstraint().getName())
+                .containsExactlyInAnyOrder("UQ_A_NEW", "UQ_B_NEW");
+    }
+}
