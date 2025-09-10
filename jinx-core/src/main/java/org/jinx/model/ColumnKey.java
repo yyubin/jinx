@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonValue;
 import org.jinx.migration.spi.IdentifierPolicy;
+import org.jinx.model.naming.CaseNormalizer;
 
 import java.util.Objects;
 
@@ -23,10 +24,8 @@ public final class ColumnKey {
         this.canonical = canonical;
         this.display = display;
     }
-    
-    /**
-     * 기본 정책(소문자 변환)으로 ColumnKey 생성
-     */
+
+    // 기본 정책(소문자 변환)으로 ColumnKey 생성
     public static ColumnKey of(String tableName, String columnName) {
         String normalizedTableName = (tableName == null || tableName.isBlank()) ? "" : tableName.trim();
         String normalizedColumnName = (columnName == null) ? "" : columnName.trim();
@@ -37,54 +36,58 @@ public final class ColumnKey {
         
         return new ColumnKey(canonicalKey, displayKey);
     }
-    
-    /**
-     * IdentifierPolicy를 사용하여 ColumnKey 생성
-     */
-    public static ColumnKey of(String tableName, String columnName, IdentifierPolicy policy) {
-        Objects.requireNonNull(policy, "policy must not be null");
-        String normalizedTableName = (tableName == null || tableName.isBlank()) ? "" : tableName.trim();
-        String normalizedColumnName = (columnName == null) ? "" : columnName.trim();
-        
-        String displayKey = normalizedTableName + DELIMITER + normalizedColumnName;
-        String canonicalKey = policy.normalizeCase(normalizedTableName) + DELIMITER + 
-                             policy.normalizeCase(normalizedColumnName);
-        
+
+    // IdentifierPolicy를 사용하여 ColumnKey 생성
+    public static ColumnKey of(String tableName, String columnName, CaseNormalizer normalizer) {
+        Objects.requireNonNull(normalizer, "normalizer must not be null");
+        String t = tableName == null ? "" : tableName.trim();
+        String c = columnName == null ? "" : columnName.trim();
+
+        String displayKey = t + DELIMITER + c;
+        String canonicalKey = normalizer.normalize(t) + DELIMITER + normalizer.normalize(c);
         return new ColumnKey(canonicalKey, displayKey);
     }
-    
-    /**
-     * 정규화된 키 반환 (Map 키, 비교 용도)
-     */
+
+    // 정규화된 키 반환 (Map 키, 비교 용도)
     public String canonical() {
         return canonical;
     }
-    
-    /**
-     * 표시용 키 반환 (로그, 외부 노출 용도)
-     */
+
+    // 표시용 키 반환 (로그, 외부 노출 용도)
     public String display() {
         return display;
     }
-    
-    /**
-     * JSON 직렬화를 위한 값 반환
-     */
+
     @JsonValue
     public String toJsonValue() {
         return display;
     }
-    
-    /**
-     * JSON 역직렬화를 위한 생성자
-     */
+
+    // 기존 기본 오버로드(하위호환): 단일 토큰 처리만 개선, 기본 lower
     @JsonCreator
     public static ColumnKey fromJsonValue(String value) {
-        if (value == null || !value.contains(DELIMITER)) {
-            return ColumnKey.of("", "");
+        if (value == null || value.isBlank()) return ColumnKey.of("", "");
+        int idx = value.indexOf(DELIMITER);
+        if (idx < 0) return ColumnKey.of("", value.trim());
+        String table = value.substring(0, idx).trim();
+        String column = value.substring(idx + DELIMITER.length()).trim();
+        return ColumnKey.of(table, column);
+    }
+
+    public static ColumnKey fromJsonValue(String value, CaseNormalizer normalizer) {
+        Objects.requireNonNull(normalizer, "normalizer must not be null");
+        if (value == null || value.isBlank()) return ColumnKey.of("", "", normalizer);
+
+        int idx = value.indexOf(DELIMITER);
+        String table, column;
+        if (idx < 0) { // 단일 토큰 → columnOnly
+            table = "";
+            column = value.trim();
+        } else {
+            table = value.substring(0, idx).trim();
+            column = value.substring(idx + DELIMITER.length()).trim();
         }
-        String[] parts = value.split(DELIMITER, 2);
-        return ColumnKey.of(parts[0], parts[1]);
+        return ColumnKey.of(table, column, normalizer);
     }
     
     @Override

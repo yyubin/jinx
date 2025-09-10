@@ -1,7 +1,6 @@
-package org.jinx.context;
+package org.jinx.naming;
 
 import jakarta.persistence.CheckConstraint;
-import org.jinx.annotation.Constraint;
 
 import java.util.List;
 

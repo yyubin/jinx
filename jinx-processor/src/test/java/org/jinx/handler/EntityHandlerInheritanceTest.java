@@ -1,9 +1,8 @@
 package org.jinx.handler;
 
 import jakarta.persistence.*;
-import org.jinx.context.Naming;
+import org.jinx.naming.Naming;
 import org.jinx.context.ProcessingContext;
-import org.jinx.descriptor.AttributeDescriptor;
 import org.jinx.model.ColumnModel;
 import org.jinx.model.EntityModel;
 import org.jinx.model.RelationshipModel;
@@ -32,7 +31,6 @@ import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;

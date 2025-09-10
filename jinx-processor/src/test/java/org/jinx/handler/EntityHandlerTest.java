@@ -1,10 +1,9 @@
 package org.jinx.handler;
 
 import jakarta.persistence.*;
-import org.jinx.context.Naming;
+import org.jinx.naming.Naming;
 import org.jinx.context.ProcessingContext;
 import org.jinx.descriptor.AttributeDescriptor;
-import org.jinx.handler.relationship.RelationshipSupport;
 import org.jinx.model.*;
 import org.jinx.testing.mother.EntityModelMother;
 import org.jinx.testing.util.AnnotationProxies;

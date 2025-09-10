@@ -1,7 +1,7 @@
 package org.jinx.handler;
 
 import jakarta.persistence.*;
-import org.jinx.context.Naming;
+import org.jinx.naming.Naming;
 import org.jinx.context.ProcessingContext;
 import org.jinx.descriptor.AttributeDescriptor;
 import org.jinx.model.ColumnModel;
@@ -25,13 +25,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.stubbing.Answer;
 
 import javax.annotation.processing.Messager;
-import javax.lang.model.element.Element;
 import javax.lang.model.element.Name;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
-import java.lang.annotation.Annotation;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;

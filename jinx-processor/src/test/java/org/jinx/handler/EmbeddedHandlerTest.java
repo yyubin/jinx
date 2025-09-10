@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import org.jinx.context.ProcessingContext;
 import org.jinx.descriptor.AttributeDescriptor;
 import org.jinx.model.*;
+import org.jinx.naming.Naming;
 import org.jinx.testing.asserts.ColumnAssertions;
 import org.jinx.testing.asserts.MessagerAssertions;
 import org.jinx.testing.asserts.RelationshipAssertions;
@@ -13,7 +14,6 @@ import org.jinx.testing.util.AnnotationProxies;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -43,7 +43,7 @@ class EmbeddedHandlerTest {
     @Mock private Elements elementUtils;
     @Mock private Messager messager;
     @Mock private SchemaModel schemaModel;
-    @Mock private org.jinx.context.Naming naming;
+    @Mock private Naming naming;
     @Mock private org.jinx.descriptor.AttributeDescriptorFactory mockDescriptorFactory;
 
     private EmbeddedHandler handler;

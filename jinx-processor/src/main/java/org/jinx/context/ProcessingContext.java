@@ -1,7 +1,5 @@
 package org.jinx.context;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import lombok.Builder;
 import lombok.Getter;
 import org.jinx.descriptor.AttributeDescriptor;
 import org.jinx.descriptor.AttributeDescriptorFactory;
@@ -9,6 +7,8 @@ import org.jinx.manager.ConstraintManager;
 import org.jinx.model.ColumnModel;
 import org.jinx.model.EntityModel;
 import org.jinx.model.SchemaModel;
+import org.jinx.naming.DefaultNaming;
+import org.jinx.naming.Naming;
 import org.jinx.processor.JpaSqlGeneratorProcessor;
 
 import javax.annotation.processing.Messager;

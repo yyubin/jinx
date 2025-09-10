@@ -1,10 +1,9 @@
 package org.jinx.handler;
 
 import jakarta.persistence.*;
-import org.jinx.context.Naming;
+import org.jinx.naming.Naming;
 import org.jinx.context.ProcessingContext;
 import org.jinx.descriptor.AttributeDescriptor;
-import org.jinx.model.ColumnModel;
 import org.jinx.model.EntityModel;
 import org.jinx.model.RelationshipType;
 import org.jinx.testing.asserts.ColumnAssertions;
@@ -24,7 +23,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
-import javax.tools.Diagnostic;
 import java.util.List;
 import java.util.Map;
 
