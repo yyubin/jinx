@@ -3,6 +3,7 @@ package org.jinx.handler;
 import jakarta.persistence.*;
 import org.jinx.context.ProcessingContext;
 import org.jinx.model.*;
+import org.jinx.naming.Naming;
 import org.jinx.testing.mother.EntityModelMother;
 import org.jinx.testing.util.AnnotationProxies;
 import org.junit.jupiter.api.BeforeEach;
@@ -135,7 +136,7 @@ class InheritanceHandlerTest {
                 .thenReturn(List.of(parent.findColumn("parent","id")));
 
         // Naming 모킹
-        var naming = mock(org.jinx.context.Naming.class);
+        var naming = mock(Naming.class);
         when(context.getNaming()).thenReturn(naming);
         when(naming.fkName(eq("child"), eq(List.of("id")), eq("parent"), eq(List.of("id"))))
                 .thenReturn("FK_child_parent");
