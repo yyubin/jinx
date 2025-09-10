@@ -82,4 +82,16 @@ public class ColumnModel {
                 java.util.Arrays.hashCode(enumValues), mapKeyTemporalType, java.util.Arrays.hashCode(mapKeyEnumValues),
                 columnKind, discriminatorType, columnDefinition, options, sqlTypeOverride);
     }
+
+    @JsonIgnore
+    public long getAttributeHashExceptName() {
+        return Objects.hash(tableName, javaType, length, precision, scale, isNullable, defaultValue,
+                temporalType, enumerationType, enumStringMapping, isPrimaryKey, isLob, jdbcType,
+                fetchType, isOptional, isVersion, conversionClass, generationStrategy, sequenceName,
+                tableGeneratorName, identityStartValue, identityIncrement, identityCache,
+                identityMinValue, identityMaxValue, java.util.Arrays.hashCode(identityOptions),
+                isManualPrimaryKey, java.util.Arrays.hashCode(enumValues), mapKeyTemporalType,
+                java.util.Arrays.hashCode(mapKeyEnumValues), columnKind, discriminatorType,
+                columnDefinition, options, sqlTypeOverride, isMapKey, mapKeyType);
+    }
 }

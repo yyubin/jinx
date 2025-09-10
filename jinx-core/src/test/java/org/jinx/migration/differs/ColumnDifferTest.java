@@ -110,7 +110,7 @@ class ColumnDifferTest {
     }
 
     @Test
-    @DisplayName("컬럼 이름과 속성이 함께 변경되면 'DROPPED'와 'ADDED'로 감지해야 함")
+    @DisplayName("컬럼 이름과 속성이 함께 변경되면 'RENAMED'와 'MODIFIED'로 감지해야 함")
     void shouldDetectRenamedAndModifiedColumn() {
         ColumnModel oldCol = createColumn("user_name", "VARCHAR", false);
         oldCol.setLength(255);
@@ -122,15 +122,17 @@ class ColumnDifferTest {
 
         columnDiffer.diff(oldEntity, newEntity, modifiedEntityResult);
 
-        assertEquals(2, modifiedEntityResult.getColumnDiffs().size(), "DROPPED와 ADDED 두 개의 변경이 감지되어야 합니다.");
+        assertEquals(2, modifiedEntityResult.getColumnDiffs().size(), "RENAMED와 MODIFIED 두 개의 변경이 감지되어야 합니다.");
 
-        boolean droppedFound = modifiedEntityResult.getColumnDiffs().stream()
-                .anyMatch(d -> d.getType() == DiffResult.ColumnDiff.Type.DROPPED && d.getColumn().getColumnName().equals("user_name"));
-        boolean addedFound = modifiedEntityResult.getColumnDiffs().stream()
-                .anyMatch(d -> d.getType() == DiffResult.ColumnDiff.Type.ADDED && d.getColumn().getColumnName().equals("username"));
+        boolean renamedFound = modifiedEntityResult.getColumnDiffs().stream()
+                .anyMatch(d -> d.getType() == DiffResult.ColumnDiff.Type.RENAMED && 
+                          d.getColumn().getColumnName().equals("username") && 
+                          d.getOldColumn().getColumnName().equals("user_name"));
+        boolean modifiedFound = modifiedEntityResult.getColumnDiffs().stream()
+                .anyMatch(d -> d.getType() == DiffResult.ColumnDiff.Type.MODIFIED && d.getColumn().getColumnName().equals("username"));
 
-        assertTrue(droppedFound, "기존 컬럼이 'DROPPED'로 감지되어야 합니다.");
-        assertTrue(addedFound, "새로운 컬럼이 'ADDED'로 감지되어야 합니다.");
+        assertTrue(renamedFound, "컬럼이 'RENAMED'로 감지되어야 합니다.");
+        assertTrue(modifiedFound, "컬럼이 'MODIFIED'로도 감지되어야 합니다.");
     }
 
     @Test
