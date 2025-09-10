@@ -47,6 +47,20 @@ public class ColumnDiffer implements EntityComponentDiffer {
                         .changeDetail("Column name case changed from " + oldKey.display() + " to " + newKey.display())
                         .build());
                 
+                // 속성 변경 동반 시 MODIFIED 및 경고 추가
+                if (!isColumnEqualExceptName(oldColumn, newColumn)) {
+                    result.getColumnDiffs().add(DiffResult.ColumnDiff.builder()
+                            .type(DiffResult.ColumnDiff.Type.MODIFIED)
+                            .column(newColumn)
+                            .oldColumn(oldColumn)
+                            .changeDetail(getColumnChangeDetail(oldColumn, newColumn))
+                            .build());
+                    analyzeColumnChanges(oldColumn, newColumn, result);
+                    if (isEnum(oldColumn) && isEnum(newColumn)) {
+                        analyzeEnumChanges(oldColumn, newColumn, result);
+                    }
+                }
+                
                 // 이미 처리된 것으로 마킹 (리네임 탐지에서 제외)
                 processedNewColumns.add(newKey.display());
                 oldColumns.remove(oldKey.display());
