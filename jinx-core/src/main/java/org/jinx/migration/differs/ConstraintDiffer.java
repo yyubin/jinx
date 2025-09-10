@@ -160,7 +160,7 @@ public class ConstraintDiffer implements EntityComponentDiffer {
     private static boolean eqListSet(List<String> a, List<String> b) {
         if (a == null && b == null) return true;
         if (a == null || b == null) return false;
-        return new HashSet<>(a).equals(new HashSet<>(b));
+        return ConstraintKey.canonicalColsAsSet(a).equals(ConstraintKey.canonicalColsAsSet(b));
     }
 
     private static boolean eqOptNorm(Optional<String> a, Optional<String> b) {
