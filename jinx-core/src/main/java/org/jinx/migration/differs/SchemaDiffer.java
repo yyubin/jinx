@@ -25,12 +25,8 @@ public class SchemaDiffer {
         this.normalizer = Objects.requireNonNull(normalizer, "normalizer must not be null");
         this.differs = List.copyOf(Objects.requireNonNull(differs, "differs must not be null"));
 
-        // rename pair 비교에 사용할 EntityModificationDiffer 인스턴스 확보
-        this.entityModificationDiffer = differs.stream()
-                .filter(d -> d instanceof EntityModificationDiffer)
-                .map(d -> (EntityModificationDiffer) d)
-                .findFirst()
-                .orElseGet(() -> new EntityModificationDiffer(this.normalizer));
+        // FIX: 항상 SchemaDiffer의 normalizer로 생성(일관성)
+        this.entityModificationDiffer = new EntityModificationDiffer(this.normalizer);
     }
 
     /**
