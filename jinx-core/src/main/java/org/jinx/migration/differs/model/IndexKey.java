@@ -17,23 +17,35 @@ public record IndexKey(
     String typeKey
 ) {
     public static IndexKey of(IndexModel idx, EntityModel owner, CaseNormalizer n) {
-        Objects.requireNonNull(n, "normalizer must not be null");
-        String table = (idx.getTableName() == null || idx.getTableName().isBlank())
-                ? owner.getTableName() : idx.getTableName();
-        String tableKey = n.normalize(Objects.toString(table, ""));
+        Objects.requireNonNull(idx, "IndexModel must not be null");
+        Objects.requireNonNull(owner, "EntityModel must not be null");
+        Objects.requireNonNull(n, "CaseNormalizer must not be null");
 
+        // tableName 결정 + 트리밍
+        String rawTable = (idx.getTableName() == null || idx.getTableName().isBlank())
+                ? owner.getTableName()
+                : idx.getTableName();
+        String table = rawTable == null ? "" : rawTable.trim();
+        String tableKey = n.normalize(table);
+
+        // 컬럼 순서 보존 + null 요소 방어
         List<String> keyCols = Optional.ofNullable(idx.getColumnNames()).orElseGet(List::of)
-                .stream().map(c -> ColumnKey.of(table, c, n).canonical()).toList();
+                .stream()
+                .filter(Objects::nonNull)
+                .map(c -> ColumnKey.of(table, c, n).canonical())
+                .toList();
 
         Boolean unique = Boolean.TRUE.equals(idx.getUnique());
-        String whereKey = normalizeExpr(idx.getWhere(), n); // 모델에 없으면 null 그대로
-        String typeKey  = idx.getType() == null ? null : n.normalize(idx.getType());
+        String whereKey = normalizeExpr(idx.getWhere(), n); // 이미 trim/공백 축소 포함
+
+        // type 트리밍 후 정규화
+        String typeKey = idx.getType() == null ? null : n.normalize(idx.getType().trim());
 
         return new IndexKey(tableKey, keyCols, unique, whereKey, typeKey);
     }
     private static String normalizeExpr(String expr, CaseNormalizer n) {
         if (expr == null) return null;
-        String compact = expr.trim().replaceAll("\s+", " ");
+        String compact = expr.trim().replaceAll("\\s+", " ");
         return n.normalize(compact);
     }
 }

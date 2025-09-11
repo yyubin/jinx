@@ -50,7 +50,7 @@ class IndexDifferTest {
     @Test
     @DisplayName("인덱스 변경이 없을 때 아무것도 감지하지 않아야 함")
     void shouldDetectNoChanges_whenIndexesAreIdentical() {
-        IndexModel idx = createIndex("idx_username", false, List.of("username"));
+        IndexModel idx = createIndex("idx_username", List.of("username"));
         oldEntity.setIndexes(Map.of("idx_username", idx));
         newEntity.setIndexes(Map.of("idx_username", idx));
 
@@ -62,7 +62,7 @@ class IndexDifferTest {
     @Test
     @DisplayName("새로운 인덱스가 추가되었을 때 'ADDED'로 감지해야 함")
     void shouldDetectAddedIndex() {
-        IndexModel newIdx = createIndex("idx_email", true, List.of("email"));
+        IndexModel newIdx = createIndex("idx_email", List.of("email"));
         oldEntity.setIndexes(Collections.emptyMap());
         newEntity.setIndexes(Map.of("idx_email", newIdx));
 
@@ -77,7 +77,7 @@ class IndexDifferTest {
     @Test
     @DisplayName("기존 인덱스가 삭제되었을 때 'DROPPED'로 감지해야 함")
     void shouldDetectDroppedIndex() {
-        IndexModel oldIdx = createIndex("idx_username", false, List.of("username"));
+        IndexModel oldIdx = createIndex("idx_username", List.of("username"));
         oldEntity.setIndexes(Map.of("idx_username", oldIdx));
         newEntity.setIndexes(Collections.emptyMap());
 
@@ -92,8 +92,8 @@ class IndexDifferTest {
     @Test
     @DisplayName("인덱스 속성이 변경되었을 때 'MODIFIED'로 감지하고 상세 내역을 생성해야 함")
     void shouldDetectModifiedIndex_withChangeDetail() {
-        IndexModel oldIdx = createIndex("idx_user_status", false, List.of("status"));
-        IndexModel newIdx = createIndex("idx_user_status", false, List.of("status", "last_login")); // columns 변경
+        IndexModel oldIdx = createIndex("idx_user_status", List.of("status"));
+        IndexModel newIdx = createIndex("idx_user_status", List.of("status", "last_login")); // columns 변경
 
         oldEntity.setIndexes(Map.of("idx_user_status", oldIdx));
         newEntity.setIndexes(Map.of("idx_user_status", newIdx));
@@ -295,7 +295,7 @@ class IndexDifferTest {
         assertTrue(result.getIndexDiffs().isEmpty());
     }
 
-    private IndexModel createIndex(String name, boolean isUnique, List<String> columns) {
+    private IndexModel createIndex(String name, List<String> columns) {
         return IndexModel.builder()
                 .indexName(name)
                 .tableName("users")
