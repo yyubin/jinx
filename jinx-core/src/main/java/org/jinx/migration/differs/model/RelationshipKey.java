@@ -6,6 +6,7 @@ import org.jinx.model.naming.CaseNormalizer;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -31,25 +32,33 @@ public record RelationshipKey(
 ) {
     
     public static RelationshipKey of(RelationshipModel relationship, CaseNormalizer normalizer) {
+        Objects.requireNonNull(normalizer, "normalizer must not be null");
+        
         String fkTableKey = relationship.getFkTableKey(normalizer);
         String refTableKey = relationship.getRefTableKey(normalizer);
         
-        List<String> fkColKeys = relationship.getColumnsKeys(normalizer)
+        var fkCols = relationship.getColumnsKeys(normalizer);
+        List<String> fkColKeys = (fkCols == null ? Collections.<ColumnKey>emptyList() : fkCols)
                 .stream()
                 .map(ColumnKey::canonical)
+                .distinct() // 집합 동등성
                 .sorted()
-                .collect(Collectors.toList());
+                .toList();
                 
-        List<String> refColKeys = relationship.getReferencedColumnKeys(normalizer)
+        var refCols = relationship.getReferencedColumnKeys(normalizer);
+        List<String> refColKeys = (refCols == null ? Collections.<ColumnKey>emptyList() : refCols)
                 .stream()
                 .map(ColumnKey::canonical)
+                .distinct()
                 .sorted()
-                .collect(Collectors.toList());
+                .toList();
                 
         return new RelationshipKey(fkTableKey, fkColKeys, refTableKey, refColKeys);
     }
     
     public RelationshipKey {
+        fkTableKey = fkTableKey == null ? "" : fkTableKey;
+        refTableKey = refTableKey == null ? "" : refTableKey;
         fkColKeys = fkColKeys == null ? Collections.emptyList() : List.copyOf(fkColKeys);
         refColKeys = refColKeys == null ? Collections.emptyList() : List.copyOf(refColKeys);
     }

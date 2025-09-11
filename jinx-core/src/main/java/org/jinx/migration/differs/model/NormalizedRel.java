@@ -44,10 +44,16 @@ public final class NormalizedRel {
         // 정규화 값들을 한 번만 계산하고 캐시
         this.fkTableKey = original.getFkTableKey(normalizer);
         this.refTableKey = original.getRefTableKey(normalizer);
-        this.columnsKeys = original.getColumnsKeys(normalizer);
-        this.referencedColumnsKeys = original.getReferencedColumnKeys(normalizer);
-        this.normalizedConstraintName = original.getConstraintName() == null ? 
-            null : normalizer.normalize(original.getConstraintName());
+        
+        // 방어적 복사로 캐시 불변성 보장
+        List<ColumnKey> cols = original.getColumnsKeys(normalizer);
+        this.columnsKeys = (cols == null) ? null : List.copyOf(cols);
+        List<ColumnKey> refCols = original.getReferencedColumnKeys(normalizer);
+        this.referencedColumnsKeys = (refCols == null) ? null : List.copyOf(refCols);
+        
+        // 제약명: 양끝 공백 트리밍 + 정규화
+        String cName = original.getConstraintName();
+        this.normalizedConstraintName = (cName == null) ? null : normalizer.normalize(cName.trim());
     }
     
     public static NormalizedRel of(RelationshipModel rel, CaseNormalizer normalizer) {

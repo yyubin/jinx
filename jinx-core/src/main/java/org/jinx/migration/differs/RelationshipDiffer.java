@@ -77,6 +77,20 @@ public class RelationshipDiffer implements EntityComponentDiffer {
         
         Map<RelationshipKey, RelationshipModel> relationshipMap = new LinkedHashMap<>();
         entity.getRelationships().values().forEach(rel -> {
+            // 중복 컬럼 감지 (표시용 경고)
+            var fkKeys = rel.getColumnsKeys(normalizer);
+            if (fkKeys != null && fkKeys.size() != fkKeys.stream().map(org.jinx.model.ColumnKey::canonical).distinct().count()) {
+                result.getWarnings().add("Duplicate FK columns detected on " + entity.getEntityName() +
+                    " attr=" + (rel.getSourceAttributeName() == null ? "unknown" : rel.getSourceAttributeName()) +
+                    " columns=" + rel.getColumns() + " — duplicates will be deduplicated for matching.");
+            }
+            var refKeys = rel.getReferencedColumnKeys(normalizer);
+            if (refKeys != null && refKeys.size() != refKeys.stream().map(org.jinx.model.ColumnKey::canonical).distinct().count()) {
+                result.getWarnings().add("Duplicate referenced columns detected on " + entity.getEntityName() +
+                    " attr=" + (rel.getSourceAttributeName() == null ? "unknown" : rel.getSourceAttributeName()) +
+                    " referencedColumns=" + rel.getReferencedColumns() + " — duplicates will be deduplicated for matching.");
+            }
+            
             RelationshipKey key = RelationshipKey.of(rel, normalizer);
             if (relationshipMap.containsKey(key)) {
                 // 중복 관계 키 감지 - 의미적 충돌 경고
