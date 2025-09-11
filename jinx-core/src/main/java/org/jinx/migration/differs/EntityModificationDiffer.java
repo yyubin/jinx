@@ -3,6 +3,7 @@ package org.jinx.migration.differs;
 import org.jinx.model.DiffResult;
 import org.jinx.model.EntityModel;
 import org.jinx.model.SchemaModel;
+import org.jinx.model.naming.CaseNormalizer;
 
 import java.util.Arrays;
 import java.util.List;
@@ -12,61 +13,82 @@ public class EntityModificationDiffer implements Differ {
     private final List<EntityComponentDiffer> componentDiffers;
 
     public EntityModificationDiffer() {
-        this.componentDiffers = Arrays.asList(
+        this(CaseNormalizer.lower());
+    }
+
+    public EntityModificationDiffer(CaseNormalizer normalizer) {
+        this.componentDiffers = java.util.List.of(
                 new ColumnDiffer(),
-                new IndexDiffer(),
+                new IndexDiffer(normalizer),
                 new ConstraintDiffer(),
-                new RelationshipDiffer()
+                new RelationshipDiffer(normalizer)
         );
     }
 
     @Override
     public void diff(SchemaModel oldSchema, SchemaModel newSchema, DiffResult result) {
-        newSchema.getEntities().forEach((name, newEntity) -> {
-            Optional.ofNullable(oldSchema.getEntities().get(name)).ifPresent(oldEntity -> {
-                DiffResult.ModifiedEntity modified = compareEntities(oldEntity, newEntity);
-                if (isModified(modified)) {
-                    result.getModifiedTables().add(modified);
-                    result.getWarnings().addAll(modified.getWarnings());
-                }
-            });
+        var oldEntities = new java.util.LinkedHashMap<>(
+                java.util.Optional.ofNullable(oldSchema.getEntities()).orElseGet(java.util.Map::of)
+        );
+        var newEntities = new java.util.LinkedHashMap<>(
+                java.util.Optional.ofNullable(newSchema.getEntities()).orElseGet(java.util.Map::of)
+        );
+
+        newEntities.forEach((name, newEntity) -> {
+            var oldEntity = oldEntities.get(name);
+            if (oldEntity == null) return;
+
+            var modified = compareEntities(oldEntity, newEntity);
+            if (isModified(modified)) {
+                result.getModifiedTables().add(modified);
+                result.getWarnings().addAll(modified.getWarnings());
+            }
         });
     }
 
     private DiffResult.ModifiedEntity compareEntities(EntityModel oldEntity, EntityModel newEntity) {
-        DiffResult.ModifiedEntity modified = DiffResult.ModifiedEntity.builder()
+        var modified = DiffResult.ModifiedEntity.builder()
                 .oldEntity(oldEntity)
                 .newEntity(newEntity)
                 .build();
 
-        // Check schema/catalog/inheritance changes with Optional
-        if (!Optional.ofNullable(oldEntity.getSchema()).equals(Optional.ofNullable(newEntity.getSchema()))) {
-            modified.getWarnings().add("Schema changed from " + oldEntity.getSchema() + " to " + newEntity.getSchema() +
-                    " for entity " + newEntity.getEntityName());
+        if (!java.util.Objects.equals(oldEntity.getSchema(), newEntity.getSchema())) {
+            modified.getWarnings().add("Schema changed: " + oldEntity.getSchema() + " → " + newEntity.getSchema()
+                    + " (entity=" + newEntity.getEntityName() + ")");
         }
-        if (!Optional.ofNullable(oldEntity.getCatalog()).equals(Optional.ofNullable(newEntity.getCatalog()))) {
-            modified.getWarnings().add("Catalog changed from " + oldEntity.getCatalog() + " to " + newEntity.getCatalog() +
-                    " for entity " + newEntity.getEntityName());
+        if (!java.util.Objects.equals(oldEntity.getCatalog(), newEntity.getCatalog())) {
+            modified.getWarnings().add("Catalog changed: " + oldEntity.getCatalog() + " → " + newEntity.getCatalog()
+                    + " (entity=" + newEntity.getEntityName() + ")");
         }
-        if (!Optional.ofNullable(oldEntity.getInheritance()).equals(Optional.ofNullable(newEntity.getInheritance()))) {
-            modified.getWarnings().add("Inheritance strategy changed from " + oldEntity.getInheritance() +
-                    " to " + newEntity.getInheritance() + " for entity " + newEntity.getEntityName() +
-                    "; manual migration required.");
+        if (!java.util.Objects.equals(oldEntity.getInheritance(), newEntity.getInheritance())) {
+            modified.getWarnings().add("Inheritance strategy changed: " + oldEntity.getInheritance()
+                    + " → " + newEntity.getInheritance() + " (entity=" + newEntity.getEntityName() + "); manual migration may be required.");
         }
 
-        // Delegate to component differs
         for (EntityComponentDiffer differ : componentDiffers) {
-            differ.diff(oldEntity, newEntity, modified);
+            try {
+                differ.diff(oldEntity, newEntity, modified);
+            } catch (Exception e) {
+                modified.getWarnings().add("Differ failed: " + differ.getClass().getSimpleName() + " - " + e.getMessage());
+            }
         }
-
         return modified;
     }
 
+    public void diffPair(EntityModel oldEntity, EntityModel newEntity, DiffResult result) {
+        DiffResult.ModifiedEntity modified = compareEntities(oldEntity, newEntity);
+        if (isModified(modified)) {
+            result.getModifiedTables().add(modified);
+            result.getWarnings().addAll(modified.getWarnings());
+        }
+    }
+
+
     private boolean isModified(DiffResult.ModifiedEntity modified) {
-        return !modified.getColumnDiffs().isEmpty() ||
-                !modified.getIndexDiffs().isEmpty() ||
-                !modified.getConstraintDiffs().isEmpty() ||
-                !modified.getRelationshipDiffs().isEmpty() ||
-                !modified.getWarnings().isEmpty();
+        return !modified.getColumnDiffs().isEmpty()
+                || !modified.getIndexDiffs().isEmpty()
+                || !modified.getConstraintDiffs().isEmpty()
+                || !modified.getRelationshipDiffs().isEmpty()
+                || !modified.getWarnings().isEmpty();
     }
 }

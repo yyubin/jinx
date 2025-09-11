@@ -1,139 +1,146 @@
 package org.jinx.migration.differs;
 
+import jakarta.persistence.InheritanceType;
 import org.jinx.model.DiffResult;
 import org.jinx.model.EntityModel;
 import org.jinx.model.SchemaModel;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
+import org.jinx.model.naming.CaseNormalizer;
 import org.junit.jupiter.api.Test;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 
-import java.lang.reflect.Field;
-import java.util.Arrays;
-import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.verify;
-
+import static org.mockito.Mockito.*;
 
 class EntityModificationDifferTest {
-    @Mock
-    private ColumnDiffer columnDiffer;
-    @Mock
-    private IndexDiffer indexDiffer;
-    @Mock
-    private ConstraintDiffer constraintDiffer;
-    @Mock
-    private RelationshipDiffer relationshipDiffer;
 
-    @InjectMocks
-    private EntityModificationDiffer entityModificationDiffer;
-
-    @BeforeEach
-    void setUp() throws Exception {
-        MockitoAnnotations.openMocks(this);
-
-        // Manually inject the list of mocked differs into the private final field.
-        Field differsField = EntityModificationDiffer.class.getDeclaredField("componentDiffers");
-        differsField.setAccessible(true);
-        List<EntityComponentDiffer> mockDiffers = Arrays.asList(columnDiffer, indexDiffer, constraintDiffer, relationshipDiffer);
-        differsField.set(entityModificationDiffer, mockDiffers);
-    }
-
-    @Test
-    @DisplayName("공통된 엔티티가 없을 때 아무런 변경도 감지하지 않아야 함")
-    void shouldDetectNoModifications_whenNoCommonEntities() {
-        SchemaModel oldSchema = createSchemaWithEntities(createEntity("User"));
-        SchemaModel newSchema = createSchemaWithEntities(createEntity("Customer"));
-        DiffResult result = DiffResult.builder().build();
-
-        entityModificationDiffer.diff(oldSchema, newSchema, result);
-
-        assertTrue(result.getModifiedTables().isEmpty(), "수정된 테이블이 없어야 합니다.");
-    }
-
-    @Test
-    @DisplayName("엔티티가 존재할 때 모든 하위 Differ에게 위임해야 함")
-    void shouldDelegateToAllComponentDiffers_whenEntityIsCommon() {
-        EntityModel oldEntity = createEntity("User");
-        EntityModel newEntity = createEntity("User");
-        SchemaModel oldSchema = createSchemaWithEntities(oldEntity);
-        SchemaModel newSchema = createSchemaWithEntities(newEntity);
-        DiffResult result = DiffResult.builder().build();
-
-        entityModificationDiffer.diff(oldSchema, newSchema, result);
-
-        verify(columnDiffer).diff(any(EntityModel.class), any(EntityModel.class), any(DiffResult.ModifiedEntity.class));
-        verify(indexDiffer).diff(any(EntityModel.class), any(EntityModel.class), any(DiffResult.ModifiedEntity.class));
-        verify(constraintDiffer).diff(any(EntityModel.class), any(EntityModel.class), any(DiffResult.ModifiedEntity.class));
-        verify(relationshipDiffer).diff(any(EntityModel.class), any(EntityModel.class), any(DiffResult.ModifiedEntity.class));
-    }
-
-    @Test
-    @DisplayName("하위 Differ가 변경을 감지하면 'ModifiedEntity'를 결과에 추가해야 함")
-    void shouldAddModifiedEntity_whenComponentDifferFindsChange() {
-        EntityModel oldEntity = createEntity("User");
-        EntityModel newEntity = createEntity("User");
-        SchemaModel oldSchema = createSchemaWithEntities(oldEntity);
-        SchemaModel newSchema = createSchemaWithEntities(newEntity);
-        DiffResult result = DiffResult.builder().build();
-
-        doAnswer(invocation -> {
-            DiffResult.ModifiedEntity modified = invocation.getArgument(2);
-            modified.getColumnDiffs().add(DiffResult.ColumnDiff.builder().build());
-            return null;
-        }).when(columnDiffer).diff(any(), any(), any());
-
-        entityModificationDiffer.diff(oldSchema, newSchema, result);
-
-        assertEquals(1, result.getModifiedTables().size(), "수정된 테이블은 1개여야 합니다.");
-        assertFalse(result.getModifiedTables().get(0).getColumnDiffs().isEmpty(), "컬럼 변경 내역이 포함되어야 합니다.");
-    }
-
-    @Test
-    @DisplayName("엔티티의 스키마나 카탈로그가 변경되면 경고를 추가해야 함")
-    void shouldAddWarning_whenSchemaOrCatalogChanges() {
-        EntityModel oldEntity = createEntity("User");
-        oldEntity.setSchema("dbo");
-        oldEntity.setCatalog("main_db");
-
-        EntityModel newEntity = createEntity("User");
-        newEntity.setSchema("public");
-        newEntity.setCatalog("new_db");
-
-        SchemaModel oldSchema = createSchemaWithEntities(oldEntity);
-        SchemaModel newSchema = createSchemaWithEntities(newEntity);
-        DiffResult result = DiffResult.builder().build();
-
-        entityModificationDiffer.diff(oldSchema, newSchema, result);
-
-        assertEquals(1, result.getModifiedTables().size(), "수정된 테이블은 1개여야 합니다.");
-        List<String> warnings = result.getModifiedTables().get(0).getWarnings();
-        assertEquals(2, warnings.size(), "경고는 2개여야 합니다.");
-        assertTrue(warnings.stream().anyMatch(w -> w.contains("Schema changed from dbo to public")));
-        assertTrue(warnings.stream().anyMatch(w -> w.contains("Catalog changed from main_db to new_db")));
-    }
-
-    private SchemaModel createSchemaWithEntities(EntityModel... entities) {
-        SchemaModel schema = new SchemaModel();
-        if (entities != null) {
-            schema.setEntities(Arrays.stream(entities)
-                    .collect(java.util.stream.Collectors.toMap(EntityModel::getEntityName, e -> e)));
-        } else {
-            schema.setEntities(Collections.emptyMap());
-        }
+    private SchemaModel mockSchemaWithEntities(Map<String, EntityModel> entities) {
+        SchemaModel schema = mock(SchemaModel.class);
+        when(schema.getEntities()).thenReturn(entities);
         return schema;
     }
 
-    private EntityModel createEntity(String name) {
-        EntityModel entity = new EntityModel();
-        entity.setEntityName(name);
-        entity.setTableName(name.toLowerCase() + "s");
-        return entity;
+    private EntityModel entity(String name, String table, String schema, String catalog, InheritanceType inh) {
+        return EntityModel.builder()
+                .entityName(name)
+                .tableName(table)
+                .schema(schema)
+                .catalog(catalog)
+                .inheritance(inh)
+                .build();
+    }
+
+    @Test
+    void diff_collectsWarningsAndModified_whenMatchingEntityHasEntityLevelChanges() {
+        // given
+        var oldEntities = new LinkedHashMap<String, EntityModel>();
+        var newEntities = new LinkedHashMap<String, EntityModel>();
+
+        oldEntities.put("User", entity("User", "t_user", "old_s", "old_c", InheritanceType.SINGLE_TABLE));
+        newEntities.put("User", entity("User", "t_user", "new_s", "new_c", InheritanceType.JOINED));
+
+        SchemaModel oldSchema = mockSchemaWithEntities(oldEntities);
+        SchemaModel newSchema = mockSchemaWithEntities(newEntities);
+
+        EntityModificationDiffer differ = new EntityModificationDiffer(CaseNormalizer.lower());
+
+        // when
+        DiffResult out = DiffResult.builder().build();
+        differ.diff(oldSchema, newSchema, out);
+
+        // then
+        assertEquals(1, out.getModifiedTables().size(), "Should have one modified entity");
+        // Entity-level warnings are bubbled up to root warnings as well
+        assertTrue(out.getWarnings().stream().anyMatch(s -> s.contains("Schema changed: old_s → new_s")),
+                "Schema change warning should be present");
+        assertTrue(out.getWarnings().stream().anyMatch(s -> s.contains("Catalog changed: old_c → new_c")),
+                "Catalog change warning should be present");
+        assertTrue(out.getWarnings().stream().anyMatch(s -> s.contains("Inheritance strategy changed: SINGLE_TABLE → JOINED")),
+                "Inheritance change warning should be present");
+    }
+
+    @Test
+    void diff_ignoresEntitiesOnlyInNewSchema() {
+        // given
+        SchemaModel oldSchema = mockSchemaWithEntities(Map.of()); // old has none
+        var newEntities = new LinkedHashMap<String, EntityModel>();
+        newEntities.put("OnlyNew", entity("OnlyNew", "t_new", null, null, null));
+        SchemaModel newSchema = mockSchemaWithEntities(newEntities);
+
+        EntityModificationDiffer differ = new EntityModificationDiffer();
+
+        // when
+        DiffResult out = DiffResult.builder().build();
+        differ.diff(oldSchema, newSchema, out);
+
+        // then
+        assertTrue(out.getModifiedTables().isEmpty(), "No modified tables expected when there is no name match");
+        assertTrue(out.getWarnings().isEmpty(), "No warnings expected");
+    }
+
+    @Test
+    void diff_doesNothing_whenEntitiesMapsAreNull() {
+        // given
+        SchemaModel oldSchema = mock(SchemaModel.class);
+        when(oldSchema.getEntities()).thenReturn(null);
+        SchemaModel newSchema = mock(SchemaModel.class);
+        when(newSchema.getEntities()).thenReturn(null);
+
+        EntityModificationDiffer differ = new EntityModificationDiffer();
+
+        // when
+        DiffResult out = DiffResult.builder().build();
+        assertDoesNotThrow(() -> differ.diff(oldSchema, newSchema, out));
+
+        // then
+        assertTrue(out.getModifiedTables().isEmpty());
+        assertTrue(out.getWarnings().isEmpty());
+    }
+
+    @Test
+    void diff_doesNotReport_whenNoEntityLevelChanges_andComponentsProduceNoDiffs() {
+        // given
+        var oldEntities = new LinkedHashMap<String, EntityModel>();
+        var newEntities = new LinkedHashMap<String, EntityModel>();
+
+        // same values
+        oldEntities.put("User", entity("User", "t_user", "s", "c", InheritanceType.SINGLE_TABLE));
+        newEntities.put("User", entity("User", "t_user", "s", "c", InheritanceType.SINGLE_TABLE));
+
+        SchemaModel oldSchema = mockSchemaWithEntities(oldEntities);
+        SchemaModel newSchema = mockSchemaWithEntities(newEntities);
+
+        EntityModificationDiffer differ = new EntityModificationDiffer(CaseNormalizer.lower());
+
+        // when
+        DiffResult out = DiffResult.builder().build();
+        differ.diff(oldSchema, newSchema, out);
+
+        // then
+        // 주의: Column/Index/Constraint/Relationship differ들이 실제 변경을 낸다면 이 테스트는 달라질 수 있습니다.
+        // 현재 전제는 "컴포넌트 디퍼가 빈 엔티티에서 변경을 만들지 않는다"입니다.
+        assertTrue(out.getModifiedTables().isEmpty(), "No modified tables expected when nothing changed");
+        assertTrue(out.getWarnings().isEmpty(), "No warnings expected");
+    }
+
+    @Test
+    void diffPair_collectsIntoResult_like_singleEntityPath() {
+        // given
+        EntityModel oldE = entity("Old", "t", "s1", "c1", InheritanceType.SINGLE_TABLE);
+        EntityModel newE = entity("New", "t", "s2", "c2", InheritanceType.JOINED);
+
+        EntityModificationDiffer differ = new EntityModificationDiffer();
+
+        // when
+        DiffResult out = DiffResult.builder().build();
+        differ.diffPair(oldE, newE, out);
+
+        // then
+        assertEquals(1, out.getModifiedTables().size(), "modifiedTables should include this pair");
+        assertTrue(out.getWarnings().stream().anyMatch(s -> s.contains("Schema changed: s1 → s2")));
+        assertTrue(out.getWarnings().stream().anyMatch(s -> s.contains("Catalog changed: c1 → c2")));
+        assertTrue(out.getWarnings().stream().anyMatch(s -> s.contains("Inheritance strategy changed: SINGLE_TABLE → JOINED")));
     }
 }
