@@ -167,6 +167,14 @@ public class DiffResult {
         private RelationshipModel relationship;
         private RelationshipModel oldRelationship;
         private String changeDetail;
+        
+        /**
+         * DDL 수준에서 DROP/ADD가 필요한 구조적 변경인지 여부
+         * true: FK 제약조건의 DROP/ADD가 필요 (테이블/컬럼/참조 변경)
+         * false: 런타임 의미만 변경 (cascade, fetch 등)
+         */
+        @Builder.Default
+        private Boolean requiresDropAdd = false;
     }
 
     @Builder
