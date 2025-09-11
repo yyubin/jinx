@@ -1,293 +1,229 @@
-//package org.jinx.migration;
-//
-//import org.jinx.migration.differs.TableGeneratorDiffer;
-//import org.jinx.migration.spi.dialect.DdlDialect;
-//import org.jinx.model.*;
-//import org.junit.jupiter.api.BeforeEach;
-//import org.junit.jupiter.api.DisplayName;
-//import org.junit.jupiter.api.Test;
-//import org.mockito.Mock;
-//import org.mockito.MockitoAnnotations;
-//
-//import static org.assertj.core.api.Assertions.assertThat;
-//import static org.mockito.ArgumentMatchers.any;
-//import static org.mockito.Mockito.*;
-//
-//class MigrationGeneratorTest {
-//
-//    @Mock
-//    private DdlDialect dialect;
-//    @Mock
-//    private SchemaModel newSchema;
-//
-//    private MigrationGenerator migrationGenerator;
-//    private MigrationGenerator migrationReverseGenerator;
-//
-//    @BeforeEach
-//    void setUp() {
-//        MockitoAnnotations.openMocks(this);
-//        DialectBundle dialectBundle = DialectBundle.builder(dialect, DatabaseType.MySQL).build();
-//        migrationGenerator = new MigrationGenerator(dialectBundle, newSchema, false);
-//        migrationReverseGenerator = new MigrationGenerator(dialectBundle, newSchema, true);
-//    }
-//
-//    private EntityModel createDummyEntity(String name) {
-//        return EntityModel.builder().tableName(name).build();
-//    }
-//
-//    private SequenceModel createDummySequence(String name) {
-//        return SequenceModel.builder().name(name).build();
-//    }
-//
-//    @Test
-//    @DisplayName("테이블 추가 Diff가 있을 때, CREATE TABLE SQL을 생성해야 한다")
-//    void generateSql_withAddedTable_shouldGenerateCreateTableSql() {
-//        // Given
-//        DiffResult diff = DiffResult.builder().build();
-//        EntityModel addedTable = createDummyEntity("new_users");
-//        diff.getAddedTables().add(addedTable);
-//
-//        when(dialect.getCreateTableSql(addedTable)).thenReturn("CREATE TABLE new_users (...);");
-//
-//        // When
-//        String sql = migrationGenerator.generateSql(diff);
-//
-//        // Then
-//        assertThat(sql).contains("CREATE TABLE new_users (...);");
-//    }
-//
-//    @Test
-//    @DisplayName("테이블 삭제 Diff가 있을 때, DROP TABLE SQL을 생성해야 한다")
-//    void generateSql_withDroppedTable_shouldGenerateDropTableSql() {
-//        // Given
-//        DiffResult diff = DiffResult.builder().build();
-//        EntityModel droppedTable = createDummyEntity("old_users");
-//        diff.getDroppedTables().add(droppedTable);
-//
-//        when(dialect.getDropTableSql(droppedTable)).thenReturn("DROP TABLE old_users;");
-//
-//        // When
-//        String sql = migrationGenerator.generateSql(diff);
-//
-//        // Then
-//        assertThat(sql).contains("DROP TABLE old_users;");
-//    }
-//
-//    @Test
-//    @DisplayName("테이블 수정 Diff가 있을 때, ALTER TABLE SQL을 생성해야 한다")
-//    void generateSql_withModifiedTable_shouldGenerateAlterTableSql() {
-//        // Given
-//        DiffResult diff = DiffResult.builder().build();
-//        DiffResult.ModifiedEntity modifiedEntity = DiffResult.ModifiedEntity.builder()
-//                .newEntity(createDummyEntity("users"))
-//                .build();
-//        diff.getModifiedTables().add(modifiedEntity);
-//
-//        when(dialect.getAlterTableSql(modifiedEntity)).thenReturn("ALTER TABLE users ADD COLUMN email VARCHAR(255);");
-//
-//        // When
-//        String sql = migrationGenerator.generateSql(diff);
-//
-//        // Then
-//        assertThat(sql).contains("ALTER TABLE users ADD COLUMN email VARCHAR(255);");
-//    }
-//
-//    @Test
-//    @DisplayName("시퀀스 추가 Diff가 있을 때, CREATE SEQUENCE SQL을 생성해야 한다")
-//    void generateSql_withAddedSequence_shouldGenerateCreateSequenceSql() {
-//        // Given
-//        DiffResult diff = DiffResult.builder().build();
-//        SequenceModel sequence = createDummySequence("user_seq");
-//        diff.getSequenceDiffs().add(DiffResult.SequenceDiff.added(sequence));
-//
-//        when(dialect.getCreateSequenceSql(sequence)).thenReturn("CREATE SEQUENCE user_seq;");
-//
-//        // When
-//        String sql = migrationGenerator.generateSql(diff);
-//
-//        // Then
-//        assertThat(sql).contains("CREATE SEQUENCE user_seq;");
-//    }
-//
-//    @Test
-//    @DisplayName("시퀀스 삭제 Diff가 있을 때, DROP SEQUENCE SQL을 생성해야 한다")
-//    void generateSql_withDroppedSequence_shouldGenerateDropSequenceSql() {
-//        // Given
-//        DiffResult diff = DiffResult.builder().build();
-//        SequenceModel sequence = createDummySequence("user_seq");
-//        diff.getSequenceDiffs().add(DiffResult.SequenceDiff.dropped(sequence));
-//
-//        when(dialect.getDropSequenceSql(sequence)).thenReturn("DROP SEQUENCE user_seq;");
-//
-//        // When
-//        String sql = migrationGenerator.generateSql(diff);
-//
-//        // Then
-//        assertThat(sql).contains("DROP SEQUENCE user_seq;");
-//    }
-//
-//    @Test
-//    @DisplayName("시퀀스 수정 Diff가 있을 때, ALTER SEQUENCE SQL을 생성해야 한다")
-//    void generateSql_withModifiedSequence_shouldGenerateAlterSequenceSql() {
-//        // Given
-//        DiffResult diff = DiffResult.builder().build();
-//
-//        // Arrange: 이름은 같고 속성은 다른 두 시퀀스를 생성합니다.
-//        SequenceModel oldSequence = SequenceModel.builder().name("user_seq").initialValue(1).build();
-//        SequenceModel newSequence = SequenceModel.builder().name("user_seq").initialValue(100).build();
-//
-//        DiffResult.SequenceDiff modifiedDiff = DiffResult.SequenceDiff.builder()
-//                .type(DiffResult.SequenceDiff.Type.MODIFIED)
-//                .oldSequence(oldSequence)
-//                .sequence(newSequence)
-//                .build();
-//        diff.getSequenceDiffs().add(modifiedDiff);
-//
-//        when(dialect.getAlterSequenceSql(newSequence, oldSequence)).thenReturn("ALTER SEQUENCE user_seq START WITH 100;");
-//
-//        // When
-//        String sql = migrationGenerator.generateSql(diff);
-//
-//        // Then
-//        assertThat(sql).contains("ALTER SEQUENCE user_seq START WITH 100;");
-//    }
-//
-//    @Test
-//    @DisplayName("TableGenerator 삭제 Diff가 있을 때, 관련 SQL을 생성해야 한다")
-//    void generateSql_withDroppedTableGenerator_shouldGenerateDropSql() {
-//        // Given
-//        DiffResult diff = DiffResult.builder().build();
-//        TableGeneratorModel tg = createDummyTableGenerator("my_gen");
-//        diff.getTableGeneratorDiffs().add(DiffResult.TableGeneratorDiff.dropped(tg));
-//        when(dialect.getDropTableGeneratorSql(tg)).thenReturn("DROP TABLE my_gen_table;");
-//
-//        // When
-//        String sql = migrationGenerator.generateSql(diff);
-//
-//        // Then
-//        assertThat(sql).contains("DROP TABLE my_gen_table;");
-//    }
-//
-//    @Test
-//    @DisplayName("TableGenerator 수정 Diff가 있을 때, 관련 SQL을 생성해야 한다")
-//    void generateSql_withModifiedTableGenerator_shouldGenerateAlterSql() {
-//        // Given
-//        DiffResult diff = DiffResult.builder().build();
-//        SchemaModel oldSchema = SchemaModel.builder().build();
-//        SchemaModel newSchema = SchemaModel.builder().build();
-//        TableGeneratorModel oldTg = createDummyTableGenerator("my_gen");
-//        TableGeneratorModel newTg = createDummyTableGenerator("my_gen");
-//        oldSchema.getTableGenerators().put(oldTg.getName(), oldTg);
-//        newSchema.getTableGenerators().put(newTg.getName(), newTg);
-//        newTg.setInitialValue(50);
-//        TableGeneratorDiffer tableGeneratorDiffer = new TableGeneratorDiffer();
-//        tableGeneratorDiffer.diff(oldSchema, newSchema, diff);
-//        when(dialect.getAlterTableGeneratorSql(newTg, oldTg)).thenReturn("UPDATE my_gen_table SET ...;");
-//
-//        // When
-//        String sql = migrationGenerator.generateSql(diff);
-//
-//        // Then
-//        assertThat(sql).contains("UPDATE my_gen_table SET ...;");
-//    }
-//
-//    @Test
-//    @DisplayName("알 수 없는 타입의 SequenceDiff는 무시해야 한다")
-//    void generateSql_withUnknownSequenceDiffType_shouldDoNothing() {
-//        // Given
-//        DiffResult diff = DiffResult.builder().build();
-//        SequenceModel sequence = createDummySequence("user_seq");
-//
-//        // type이 null인 Diff를 만들어 switch의 default 분기를 테스트
-//        DiffResult.SequenceDiff unknownDiff = DiffResult.SequenceDiff.builder()
-//                .type(null)
-//                .sequence(sequence)
-//                .build();
-//        diff.getSequenceDiffs().add(unknownDiff);
-//
-//        // When
-//        migrationGenerator.generateSql(diff);
-//
-//        // Then
-//        // 어떠한 시퀀스 관련 메서드도 호출되지 않아야 함
-//        verify(dialect, never()).getCreateSequenceSql(any());
-//        verify(dialect, never()).getDropSequenceSql(any());
-//        verify(dialect, never()).getAlterSequenceSql(any(), any());
-//    }
-//
-//    @Test
-//    @DisplayName("경고(Warning)가 있을 때, SQL 주석으로 경고를 생성해야 한다")
-//    void generateSql_withWarnings_shouldGenerateSqlComments() {
-//        // Given
-//        DiffResult diff = DiffResult.builder().build();
-//        diff.getWarnings().add("Data loss might occur in users.email column.");
-//
-//        // When
-//        String sql = migrationGenerator.generateSql(diff);
-//
-//        // Then
-//        assertThat(sql).contains("-- WARNING: Data loss might occur in users.email column.");
-//    }
-//
-//    @Test
-//    @DisplayName("여러 종류의 Diff가 있을 때, 올바른 순서로 모든 SQL을 생성해야 한다")
-//    void generateSql_withMultipleDiffs_shouldGenerateAllSqlInCorrectOrder() {
-//        // Given
-//        DiffResult diff = DiffResult.builder().build();
-//
-//        // 1. Drop Table
-//        EntityModel droppedTable = createDummyEntity("old_products");
-//        diff.getDroppedTables().add(droppedTable);
-//
-//        // 2. Add Table
-//        EntityModel addedTable = createDummyEntity("new_orders");
-//        diff.getAddedTables().add(addedTable);
-//
-//        // 3. Modify Table
-//        DiffResult.ModifiedEntity modifiedEntity = DiffResult.ModifiedEntity.builder().newEntity(createDummyEntity("users")).build();
-//        diff.getModifiedTables().add(modifiedEntity);
-//
-//        // 4. Add Sequence
-//        SequenceModel addedSequence = createDummySequence("order_seq");
-//        diff.getSequenceDiffs().add(DiffResult.SequenceDiff.added(addedSequence));
-//
-//        // Mock dialect calls
-//        when(dialect.preSchemaObjects(any(SchemaModel.class))).thenReturn("-- pre-schema setup");
-//        when(dialect.getDropTableSql(droppedTable)).thenReturn("DROP TABLE old_products;");
-//        when(dialect.getCreateTableSql(addedTable)).thenReturn("CREATE TABLE new_orders (...);");
-//        when(dialect.getAlterTableSql(modifiedEntity)).thenReturn("ALTER TABLE users ...;");
-//        when(dialect.getCreateSequenceSql(addedSequence)).thenReturn("CREATE SEQUENCE order_seq;");
-//
-//        // Expected order: pre-schema -> sequences -> drops -> adds -> alters
-//        String expectedSql = String.join("\n",
-//                "-- pre-schema setup",
-//                "CREATE SEQUENCE order_seq;",
-//                "DROP TABLE old_products;",
-//                "CREATE TABLE new_orders (...);",
-//                "ALTER TABLE users ...;"
-//        );
-//
-//        // When
-//        String sql = migrationGenerator.generateSql(diff);
-//
-//        // Then
-//        assertThat(sql).isEqualTo(expectedSql);
-//    }
-//
-//    @Test
-//    @DisplayName("rollback SQL 출력 시 경고 문구가 포함되어야 한다")
-//    void generateRollbackSql_withWarnings_shouldGenerateSqlComments() {
-//        // Given
-//        DiffResult diff = DiffResult.builder().build();
-//
-//        // When
-//        String sql = migrationReverseGenerator.generateSql(diff);
-//
-//        // Then
-//        assertThat(sql).contains("-- WARNING: this is rollback SQL for a migration");
-//    }
-//
-//    private TableGeneratorModel createDummyTableGenerator(String name) {
-//        return TableGeneratorModel.builder().name(name).table(name + "_table").build();
-//    }
-//}
+package org.jinx.migration;
+
+import org.jinx.migration.spi.dialect.DdlDialect;
+import org.jinx.migration.spi.visitor.SequenceVisitor;
+import org.jinx.migration.spi.visitor.TableContentVisitor;
+import org.jinx.migration.spi.visitor.TableGeneratorVisitor;
+import org.jinx.migration.spi.visitor.TableVisitor;
+import org.jinx.model.*;
+import org.jinx.testing.visitor.RecordingTableContentVisitor;
+import org.jinx.testing.visitor.RecordingTableVisitor;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.function.Supplier;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+class MigrationGeneratorTest {
+
+    @Test
+    @DisplayName("reverse + warnings + (DROP/RENAME) + (ADDED) + (ALTER) + (FK_ADD) 순서대로 SQL이 조립된다")
+    void generateSql_full_flow() {
+        // --- given: 번들/다이얼렉트 ---
+        DdlDialect ddl = mock(DdlDialect.class);
+        DialectBundle bundle = DialectBundle.builder(ddl, DatabaseType.MYSQL).build();
+
+        // --- given: DiffResult 목킹 및 스텁 ---
+        DiffResult diff = mock(DiffResult.class);
+        when(diff.getWarnings()).thenReturn(List.of("W1", "W2"));
+
+        DiffResult.ModifiedEntity me = mock(DiffResult.ModifiedEntity.class);
+        EntityModel newEntity = mock(EntityModel.class);
+        when(newEntity.getTableName()).thenReturn("t_new");
+        when(me.getNewEntity()).thenReturn(newEntity);
+        when(diff.getModifiedTables()).thenReturn(List.of(me));
+
+        // tableContentAccept: Phase 별로 녹화형 비지터에 visit* 호출 → SQL 축적
+        doAnswer(inv -> {
+            TableContentVisitor v = inv.getArgument(0);
+            DiffResult.TableContentPhase phase = inv.getArgument(1);
+            if (phase == DiffResult.TableContentPhase.DROP) {
+                // DROP 단계: 컬럼/PK 제거
+                var col = mock(ColumnModel.class);
+                when(col.getColumnName()).thenReturn("age");
+                v.visitDroppedColumn(col);
+                v.visitDroppedPrimaryKey();
+            }
+            return null;
+        }).when(diff).tableContentAccept(any(), eq(DiffResult.TableContentPhase.DROP));
+
+        doAnswer(inv -> {
+            TableContentVisitor v = inv.getArgument(0);
+            DiffResult.TableContentPhase phase = inv.getArgument(1);
+            if (phase == DiffResult.TableContentPhase.ALTER) {
+                var newCol = mock(ColumnModel.class);
+                when(newCol.getColumnName()).thenReturn("name");
+                var oldCol = mock(ColumnModel.class);
+                when(oldCol.getColumnName()).thenReturn("name_old");
+                v.visitAddedColumn(newCol);
+                v.visitModifiedColumn(newCol, oldCol);
+            }
+            return null;
+        }).when(diff).tableContentAccept(any(), eq(DiffResult.TableContentPhase.ALTER));
+
+        doAnswer(inv -> {
+            TableContentVisitor v = inv.getArgument(0);
+            DiffResult.TableContentPhase phase = inv.getArgument(1);
+            if (phase == DiffResult.TableContentPhase.FK_ADD) {
+                var rel = mock(RelationshipModel.class);
+                when(rel.getConstraintName()).thenReturn("fk_user_role");
+                v.visitAddedRelationship(rel);
+            }
+            return null;
+        }).when(diff).tableContentAccept(any(), eq(DiffResult.TableContentPhase.FK_ADD));
+
+        // tableAccept: DROPPED/RENAMED/ADDED 각각 호출 시 녹화형 비지터에 visit* 호출
+        doAnswer(inv -> {
+            TableVisitor v = inv.getArgument(0);
+            DiffResult.TablePhase phase = inv.getArgument(1);
+            if (phase == DiffResult.TablePhase.DROPPED) {
+                var t = mock(EntityModel.class);
+                when(t.getTableName()).thenReturn("old_table");
+                v.visitDroppedTable(t);
+            } else if (phase == DiffResult.TablePhase.RENAMED) {
+                var r = mock(DiffResult.RenamedTable.class);
+                EntityModel oldE = mock(EntityModel.class);
+                when(oldE.getTableName()).thenReturn("old_name");
+                when(r.getOldEntity()).thenReturn(oldE);
+
+                EntityModel newE = mock(EntityModel.class);
+                when(newE.getTableName()).thenReturn("new_name");
+                when(r.getNewEntity()).thenReturn(newE);
+                v.visitRenamedTable(r);
+            } else if (phase == DiffResult.TablePhase.ADDED) {
+                var t = mock(EntityModel.class);
+                when(t.getTableName()).thenReturn("new_table");
+                v.visitAddedTable(t);
+            }
+            return null;
+        }).when(diff).tableAccept(any(), any());
+
+        // sequence/tableGenerator accept는 호출만 검증(출력 영향 없음)
+        doNothing().when(diff).sequenceAccept(any(), any(), any());
+        doNothing().when(diff).tableGeneratorAccept(any(), any(), any());
+
+        // --- given: VisitorProviders (녹화형 비지터) 주입을 위한 VisitorFactory static mocking ---
+        Supplier<TableVisitor> tvSupplier = RecordingTableVisitor::new;
+        Function<DiffResult.ModifiedEntity, TableContentVisitor> tcvFactory = me2 -> new RecordingTableContentVisitor();
+
+        var providers = new VisitorProviders(
+                tvSupplier,
+                tcvFactory,
+                Optional.of(() -> new SequenceVisitor() {
+                    @Override
+                    public void visitAddedSequence(SequenceModel sequence) {
+
+                    }
+
+                    @Override
+                    public void visitDroppedSequence(SequenceModel sequence) {
+
+                    }
+
+                    @Override
+                    public void visitModifiedSequence(SequenceModel newSequence, SequenceModel oldSequence) {
+
+                    }
+
+                    @Override
+                    public String getGeneratedSql() {
+                        return "";
+                    }
+                }), // sequence present
+                Optional.of(() -> new TableGeneratorVisitor() {
+                    @Override
+                    public void visitAddedTableGenerator(TableGeneratorModel tableGenerator) {
+
+                    }
+
+                    @Override
+                    public void visitDroppedTableGenerator(TableGeneratorModel tableGenerator) {
+
+                    }
+
+                    @Override
+                    public void visitModifiedTableGenerator(TableGeneratorModel newTableGenerator, TableGeneratorModel oldTableGenerator) {
+
+                    }
+
+                    @Override
+                    public String getGeneratedSql() {
+                        return "";
+                    }
+                })  // tableGenerator present
+        );
+
+        try (MockedStatic<VisitorFactory> vf = mockStatic(VisitorFactory.class)) {
+            vf.when(() -> VisitorFactory.forBundle(bundle)).thenReturn(providers);
+
+            // --- when ---
+            MigrationGenerator gen = new MigrationGenerator(bundle, SchemaModel.builder().build(), true);
+            String sql = gen.generateSql(diff);
+
+            // --- then: 순서대로 기대 문자열 조립 ---
+            String expected = String.join("\n",
+                    "-- WARNING: this is rollback SQL for a migration",
+                    "-- WARNING: W1",
+                    "-- WARNING: W2",
+                    // 1-1 DROP (modified)
+                    "ALTER TABLE DROP COLUMN \"age\"",
+                    "ALTER TABLE DROP PRIMARY KEY",
+                    // 1-2 DROPPED/RENAMED (tables)
+                    "DROP TABLE \"old_table\"",
+                    "RENAME TABLE \"old_name\" TO \"new_name\"",
+                    // 2-1 ADDED (tables)
+                    "CREATE TABLE \"new_table\" ()",
+                    // 2-2 ALTER (modified)
+                    "ALTER TABLE ADD COLUMN \"name\"",
+                    "ALTER TABLE MODIFY COLUMN \"name\" /* from \"name_old\" */",
+                    // 3 FK_ADD (modified)
+                    "/* ADD RELATIONSHIP \"fk_user_role\" */"
+            );
+            assertEquals(expected, sql);
+
+            // sequence/tableGenerator accept 호출 검증
+            verify(diff, times(1)).sequenceAccept(any(), eq(DiffResult.SequenceDiff.Type.ADDED), eq(DiffResult.SequenceDiff.Type.MODIFIED));
+            verify(diff, times(1)).sequenceAccept(any(), eq(DiffResult.SequenceDiff.Type.DROPPED));
+            verify(diff, times(1)).tableGeneratorAccept(any(), eq(DiffResult.TableGeneratorDiff.Type.ADDED), eq(DiffResult.TableGeneratorDiff.Type.MODIFIED));
+            verify(diff, times(1)).tableGeneratorAccept(any(), eq(DiffResult.TableGeneratorDiff.Type.DROPPED));
+        }
+    }
+
+    @Test
+    @DisplayName("변경 없음 + reverse=false → 경고 없으면 빈 문자열")
+    void generateSql_no_changes_no_warnings() {
+        DdlDialect ddl = mock(DdlDialect.class);
+        DialectBundle bundle = DialectBundle.builder(ddl, DatabaseType.MYSQL).build();
+
+        DiffResult diff = mock(DiffResult.class);
+        when(diff.getWarnings()).thenReturn(List.of());
+        when(diff.getModifiedTables()).thenReturn(List.of());
+        doNothing().when(diff).tableAccept(any(), any());
+        doNothing().when(diff).tableContentAccept(any(), any());
+        doNothing().when(diff).sequenceAccept(any(), any(), any());
+        doNothing().when(diff).tableGeneratorAccept(any(), any(), any());
+
+        var providers = new VisitorProviders(
+                RecordingTableVisitor::new,
+                me -> new RecordingTableContentVisitor(),
+                Optional.empty(),
+                Optional.empty()
+        );
+
+        try (MockedStatic<VisitorFactory> vf = mockStatic(VisitorFactory.class)) {
+            vf.when(() -> VisitorFactory.forBundle(bundle)).thenReturn(providers);
+
+            MigrationGenerator gen = new MigrationGenerator(bundle, SchemaModel.builder().build(), false);
+            String sql = gen.generateSql(diff);
+
+            assertEquals("", sql);
+        }
+    }
+}

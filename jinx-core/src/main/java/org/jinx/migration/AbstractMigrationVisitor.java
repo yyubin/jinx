@@ -12,6 +12,7 @@ import java.util.StringJoiner;
 public abstract class AbstractMigrationVisitor implements SqlGeneratingVisitor {
     protected final DdlDialect ddlDialect;
     protected final StringJoiner sql;
+    private boolean alterFlushed = false;
 
     @Getter
     protected AlterTableBuilder alterBuilder;
@@ -40,8 +41,9 @@ public abstract class AbstractMigrationVisitor implements SqlGeneratingVisitor {
     @Override
     public String getGeneratedSql() {
         String alterSql = alterBuilder != null ? alterBuilder.build() : "";
-        if (!alterSql.isEmpty()) {
+        if (!alterFlushed && !alterSql.isEmpty()) {
             sql.add(alterSql);
+            alterFlushed = true;
         }
         return sql.toString();
     }

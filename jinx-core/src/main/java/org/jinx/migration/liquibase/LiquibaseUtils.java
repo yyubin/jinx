@@ -17,14 +17,11 @@ public class LiquibaseUtils {
     }
 
     public static Constraints buildConstraintsWithoutPK(ColumnModel col, String tableName) {
-        // nullable/unique 값이 null일 수 있다는 전제에서 null-safe 처리
-        final boolean isNullableFalse = Boolean.FALSE.equals(col.isNullable());
-
         Constraints.ConstraintsBuilder b = Constraints.builder();
 
-        // PK는 제외하고 NOT NULL / UNIQUE만 설정
+        final boolean isNullableFalse = Boolean.FALSE.equals(col.isNullable());
         if (isNullableFalse) {
-            b.nullable(false);          // null이면 미설정, false면 NOT NULL
+            b.nullable(false);
         }
 
         return b.build();

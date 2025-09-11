@@ -1,201 +1,281 @@
-//package org.jinx.migration.dialect.mysql;
-//
-//import org.jinx.descriptor.*;
-//import org.jinx.model.*;
-//import org.junit.jupiter.api.BeforeEach;
-//import org.junit.jupiter.api.DisplayName;
-//import org.junit.jupiter.api.Nested;
-//import org.junit.jupiter.api.Test;
-//
-//import java.util.Collections;
-//import java.util.Map;
-//
-//import static org.assertj.core.api.Assertions.assertThat;
-//import static org.mockito.BDDMockito.*;
-//import static org.mockito.Mockito.mock;
-//
-//@DisplayName("MySqlMigrationVisitor")
-//class MySqlMigrationVisitorTest {
-//
-//    private Dialect dialect;
-//    private MySqlMigrationVisitor visitor;
-//    private static final String TBL = "users";
-//
-//    @BeforeEach
-//    void setUp() {
-//        dialect = mock(Dialect.class);
-//
-//        // 모든 Dialect 메서드가 "토큰" 형식의 SQL을 반환하도록 간단히 stub
-//        // Column
-//        given(dialect.getAddColumnSql(any(), any())).willAnswer(i -> "ADD-COL-" + i.getArgument(1, ColumnModel.class).getColumnName() + "\n");
-//        given(dialect.getDropColumnSql(any(), any())).willAnswer(i -> "DROP-COL-" + i.getArgument(1, ColumnModel.class).getColumnName() + "\n");
-//        given(dialect.getModifyColumnSql(any(), any(), any())).willAnswer(i -> "MODIFY-COL-" + i.getArgument(1, ColumnModel.class).getColumnName() + "\n");
-//        given(dialect.getRenameColumnSql(any(), any(), any())).willAnswer(i -> "RENAME-COL-" + i.getArgument(2, ColumnModel.class).getColumnName() + "-TO-" + i.getArgument(1, ColumnModel.class).getColumnName() + "\n");
-//        // PK
-//        given(dialect.getDropPrimaryKeySql(anyString(), anyCollection())).willReturn("DROP-PK\n");
-//        given(dialect.getAddPrimaryKeySql(anyString(), anyList())).willReturn("ADD-PK\n");
-//        // Table
-//        given(dialect.getRenameTableSql(anyString(), anyString())).willAnswer(i -> "RENAME-TABLE-" + i.getArgument(0) + "-TO-" + i.getArgument(1) + "\n");
-//        // Index
-//        given(dialect.indexStatement(any(), any())).willAnswer(i -> "ADD-INDEX-" + i.getArgument(0, IndexModel.class).getIndexName() + "\n");
-//        given(dialect.getDropIndexSql(any(), any())).willAnswer(i -> "DROP-INDEX-" + i.getArgument(1, IndexModel.class).getIndexName() + "\n");
-//        given(dialect.getModifyIndexSql(any(), any(), any())).willAnswer(i -> "MODIFY-INDEX-" + i.getArgument(1, IndexModel.class).getIndexName() + "\n");
-//        // Constraint
-//        given(dialect.getAddConstraintSql(any(), any())).willAnswer(i -> "ADD-CONSTRAINT-" + i.getArgument(1, ConstraintModel.class).getName() + "\n");
-//        given(dialect.getDropConstraintSql(any(), any())).willAnswer(i -> "DROP-CONSTRAINT-" + i.getArgument(1, ConstraintModel.class).getName() + "\n");
-//        given(dialect.getModifyConstraintSql(any(), any(), any())).willAnswer(i -> "MODIFY-CONSTRAINT-" + i.getArgument(1, ConstraintModel.class).getName() + "\n");
-//        // Relationship
-//        given(dialect.getAddRelationshipSql(any(), any())).willAnswer(i -> "ADD-REL-" + i.getArgument(1, RelationshipModel.class).getConstraintName() + "\n");
-//        given(dialect.getDropRelationshipSql(any(), any())).willAnswer(i -> "DROP-REL-" + i.getArgument(1, RelationshipModel.class).getConstraintName() + "\n");
-//        given(dialect.getModifyRelationshipSql(any(), any(), any())).willAnswer(i -> "MODIFY-REL-" + i.getArgument(1, RelationshipModel.class).getConstraintName() + "\n");
-//        // TableGenerator - Dialect에 관련 메서드가 없으므로 Contributor만 테스트
-//
-//        // visitor 는 table 이름을 알아야 하므로 최소 구성의 ModifiedEntity 를 만들어 전달
-//        EntityModel dummy = EntityModel.builder()
-//                .entityName("User")
-//                .tableName(TBL)
-//                .columns(Map.of())
-//                .build();
-//        DiffResult.ModifiedEntity diff =
-//                DiffResult.ModifiedEntity.builder().newEntity(dummy).oldEntity(dummy).build();
-//
-//        visitor = new MySqlMigrationVisitor(diff, dialect);
-//    }
-//
-//    @Nested
-//    @DisplayName("생성자 및 초기화")
-//    class ConstructorAndInitialization {
-//        @Test
-//        @DisplayName("diff가 null일 때 예외 없이 생성되어야 함")
-//        void constructorWithNullDiff() {
-//            MySqlMigrationVisitor nullVisitor = new MySqlMigrationVisitor(null, dialect);
-//            assertThat(nullVisitor.getGeneratedSql()).isEmpty();
-//        }
-//
-//        @Test
-//        @DisplayName("방문한 변경점이 없으면 getGeneratedSql은 빈 문자열 반환")
-//        void getGeneratedSqlReturnsEmptyForNoChanges() {
-//            assertThat(visitor.getGeneratedSql()).isEmpty();
-//        }
-//    }
-//
-//    @Nested @DisplayName("컬럼 작업")
-//    class ColumnOperations {
-//
-//        @Test @DisplayName("visitAddedColumn → ADD-COL 토큰 포함")
-//        void addsAddColumnContributor() {
-//            visitor.visitAddedColumn(ColumnModel.builder().columnName("email").build());
-//            String sql = visitor.getGeneratedSql();
-//            assertThat(sql).contains("ADD-COL-email");
-//        }
-//
-//        @Test @DisplayName("visitDroppedColumn → DROP-COL 토큰 포함")
-//        void addsDropColumnContributor() {
-//            visitor.visitDroppedColumn(ColumnModel.builder().columnName("email").build());
-//            String sql = visitor.getGeneratedSql();
-//            assertThat(sql).contains("DROP-COL-email");
-//        }
-//
-//        @Test @DisplayName("PK 컬럼 수정 시 PK 재생성 (DROP → MODIFY → ADD 순)")
-//        void pkColumnModifyRecreatesPk() {
-//            ColumnModel oldPk = ColumnModel.builder().columnName("id").javaType("bigint").isPrimaryKey(true).build();
-//            ColumnModel newPk = ColumnModel.builder().columnName("id").javaType("int").isPrimaryKey(true).build();
-//            visitor.visitModifiedColumn(newPk, oldPk);
-//            String sql = visitor.getGeneratedSql();
-//            assertThat(sql).containsSubsequence("DROP-PK", "MODIFY-COL-id", "ADD-PK");
-//        }
-//
-//        @Test @DisplayName("일반 컬럼 수정 시 PK 재생성 없이 MODIFY만 수행")
-//        void nonPkColumnModify() {
-//            ColumnModel oldCol = ColumnModel.builder().columnName("name").isPrimaryKey(false).build();
-//            ColumnModel newCol = ColumnModel.builder().columnName("name").isPrimaryKey(false).length(500).build();
-//            visitor.visitModifiedColumn(newCol, oldCol);
-//            String sql = visitor.getGeneratedSql();
-//            assertThat(sql).contains("MODIFY-COL-name");
-//            assertThat(sql).doesNotContain("DROP-PK", "ADD-PK");
-//        }
-//
-//        @Test @DisplayName("PK 컬럼 이름 변경 시 DROP_PK → RENAME → ADD_PK 순")
-//        void pkRenameGeneratesThreeSteps() {
-//            ColumnModel oldPk = ColumnModel.builder().columnName("id").isPrimaryKey(true).build();
-//            ColumnModel newPk = ColumnModel.builder().columnName("user_id").isPrimaryKey(true).build();
-//            visitor.visitRenamedColumn(newPk, oldPk);
-//            String sql = visitor.getGeneratedSql();
-//            assertThat(sql).containsSubsequence("DROP-PK", "RENAME-COL-id-TO-user_id", "ADD-PK");
-//        }
-//
-//        @Test @DisplayName("일반 컬럼 이름 변경 시 RENAME만 수행")
-//        void nonPkRenameGeneratesOneStep() {
-//            ColumnModel oldCol = ColumnModel.builder().columnName("name").isPrimaryKey(false).build();
-//            ColumnModel newCol = ColumnModel.builder().columnName("user_name").isPrimaryKey(false).build();
-//            visitor.visitRenamedColumn(newCol, oldCol);
-//            String sql = visitor.getGeneratedSql();
-//            assertThat(sql).contains("RENAME-COL-name-TO-user_name");
-//            assertThat(sql).doesNotContain("DROP-PK", "ADD-PK");
-//        }
-//    }
-//
-//    @Nested @DisplayName("테이블 이름 변경")
-//    class TableRename {
-//        @Test @DisplayName("visitRenamedTable이 RENAME-TABLE 토큰을 만든다")
-//        void tableRename() {
-//            EntityModel oldE = EntityModel.builder().entityName("Old").tableName("old_tbl").build();
-//            EntityModel newE = EntityModel.builder().entityName("New").tableName("new_tbl").build();
-//            visitor.visitRenamedTable(DiffResult.RenamedTable.builder().oldEntity(oldE).newEntity(newE).build());
-//            String sql = visitor.getGeneratedSql();
-//            assertThat(sql).contains("RENAME-TABLE-old_tbl-TO-new_tbl");
-//            then(dialect).should().getRenameTableSql("old_tbl", "new_tbl");
-//        }
-//    }
-//
-//    @Nested @DisplayName("인덱스, 제약조건, 관계 등 기타 작업")
-//    class OtherOperations {
-//        @Test @DisplayName("Index Add/Drop/Modify")
-//        void visitIndexOperations() {
-//            visitor.visitAddedIndex(IndexModel.builder().indexName("idx1").build());
-//            visitor.visitDroppedIndex(IndexModel.builder().indexName("idx2").build());
-//            visitor.visitModifiedIndex(IndexModel.builder().indexName("idx3").build(), null);
-//            String sql = visitor.getGeneratedSql();
-//            assertThat(sql).contains("ADD-INDEX-idx1", "DROP-INDEX-idx2", "MODIFY-INDEX-idx3");
-//        }
-//
-//        @Test @DisplayName("Constraint Add/Drop/Modify")
-//        void visitConstraintOperations() {
-//            visitor.visitAddedConstraint(ConstraintModel.builder().name("c1").build());
-//            visitor.visitDroppedConstraint(ConstraintModel.builder().name("c2").build());
-//            visitor.visitModifiedConstraint(ConstraintModel.builder().name("c3").build(), null);
-//            String sql = visitor.getGeneratedSql();
-//            assertThat(sql).contains("ADD-CONSTRAINT-c1", "DROP-CONSTRAINT-c2", "MODIFY-CONSTRAINT-c3");
-//        }
-//
-//        @Test @DisplayName("Relationship Add/Drop/Modify")
-//        void visitRelationshipOperations() {
-//            visitor.visitAddedRelationship(RelationshipModel.builder().constraintName("r1").build());
-//            visitor.visitDroppedRelationship(RelationshipModel.builder().constraintName("r2").build());
-//            visitor.visitModifiedRelationship(RelationshipModel.builder().constraintName("r3").build(), null);
-//            String sql = visitor.getGeneratedSql();
-//            assertThat(sql).contains("ADD-REL-r1", "DROP-REL-r2", "MODIFY-REL-r3");
-//        }
-//
-//        @Test @DisplayName("TableGenerator Add/Drop/Modify")
-//        void visitTableGeneratorOperations() {
-//            // 이 메서드들은 Contributor를 추가하는지만 확인 (Dialect 메서드 없음)
-//            visitor.visitAddedTableGenerator(null);
-//            visitor.visitDroppedTableGenerator(null);
-//            visitor.visitModifiedTableGenerator(null, null);
-//            assertThat(visitor.getAlterBuilder().getUnits()).hasSize(3);
-//        }
-//
-//        @Test @DisplayName("PrimaryKey Add/Drop/Modify")
-//        void visitPrimaryKeyOperations() {
-//            visitor.visitAddedPrimaryKey(Collections.emptyList());
-//            assertThat(visitor.getGeneratedSql()).contains("ADD-PK");
-//
-//            visitor.visitDroppedPrimaryKey();
-//            assertThat(visitor.getGeneratedSql()).contains("DROP-PK");
-//
-//            visitor.visitModifiedPrimaryKey(null, null);
-//            assertThat(visitor.getGeneratedSql()).containsSubsequence("DROP-PK", "ADD-PK");
-//        }
-//    }
-//}
+package org.jinx.migration.dialect.mysql;
+
+import org.jinx.migration.AbstractDialect;
+import org.jinx.migration.AbstractMigrationVisitor;
+import org.jinx.migration.AlterTableBuilder;
+import org.jinx.migration.contributor.DdlContributor;
+import org.jinx.migration.contributor.alter.*;
+import org.jinx.migration.contributor.create.*;
+import org.jinx.migration.contributor.drop.*;
+import org.jinx.migration.spi.JavaTypeMapper;
+import org.jinx.migration.spi.ValueTransformer;
+import org.jinx.migration.spi.dialect.DdlDialect;
+import org.jinx.migration.dialect.mysql.MySqlMigrationVisitor;
+import org.jinx.model.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.lang.reflect.Field;
+import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class MySqlMigrationVisitorTest {
+
+    private DdlDialect dialect;
+    private DiffResult.ModifiedEntity diff;
+    private EntityModel newEntity;
+    private ColumnModel idCol;
+    private ColumnModel nameCol;
+
+    // ---- 테스트 전용 AlterBuilder: add된 Contributor의 클래스명을 기록하고 build()에서 조인해 반환 ----
+    static class RecordingAlterBuilder extends AlterTableBuilder {
+        final List<Class<?>> addedTypes = new ArrayList<>();
+        RecordingAlterBuilder(String tableName, DdlDialect dialect) {
+            super(tableName, dialect);
+        }
+        @Override
+        public AlterTableBuilder add(DdlContributor unit) {
+            addedTypes.add(unit.getClass());
+            // super.add(unit) 호출해도 되지만, 실제 contribute 실행을 피하려면 생략 가능.
+            return this;
+        }
+        @Override
+        public String build() {
+            // 테스트 편의상 타입명만 줄바꿈으로 연결해 반환
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < addedTypes.size(); i++) {
+                if (i > 0) sb.append('\n');
+                sb.append(addedTypes.get(i).getSimpleName());
+            }
+            return sb.toString();
+        }
+    }
+
+    // 간단한 DdlDialect (실제 실행 경로에선 사용 안 함)
+    static class MinimalDialect extends AbstractDialect implements DdlDialect {
+        @Override protected JavaTypeMapper initializeJavaTypeMapper() {
+            return clazz -> new JavaTypeMapper.JavaType() {
+                @Override public String getSqlType(int length, int precision, int scale) { return "DUMMY"; }
+                @Override public boolean needsQuotes() { return true; }
+                @Override public String getDefaultValue() { return "NULL"; }
+            };
+        }
+        @Override protected ValueTransformer initializeValueTransformer() { return (v,t)-> t.needsQuotes() ? "'" + v + "'" : v; }
+        @Override public String quoteIdentifier(String raw) { return "\"" + raw + "\""; }
+        @Override public org.jinx.migration.spi.visitor.SqlGeneratingVisitor createVisitor(DiffResult.ModifiedEntity diff) { return null; }
+        @Override public JavaTypeMapper getJavaTypeMapper() { return this.javaTypeMapper; }
+        // DdlDialect 나머지 메서드는 테스트에서 호출되지 않으므로 생략 가능하지만, 필요시 더미로 구현 가능
+        @Override public String openCreateTable(String tableName) { return ""; }
+        @Override public String closeCreateTable() { return ""; }
+        @Override public String getCreateTableSql(EntityModel entity) { return ""; }
+        @Override public String getDropTableSql(String tableName) { return ""; }
+        @Override public String getAlterTableSql(DiffResult.ModifiedEntity modifiedEntity) { return ""; }
+        @Override public String getRenameTableSql(String oldTableName, String newTableName) { return ""; }
+        @Override public String getColumnDefinitionSql(org.jinx.model.ColumnModel column) { return ""; }
+        @Override public String getAddColumnSql(String table, org.jinx.model.ColumnModel column) { return ""; }
+        @Override public String getDropColumnSql(String table, org.jinx.model.ColumnModel column) { return ""; }
+        @Override public String getModifyColumnSql(String table, org.jinx.model.ColumnModel newColumn, org.jinx.model.ColumnModel oldColumn) { return ""; }
+        @Override public String getRenameColumnSql(String table, org.jinx.model.ColumnModel newColumn, org.jinx.model.ColumnModel oldColumn) { return ""; }
+        @Override public String getPrimaryKeyDefinitionSql(List<String> pkColumns) { return ""; }
+        @Override public String getAddPrimaryKeySql(String table, List<String> pkColumns) { return ""; }
+        @Override public String getDropPrimaryKeySql(String table, Collection<org.jinx.model.ColumnModel> currentColumns) { return ""; }
+        @Override public String getConstraintDefinitionSql(org.jinx.model.ConstraintModel constraint) { return ""; }
+        @Override public String getAddConstraintSql(String table, org.jinx.model.ConstraintModel constraint) { return ""; }
+        @Override public String getDropConstraintSql(String table, org.jinx.model.ConstraintModel constraint) { return ""; }
+        @Override public String getModifyConstraintSql(String table, org.jinx.model.ConstraintModel newConstraint, org.jinx.model.ConstraintModel oldConstraint) { return ""; }
+        @Override public String indexStatement(org.jinx.model.IndexModel idx, String table) { return ""; }
+        @Override public String getDropIndexSql(String table, org.jinx.model.IndexModel index) { return ""; }
+        @Override public String getModifyIndexSql(String table, org.jinx.model.IndexModel newIndex, org.jinx.model.IndexModel oldIndex) { return ""; }
+        @Override public String getAddRelationshipSql(String table, org.jinx.model.RelationshipModel rel) { return ""; }
+        @Override public String getDropRelationshipSql(String table, org.jinx.model.RelationshipModel rel) { return ""; }
+        @Override public String getModifyRelationshipSql(String table, org.jinx.model.RelationshipModel newRel, org.jinx.model.RelationshipModel oldRel) { return ""; }
+    }
+
+    @BeforeEach
+    void setUp() {
+        dialect = new MinimalDialect();
+
+        // 컬럼 목킹: id(pk), name(non-pk)
+        idCol = mock(ColumnModel.class);
+        when(idCol.getColumnName()).thenReturn("id");
+        when(idCol.isPrimaryKey()).thenReturn(true);
+
+        nameCol = mock(ColumnModel.class);
+        when(nameCol.getColumnName()).thenReturn("name");
+        when(nameCol.isPrimaryKey()).thenReturn(false);
+
+        // newEntity 컬럼 맵
+        newEntity = mock(EntityModel.class);
+        Map<String, ColumnModel> cols = new LinkedHashMap<>();
+        cols.put("id", idCol);
+        cols.put("name", nameCol);
+        when(newEntity.getTableName()).thenReturn("t");
+        when(newEntity.getColumns()).thenReturn((Map) cols);
+
+        // diff
+        diff = mock(DiffResult.ModifiedEntity.class);
+        when(diff.getNewEntity()).thenReturn(newEntity);
+    }
+
+    private MySqlMigrationVisitor newVisitorWithRecordingBuilder() throws NoSuchFieldException, IllegalAccessException {
+        MySqlMigrationVisitor v = new MySqlMigrationVisitor(diff, dialect);
+        // alterBuilder 교체 (같은 패키지이므로 protected 접근 가능)
+        Field f = AbstractMigrationVisitor.class.getDeclaredField("alterBuilder");
+        f.setAccessible(true);
+        f.set(v, new RecordingAlterBuilder("t", dialect));
+        return v;
+    }
+
+    @Test
+    @DisplayName("테이블 이름 변경 시 TableRenameContributor가 추가된다")
+    void visitRenamedTable_adds_rename_contributor() throws NoSuchFieldException, IllegalAccessException {
+        MySqlMigrationVisitor v = newVisitorWithRecordingBuilder();
+
+        // RenamedTable: getOldEntity()/getNewEntity() -> EntityModel.getTableName()
+        DiffResult.RenamedTable r = mock(DiffResult.RenamedTable.class);
+        EntityModel oldE = mock(EntityModel.class);
+        EntityModel newE = mock(EntityModel.class);
+        when(oldE.getTableName()).thenReturn("old_t");
+        when(newE.getTableName()).thenReturn("new_t");
+        when(r.getOldEntity()).thenReturn(oldE);
+        when(r.getNewEntity()).thenReturn(newE);
+
+        v.visitRenamedTable(r);
+
+        RecordingAlterBuilder rec = (RecordingAlterBuilder) v.getAlterBuilder();
+        assertEquals(List.of(TableRenameContributor.class), rec.addedTypes);
+    }
+
+    @Test
+    @DisplayName("컬럼 추가/삭제/수정/이름변경에 알맞은 Contributor가 추가된다")
+    void visitColumn_variants_add_expected_contributors() throws NoSuchFieldException, IllegalAccessException {
+        MySqlMigrationVisitor v = newVisitorWithRecordingBuilder();
+        RecordingAlterBuilder rec = (RecordingAlterBuilder) v.getAlterBuilder();
+
+        // ADD
+        v.visitAddedColumn(nameCol);
+        assertEquals(ColumnAddContributor.class, rec.addedTypes.get(0));
+
+        // DROP
+        v.visitDroppedColumn(nameCol);
+        assertEquals(ColumnDropContributor.class, rec.addedTypes.get(1));
+
+        // MODIFY (pk 관여 X): new(pk=false), old(pk=false)
+        ColumnModel oldNonPk = mock(ColumnModel.class);
+        when(oldNonPk.getColumnName()).thenReturn("name_old");
+        when(oldNonPk.isPrimaryKey()).thenReturn(false);
+
+        v.visitModifiedColumn(nameCol, oldNonPk);
+        assertEquals(ColumnModifyContributor.class, rec.addedTypes.get(2));
+
+        // MODIFY (pk 관여 O): new(pk=true) -> dropPK, addPK, modify
+        ColumnModel newPk = mock(ColumnModel.class);
+        when(newPk.getColumnName()).thenReturn("id");
+        when(newPk.isPrimaryKey()).thenReturn(true);
+
+        v.visitModifiedColumn(newPk, oldNonPk);
+        assertEquals(PrimaryKeyComplexDropContributor.class, rec.addedTypes.get(3));
+        assertEquals(PrimaryKeyAddContributor.class,           rec.addedTypes.get(4));
+        assertEquals(ColumnModifyContributor.class,            rec.addedTypes.get(5));
+
+        // RENAME (old가 pk O): dropPK, rename, addPK
+        ColumnModel oldPk = mock(ColumnModel.class);
+        when(oldPk.getColumnName()).thenReturn("id_old");
+        when(oldPk.isPrimaryKey()).thenReturn(true);
+        ColumnModel newForRename = mock(ColumnModel.class);
+        when(newForRename.getColumnName()).thenReturn("id_new");
+        when(newForRename.isPrimaryKey()).thenReturn(false); // 신컬럼 pk 여부는 무관
+
+        v.visitRenamedColumn(newForRename, oldPk);
+        assertEquals(PrimaryKeyComplexDropContributor.class, rec.addedTypes.get(6));
+        assertEquals(ColumnRenameContributor.class,          rec.addedTypes.get(7));
+        assertEquals(PrimaryKeyAddContributor.class,         rec.addedTypes.get(8));
+
+        // RENAME (old가 pk X): rename만
+        ColumnModel oldNonPk2 = mock(ColumnModel.class);
+        when(oldNonPk2.getColumnName()).thenReturn("old_name");
+        when(oldNonPk2.isPrimaryKey()).thenReturn(false);
+        ColumnModel newNonPk2 = mock(ColumnModel.class);
+        when(newNonPk2.getColumnName()).thenReturn("new_name");
+        when(newNonPk2.isPrimaryKey()).thenReturn(false);
+
+        v.visitRenamedColumn(newNonPk2, oldNonPk2);
+        assertEquals(ColumnRenameContributor.class, rec.addedTypes.get(9));
+    }
+
+    @Test
+    @DisplayName("PK 추가/삭제/수정 컨트리뷰터가 순서대로 추가된다")
+    void visitPrimaryKey_variants() throws NoSuchFieldException, IllegalAccessException {
+        MySqlMigrationVisitor v = newVisitorWithRecordingBuilder();
+        RecordingAlterBuilder rec = (RecordingAlterBuilder) v.getAlterBuilder();
+
+        // added
+        v.visitAddedPrimaryKey(List.of("id"));
+        assertEquals(PrimaryKeyAddContributor.class, rec.addedTypes.get(0));
+
+        // dropped
+        v.visitDroppedPrimaryKey();
+        assertEquals(PrimaryKeyComplexDropContributor.class, rec.addedTypes.get(1));
+
+        // modified -> drop, add
+        v.visitModifiedPrimaryKey(List.of("id"), List.of("id"));
+        assertEquals(PrimaryKeyComplexDropContributor.class, rec.addedTypes.get(2));
+        assertEquals(PrimaryKeyAddContributor.class,         rec.addedTypes.get(3));
+    }
+
+    @Test
+    @DisplayName("인덱스/제약/관계 추가/삭제/수정 컨트리뷰터가 올바르게 추가된다")
+    void visitIndex_constraint_relationship_variants() throws NoSuchFieldException, IllegalAccessException {
+        MySqlMigrationVisitor v = newVisitorWithRecordingBuilder();
+        RecordingAlterBuilder rec = (RecordingAlterBuilder) v.getAlterBuilder();
+
+        IndexModel idx = mock(IndexModel.class);
+        ConstraintModel cs = mock(ConstraintModel.class);
+        RelationshipModel rel = mock(RelationshipModel.class);
+
+        v.visitAddedIndex(idx);
+        v.visitDroppedIndex(idx);
+        v.visitModifiedIndex(idx, idx);
+        v.visitAddedConstraint(cs);
+        v.visitDroppedConstraint(cs);
+        v.visitModifiedConstraint(cs, cs);
+        v.visitAddedRelationship(rel);
+        v.visitDroppedRelationship(rel);
+        v.visitModifiedRelationship(rel, rel);
+
+        List<Class<?>> expected = List.of(
+                IndexAddContributor.class,
+                IndexDropContributor.class,
+                IndexModifyContributor.class,
+                ConstraintAddContributor.class,
+                ConstraintDropContributor.class,
+                ConstraintModifyContributor.class,
+                RelationshipAddContributor.class,
+                RelationshipDropContributor.class,
+                RelationshipModifyContributor.class
+        );
+        assertEquals(expected, rec.addedTypes);
+    }
+
+    @Test
+    @DisplayName("getGeneratedSql은 RecordingAlterBuilder의 build 결과를 반환한다")
+    void getGeneratedSql_returns_built_sequence() throws NoSuchFieldException, IllegalAccessException {
+        MySqlMigrationVisitor v = newVisitorWithRecordingBuilder();
+        RecordingAlterBuilder rec = (RecordingAlterBuilder) v.getAlterBuilder();
+
+        v.visitAddedColumn(nameCol);
+        v.visitDroppedPrimaryKey();
+        v.visitAddedPrimaryKey(List.of("id"));
+
+        String sql = v.getGeneratedSql();
+        // build()는 타입명을 줄바꿈으로 연결함
+        assertEquals(String.join("\n",
+                ColumnAddContributor.class.getSimpleName(),
+                PrimaryKeyComplexDropContributor.class.getSimpleName(),
+                PrimaryKeyAddContributor.class.getSimpleName()
+        ), sql);
+    }
+}
