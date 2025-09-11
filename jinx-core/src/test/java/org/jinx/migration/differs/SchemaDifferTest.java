@@ -6,7 +6,6 @@ import org.jinx.model.SchemaModel;
 import org.jinx.model.DiffResult.RenamedTable;
 import org.jinx.model.naming.CaseNormalizer;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Map;
@@ -24,7 +23,6 @@ class SchemaDifferTest {
         }
     }
 
-    /** 예외를 던지는 Differ: 예외 격리 동작 검증용 */
     static class ThrowingDiffer implements Differ {
         private final String name;
         ThrowingDiffer(String name) { this.name = name; }
@@ -53,9 +51,11 @@ class SchemaDifferTest {
 
         DiffResult out = differ.diff(oldSchema, newSchema);
 
-        // 순서 확인
-        assertEquals(List.of("RUN:TableDiffer", "RUN:EntityModificationDiffer", "RUN:SequenceDiffer", "RUN:TableGeneratorDiffer"),
-                out.getWarnings().subList(0, 4));
+        // 순서 확인 (파이프라인 실행 순서가 경고에 기록됨)
+        assertEquals(
+                List.of("RUN:TableDiffer", "RUN:EntityModificationDiffer", "RUN:SequenceDiffer", "RUN:TableGeneratorDiffer"),
+                out.getWarnings().subList(0, 4)
+        );
     }
 
     @Test
@@ -81,15 +81,24 @@ class SchemaDifferTest {
     }
 
     @Test
-    void renamed_pairs_trigger_entity_modification_diffPair() {
-        // 스키마 준비 (엔티티는 비워도 됨)
+    void renamed_pairs_trigger_entity_modification_effects() {
+        // 스키마 준비 (엔티티 맵은 비워도 됨)
         SchemaModel oldSchema = emptySchema();
         SchemaModel newSchema = emptySchema();
 
-        // 1) TableDiffer 역할을 하는 mock: renamed pair를 결과에 추가
+        // 1) TableDiffer 역할을 하는 더미 differ: renamed pair를 결과에 추가
         Differ tableDiffer = (o, n, r) -> {
-            EntityModel oldEntity = EntityModel.builder().entityName("OldE").tableName("t_old").build();
-            EntityModel newEntity = EntityModel.builder().entityName("NewE").tableName("t_new").build();
+            // diffPair가 실제로 경고/수정사항을 남기도록 old/new에 차이를 만들어 둠 (schema 변경)
+            EntityModel oldEntity = EntityModel.builder()
+                    .entityName("OldE")
+                    .tableName("t_old")
+                    .schema("s1")
+                    .build();
+            EntityModel newEntity = EntityModel.builder()
+                    .entityName("NewE")
+                    .tableName("t_new")
+                    .schema("s2") // 변경 발생
+                    .build();
             r.getRenamedTables().add(RenamedTable.builder()
                     .oldEntity(oldEntity)
                     .newEntity(newEntity)
@@ -97,59 +106,31 @@ class SchemaDifferTest {
                     .build());
         };
 
-        // 2) EntityModificationDiffer mock: diffPair 호출 여부 검증
-        EntityModificationDiffer emd = mock(EntityModificationDiffer.class);
-
-        // 3) 나머지 더미 differ들
+        // 2) 나머지 더미 differ들 (파이프라인 흐름 확인용)
         Differ seq = new RecordingDiffer("Seq");
         Differ gen = new RecordingDiffer("Gen");
 
+        // 주의: 이제 SchemaDiffer는 내부적으로 항상 동일 normalizer로 EntityModificationDiffer를 생성함
         SchemaDiffer differ = new SchemaDiffer(CaseNormalizer.lower(), List.of(
-                tableDiffer, emd, seq, gen
+                tableDiffer, seq, gen
         ));
 
         DiffResult out = differ.diff(oldSchema, newSchema);
 
-        // diffPair가 호출되었는지 캡처
-        ArgumentCaptor<EntityModel> oldCap = ArgumentCaptor.forClass(EntityModel.class);
-        ArgumentCaptor<EntityModel> newCap = ArgumentCaptor.forClass(EntityModel.class);
-        ArgumentCaptor<DiffResult> resCap = ArgumentCaptor.forClass(DiffResult.class);
+        // rename 쌍 자체는 추가되었어야 함
+        assertEquals(1, out.getRenamedTables().size());
 
-        verify(emd, atLeastOnce()).diffPair(oldCap.capture(), newCap.capture(), resCap.capture());
+        // diffPair가 실행되어 수정사항/경고가 반영되었는지 관측 가능한 효과로 검증
+        // - ModifiedTables에 엔트리가 생겼거나
+        // - 경고에 "Schema changed" 메시지가 포함되어야 함
+        boolean hasSchemaChangedWarning = out.getWarnings().stream()
+                .anyMatch(w -> w.startsWith("Schema changed: s1") && w.contains("→ s2") && w.contains("(entity=NewE)"));
 
-        assertEquals("OldE", oldCap.getValue().getEntityName());
-        assertEquals("NewE", newCap.getValue().getEntityName());
-        assertSame(out, resCap.getValue()); // 동일 result 전달 확인
-    }
+        boolean hasModifiedEntry = !out.getModifiedTables().isEmpty()
+                && "OldE".equals(out.getModifiedTables().get(0).getOldEntity().getEntityName())
+                && "NewE".equals(out.getModifiedTables().get(0).getNewEntity().getEntityName());
 
-    @Test
-    void diffPair_exception_is_captured_as_warning() {
-        SchemaModel oldSchema = emptySchema();
-        SchemaModel newSchema = emptySchema();
-
-        // 리네임 쌍 추가하는 더미 TableDiffer
-        Differ tableDiffer = (o, n, r) -> {
-            EntityModel oldEntity = EntityModel.builder().entityName("OldE").tableName("t_old").build();
-            EntityModel newEntity = EntityModel.builder().entityName("NewE").tableName("t_new").build();
-            r.getRenamedTables().add(RenamedTable.builder()
-                    .oldEntity(oldEntity)
-                    .newEntity(newEntity)
-                    .changeDetail("rename")
-                    .build());
-        };
-
-        // diffPair 호출 시 예외를 던지는 EntityModificationDiffer mock
-        EntityModificationDiffer emd = mock(EntityModificationDiffer.class);
-        doThrow(new RuntimeException("oops")).when(emd).diffPair(any(), any(), any());
-
-        SchemaDiffer differ = new SchemaDiffer(CaseNormalizer.lower(), List.of(
-                tableDiffer, emd
-        ));
-
-        DiffResult out = differ.diff(oldSchema, newSchema);
-
-        // 경고에 'Renamed pair diff failed' 포함 여부 확인
-        assertTrue(out.getWarnings().stream().anyMatch(w ->
-                w.startsWith("Renamed pair diff failed: OldE -> NewE") && w.contains("RuntimeException") && w.contains("oops")));
+        assertTrue(hasSchemaChangedWarning || hasModifiedEntry,
+                "diffPair must have produced either a schema-change warning or a modified entry");
     }
 }

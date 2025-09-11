@@ -38,7 +38,7 @@ public class SchemaDiffer {
      */
     private static List<Differ> createDefaultDiffers(CaseNormalizer normalizer) {
         return List.of(
-                new TableDiffer(),
+                new TableDiffer(normalizer),
                 new EntityModificationDiffer(normalizer),
                 new SequenceDiffer(),
                 new TableGeneratorDiffer()
