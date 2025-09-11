@@ -1,97 +1,77 @@
 package org.jinx.migration.differs;
 
+import org.jinx.migration.differs.model.TableKey;
 import org.jinx.model.ColumnModel;
 import org.jinx.model.DiffResult;
 import org.jinx.model.EntityModel;
 import org.jinx.model.SchemaModel;
+import org.jinx.model.naming.CaseNormalizer;
 
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class TableDiffer implements Differ {
+    private final CaseNormalizer normalizer;
+
+    public TableDiffer() {
+        this(CaseNormalizer.lower());
+    }
+    public TableDiffer(CaseNormalizer normalizer) {
+        this.normalizer = Objects.requireNonNull(normalizer, "normalizer must not be null");
+    }
+
+
     @Override
     public void diff(SchemaModel oldSchema, SchemaModel newSchema, DiffResult result) {
-        detectRenamedTables(oldSchema, newSchema, result);
-        detectAddedTables(oldSchema, newSchema, result);
-        detectDroppedTables(oldSchema, newSchema, result);
-    }
+        var oldEntities = Optional.ofNullable(oldSchema.getEntities()).orElseGet(Map::of);
+        var newEntities = Optional.ofNullable(newSchema.getEntities()).orElseGet(Map::of);
 
-    private void detectRenamedTables(SchemaModel oldSchema, SchemaModel newSchema, DiffResult result) {
-        Map<String, Set<String>> oldPkColumnNames = oldSchema.getEntities().values().stream()
-                .collect(Collectors.toMap(
-                        EntityModel::getEntityName,
-                        e -> e.getColumns().values().stream()
-                                .filter(ColumnModel::isPrimaryKey)
-                                .map(ColumnModel::getColumnName)
-                                .collect(Collectors.toSet())
-                ));
+        Set<String> oldNames = new LinkedHashSet<>(oldEntities.keySet());
+        Set<String> newNames = new LinkedHashSet<>(newEntities.keySet());
 
-        Map<String, Set<Long>> oldColumnHashes = oldSchema.getEntities().values().stream()
-                .collect(Collectors.toMap(
-                        EntityModel::getEntityName,
-                        e -> e.getColumns().values().stream()
-                                .map(ColumnModel::getAttributeHash)
-                                .collect(Collectors.toSet())
-                ));
+        // old: 이름→키
+        Map<String, TableKey> oldNameToKey = new LinkedHashMap<>();
+        for (var e : oldEntities.values()) {
+            oldNameToKey.put(e.getEntityName(), TableKey.of(e, normalizer));
+        }
+        // new: 키→이름들
+        Map<TableKey, List<String>> newKeyToNames = new LinkedHashMap<>();
+        for (var e : newEntities.values()) {
+            TableKey k = TableKey.of(e, normalizer);
+            newKeyToNames.computeIfAbsent(k, _k -> new ArrayList<>()).add(e.getEntityName());
+        }
 
-        Map<String, Set<String>> newPkColumnNames = newSchema.getEntities().values().stream()
-                .collect(Collectors.toMap(
-                        EntityModel::getEntityName,
-                        e -> e.getColumns().values().stream()
-                                .filter(ColumnModel::isPrimaryKey)
-                                .map(ColumnModel::getColumnName)
-                                .collect(Collectors.toSet())
-                ));
+        // 이름이 바뀐 후보만 추림
+        Set<String> oldOnly = oldNames.stream().filter(n -> !newNames.contains(n))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> newOnly = newNames.stream().filter(n -> !oldNames.contains(n))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
 
-        Map<String, Set<Long>> newColumnHashes = newSchema.getEntities().values().stream()
-                .collect(Collectors.toMap(
-                        EntityModel::getEntityName,
-                        e -> e.getColumns().values().stream()
-                                .map(ColumnModel::getAttributeHash)
-                                .collect(Collectors.toSet())
-                ));
+        for (String oldName : new ArrayList<>(oldOnly)) {
+            TableKey key = oldNameToKey.get(oldName);
+            List<String> candidates = newKeyToNames.getOrDefault(key, List.of()).stream()
+                    .filter(newOnly::contains)
+                    .toList();
 
-        for (String oldEntityName : oldSchema.getEntities().keySet()) {
-            if (!newSchema.getEntities().containsKey(oldEntityName)) {
-                EntityModel oldEntity = oldSchema.getEntities().get(oldEntityName);
-                Set<String> oldPkNames = oldPkColumnNames.get(oldEntityName);
-                Set<Long> oldHashes = oldColumnHashes.get(oldEntityName);
-
-                for (String newEntityName : newSchema.getEntities().keySet()) {
-                    if (!oldSchema.getEntities().containsKey(newEntityName)) {
-                        EntityModel newEntity = newSchema.getEntities().get(newEntityName);
-                        Set<String> newPkNames = newPkColumnNames.get(newEntityName);
-                        Set<Long> newHashes = newColumnHashes.get(newEntityName);
-
-                        if (oldPkNames.equals(newPkNames) && oldHashes.equals(newHashes)) {
-                            result.getRenamedTables().add(DiffResult.RenamedTable.builder()
-                                    .oldEntity(oldEntity)
-                                    .newEntity(newEntity)
-                                    .changeDetail("Table renamed from " + oldEntity.getTableName() + " to " + newEntity.getTableName())
-                                    .build());
-                        }
-                    }
-                }
+            if (candidates.size() == 1) {
+                String newName = candidates.get(0);
+                var oldEntity = oldEntities.get(oldName);
+                var newEntity = newEntities.get(newName);
+                result.getRenamedTables().add(DiffResult.RenamedTable.builder()
+                        .oldEntity(oldEntity)
+                        .newEntity(newEntity)
+                        .changeDetail("Table renamed from " + oldEntity.getTableName() + " to " + newEntity.getTableName())
+                        .build());
+                oldOnly.remove(oldName);
+                newOnly.remove(newName);
+            } else if (candidates.size() > 1) {
+                result.getWarnings().add("[AMBIGUOUS-RENAME] old='" + oldName + "' candidates=" + candidates
+                        + " pk=" + key.pkColKeys());
             }
         }
+
+        newOnly.forEach(name -> result.getAddedTables().add(newEntities.get(name)));
+        oldOnly.forEach(name -> result.getDroppedTables().add(oldEntities.get(name)));
     }
 
-    private void detectAddedTables(SchemaModel oldSchema, SchemaModel newSchema, DiffResult result) {
-        newSchema.getEntities().forEach((name, newEntity) -> {
-            if (!oldSchema.getEntities().containsKey(name) &&
-                    !result.getRenamedTables().stream().anyMatch(rt -> rt.getNewEntity().getEntityName().equals(name))) {
-                result.getAddedTables().add(newEntity);
-            }
-        });
-    }
-
-    private void detectDroppedTables(SchemaModel oldSchema, SchemaModel newSchema, DiffResult result) {
-        oldSchema.getEntities().forEach((name, oldEntity) -> {
-            if (!newSchema.getEntities().containsKey(name) &&
-                    !result.getRenamedTables().stream().anyMatch(rt -> rt.getOldEntity().getEntityName().equals(name))) {
-                result.getDroppedTables().add(oldEntity);
-            }
-        });
-    }
 }
