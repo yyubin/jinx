@@ -2,7 +2,6 @@ package org.jinx.migration.dialect.mysql;
 
 import org.jinx.migration.spi.IdentifierPolicy;
 
-
 class MySqlIdentifierPolicy implements IdentifierPolicy {
     public int maxLength()          { return 64; }
     public String quote(String raw) { return "`" + raw + "`"; }

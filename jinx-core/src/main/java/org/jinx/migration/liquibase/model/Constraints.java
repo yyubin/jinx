@@ -6,10 +6,11 @@ import lombok.Data;
 import java.util.List;
 @Data
 @Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class Constraints {
     private Boolean primaryKey;
     private String primaryKeyName;
-    private boolean nullable;
+    private Boolean nullable;
     private Boolean unique;
     private String uniqueConstraintName;
 }
