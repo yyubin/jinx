@@ -173,10 +173,12 @@ public class MySqlDialect extends AbstractDialect
         JavaTypeMapper.JavaType javaTypeMapped = javaTypeMapper.map(javaType);
 
         boolean overrideContainsIdentity = false;
+        boolean overrideContainsNotNull = false;
         String sqlType;
         if (c.getSqlTypeOverride() != null && !c.getSqlTypeOverride().trim().isEmpty()) {
             String override = c.getSqlTypeOverride().trim();
             overrideContainsIdentity = override.matches("(?i).*\\bauto_increment\\b.*");
+            overrideContainsNotNull = override.matches("(?i).*\\bnot\\s+null\\b.*");
             sqlType = override;
         } else if (c.isLob()) {
             sqlType = c.getJavaType().equals("java.lang.String") ? "TEXT" : "BLOB";
@@ -199,7 +201,9 @@ public class MySqlDialect extends AbstractDialect
         sb.append(quoteIdentifier(c.getColumnName())).append(" ").append(sqlType);
 
         if (!c.isNullable() || isIdentityLike) {
-            sb.append(" NOT NULL");
+            if (!overrideContainsNotNull) {
+                sb.append(" NOT NULL");
+            }
         }
 
         if (shouldUseAutoIncrement(c.getGenerationStrategy()) && !overrideContainsIdentity) {
@@ -237,7 +241,7 @@ public class MySqlDialect extends AbstractDialect
         StringBuilder sb = new StringBuilder();
 
         if (col.isPrimaryKey()) {
-            sb.append(getDropPrimaryKeySql(table));
+            sb.append(getDropPrimaryKeySql(table, List.of(col)));
         }
 
         sb.append("ALTER TABLE ").append(quoteIdentifier(table))
@@ -249,9 +253,8 @@ public class MySqlDialect extends AbstractDialect
     @Override
     public String getModifyColumnSql(String table, ColumnModel newCol, ColumnModel oldCol) {
         StringBuilder sb = new StringBuilder();
-        sb.append("ALTER TABLE ").append(quoteIdentifier(table))
-                .append(" MODIFY COLUMN ").append(getColumnDefinitionSql(newCol)).append(";\n");
-
+        String defSql = getColumnDefinitionSql(newCol).replaceAll("(?i)\\s+PRIMARY\\s+KEY\\b", "");
+        sb.append("ALTER TABLE ").append(quoteIdentifier(table)).append(" MODIFY COLUMN ").append(defSql).append(";\n");
         return sb.toString();
     }
 
@@ -290,8 +293,39 @@ public class MySqlDialect extends AbstractDialect
 
     @Override
     public String getAddConstraintSql(String table, ConstraintModel cons) {
-        return getConstraintDefinitionSql(cons).replaceFirst("CONSTRAINT", "ADD CONSTRAINT") + ";\n";
+        switch (cons.getType()) {
+            case UNIQUE -> {
+                String cols = cons.getColumns().stream().map(this::quoteIdentifier).collect(Collectors.joining(", "));
+                return "ALTER TABLE " + quoteIdentifier(table)
+                        + " ADD CONSTRAINT " + quoteIdentifier(cons.getName())
+                        + " UNIQUE (" + cols + ");\n";
+            }
+            case CHECK -> {
+                StringBuilder s = new StringBuilder();
+                s.append("-- WARNING: CHECK constraints may not be enforced in some databases\n");
+                s.append("ALTER TABLE ").append(quoteIdentifier(table))
+                        .append(" ADD CONSTRAINT ").append(quoteIdentifier(cons.getName()));
+                if (cons.getCheckClause() != null) {
+                    s.append(" CHECK (").append(cons.getCheckClause()).append(")");
+                }
+                s.append(";\n");
+                return s.toString();
+            }
+            case PRIMARY_KEY -> {
+                return "ALTER TABLE " + quoteIdentifier(table)
+                        + " ADD " + getPrimaryKeyDefinitionSql(cons.getColumns()) + ";\n";
+            }
+            case INDEX -> {
+                return indexStatement(
+                        IndexModel.builder().indexName(cons.getName()).columnNames(cons.getColumns()).build(),
+                        table);
+            }
+            default -> {
+                return "";
+            }
+        }
     }
+
 
     @Override
     public String getDropConstraintSql(String table, ConstraintModel cons) {
@@ -314,7 +348,6 @@ public class MySqlDialect extends AbstractDialect
             }
         }
     }
-
 
     @Override
     public String getModifyConstraintSql(String table, ConstraintModel newCons, ConstraintModel oldCons) {

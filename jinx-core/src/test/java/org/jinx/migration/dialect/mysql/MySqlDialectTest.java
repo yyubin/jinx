@@ -223,7 +223,7 @@ class MySqlDialectTest {
         when(unique.getColumns()).thenReturn(List.of("email"));
         when(unique.getTableName()).thenReturn("users");
         assertEquals("CONSTRAINT `uq_user_email` UNIQUE (`email`)", d.getConstraintDefinitionSql(unique));
-        assertEquals("ADD CONSTRAINT `uq_user_email` UNIQUE (`email`);\n", d.getAddConstraintSql("users", unique));
+        assertEquals("ALTER TABLE `users` ADD CONSTRAINT `uq_user_email` UNIQUE (`email`);\n", d.getAddConstraintSql("users", unique));
         assertEquals("DROP INDEX `uq_user_email` ON `users`;\n",
                 d.getDropConstraintSql("users", unique));
 
