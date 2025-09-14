@@ -172,12 +172,18 @@ public class MySqlDialect extends AbstractDialect
         String javaType = c.getConversionClass() != null ? c.getConversionClass() : c.getJavaType();
         JavaTypeMapper.JavaType javaTypeMapped = javaTypeMapper.map(javaType);
 
-        String sqlType;
-        // If sqlTypeOverride is specified, use it directly
         boolean overrideContainsIdentity = false;
+        boolean overrideContainsNotNull = false;
+        boolean overrideContainsDefault = false;
+        boolean overrideContainsPrimaryKey = false;
+
+        String sqlType;
         if (c.getSqlTypeOverride() != null && !c.getSqlTypeOverride().trim().isEmpty()) {
             String override = c.getSqlTypeOverride().trim();
-            overrideContainsIdentity = override.matches("(?i).*\\bauto_increment\\b.*");
+            overrideContainsIdentity    = override.matches("(?i).*\\bauto_increment\\b.*");
+            overrideContainsNotNull     = override.matches("(?i).*\\bnot\\s+null\\b.*");
+            overrideContainsDefault     = override.matches("(?i).*\\bdefault\\b.*");
+            overrideContainsPrimaryKey  = override.matches("(?i).*\\bprimary\\s+key\\b.*");
             sqlType = override;
         } else if (c.isLob()) {
             sqlType = c.getJavaType().equals("java.lang.String") ? "TEXT" : "BLOB";
@@ -194,28 +200,36 @@ public class MySqlDialect extends AbstractDialect
             sqlType = javaTypeMapped.getSqlType(c.getLength(), c.getPrecision(), c.getScale());
         }
 
+        boolean isIdentityLike = overrideContainsIdentity || shouldUseAutoIncrement(c.getGenerationStrategy());
+
         StringBuilder sb = new StringBuilder();
         sb.append(quoteIdentifier(c.getColumnName())).append(" ").append(sqlType);
 
-        if (!c.isNullable()) sb.append(" NOT NULL");
+        if ((!c.isNullable() || isIdentityLike) && !overrideContainsNotNull) {
+            sb.append(" NOT NULL");
+        }
 
-        if (c.getGenerationStrategy() == GenerationStrategy.IDENTITY && !overrideContainsIdentity) {
-            sb.append(getIdentityClause(c));
-        } else if (c.isManualPrimaryKey()) {
+        if (shouldUseAutoIncrement(c.getGenerationStrategy()) && !overrideContainsIdentity) {
+            sb.append(getIdentityClause(c)); // " AUTO_INCREMENT"
+        }
+
+        if (c.isManualPrimaryKey() && !overrideContainsPrimaryKey) {
             sb.append(" PRIMARY KEY");
         }
 
-        if (c.getDefaultValue() != null) {
-            sb.append(" DEFAULT ").append(valueTransformer.quote(c.getDefaultValue(), javaTypeMapped));
-        } else if (c.getGenerationStrategy() == GenerationStrategy.UUID && getUuidDefaultValue() != null) {
-            // 함수형 기본값은 따옴표 없이 그대로 사용
-            sb.append(" DEFAULT ").append(getUuidDefaultValue());
-        } else if (javaTypeMapped.getDefaultValue() != null) {
-            sb.append(" DEFAULT ").append(valueTransformer.quote(javaTypeMapped.getDefaultValue(), javaTypeMapped));
+        if (!isIdentityLike && !c.isLob() && !overrideContainsDefault) {
+            if (c.getDefaultValue() != null) {
+                sb.append(" DEFAULT ").append(valueTransformer.quote(c.getDefaultValue(), javaTypeMapped));
+            } else if (c.getGenerationStrategy() == GenerationStrategy.UUID && getUuidDefaultValue() != null) {
+                sb.append(" DEFAULT ").append(getUuidDefaultValue()); // 함수형 기본값은 quote 없이
+            } else if (javaTypeMapped.getDefaultValue() != null) {
+                sb.append(" DEFAULT ").append(valueTransformer.quote(javaTypeMapped.getDefaultValue(), javaTypeMapped));
+            }
         }
 
         return sb.toString();
     }
+
 
     @Override
     public String getAddColumnSql(String table, ColumnModel col) {
@@ -230,7 +244,7 @@ public class MySqlDialect extends AbstractDialect
         StringBuilder sb = new StringBuilder();
 
         if (col.isPrimaryKey()) {
-            sb.append(getDropPrimaryKeySql(table));
+            sb.append(getDropPrimaryKeySql(table, List.of(col)));
         }
 
         sb.append("ALTER TABLE ").append(quoteIdentifier(table))
@@ -242,9 +256,8 @@ public class MySqlDialect extends AbstractDialect
     @Override
     public String getModifyColumnSql(String table, ColumnModel newCol, ColumnModel oldCol) {
         StringBuilder sb = new StringBuilder();
-        sb.append("ALTER TABLE ").append(quoteIdentifier(table))
-                .append(" MODIFY COLUMN ").append(getColumnDefinitionSql(newCol)).append(";\n");
-
+        String defSql = getColumnDefinitionSql(newCol).replaceAll("(?i)\\s+PRIMARY\\s+KEY\\b", "");
+        sb.append("ALTER TABLE ").append(quoteIdentifier(table)).append(" MODIFY COLUMN ").append(defSql).append(";\n");
         return sb.toString();
     }
 
@@ -283,21 +296,60 @@ public class MySqlDialect extends AbstractDialect
 
     @Override
     public String getAddConstraintSql(String table, ConstraintModel cons) {
-        return getConstraintDefinitionSql(cons).replaceFirst("CONSTRAINT", "ADD CONSTRAINT") + ";\n";
+        switch (cons.getType()) {
+            case UNIQUE -> {
+                String cols = cons.getColumns().stream().map(this::quoteIdentifier).collect(Collectors.joining(", "));
+                return "ALTER TABLE " + quoteIdentifier(table)
+                        + " ADD CONSTRAINT " + quoteIdentifier(cons.getName())
+                        + " UNIQUE (" + cols + ");\n";
+            }
+            case CHECK -> {
+                StringBuilder s = new StringBuilder();
+                s.append("-- WARNING: CHECK constraints may not be enforced in some databases\n");
+                s.append("ALTER TABLE ").append(quoteIdentifier(table))
+                        .append(" ADD CONSTRAINT ").append(quoteIdentifier(cons.getName()));
+                if (cons.getCheckClause() != null) {
+                    s.append(" CHECK (").append(cons.getCheckClause()).append(")");
+                }
+                s.append(";\n");
+                return s.toString();
+            }
+            case PRIMARY_KEY -> {
+                return "ALTER TABLE " + quoteIdentifier(table)
+                        + " ADD " + getPrimaryKeyDefinitionSql(cons.getColumns()) + ";\n";
+            }
+            case INDEX -> {
+                return indexStatement(
+                        IndexModel.builder().indexName(cons.getName()).columnNames(cons.getColumns()).build(),
+                        table);
+            }
+            default -> {
+                return "";
+            }
+        }
     }
+
 
     @Override
     public String getDropConstraintSql(String table, ConstraintModel cons) {
         StringBuilder sb = new StringBuilder("ALTER TABLE ").append(quoteIdentifier(table));
         switch (cons.getType()) {
-            case UNIQUE -> sb.append(" DROP KEY ");
-            case CHECK -> sb.append(" DROP CHECK ");
-            case PRIMARY_KEY -> sb.append(" DROP PRIMARY KEY ");
-            case INDEX -> sb.append(" DROP INDEX ");
-            default -> sb.append(" DROP CONSTRAINT ");
+            case UNIQUE, INDEX -> {
+                return getDropIndexSql(table, cons.getName());
+            }
+            case CHECK -> {
+                sb.append(" DROP CHECK ").append(quoteIdentifier(cons.getName())).append(";\n");
+                return sb.toString();
+            }
+            case PRIMARY_KEY -> {
+                sb.append(" DROP PRIMARY KEY;\n");
+                return sb.toString();
+            }
+            default -> {
+                // DEFAULT, NOT_NULL, AUTO 등은 ALTER COLUMN 경로에서 처리
+                return "";
+            }
         }
-        sb.append(quoteIdentifier(cons.getName())).append(";\n");
-        return sb.toString();
     }
 
     @Override
@@ -315,6 +367,13 @@ public class MySqlDialect extends AbstractDialect
     @Override
     public String getDropIndexSql(String table, IndexModel index) {
         return "DROP INDEX " + quoteIdentifier(index.getIndexName()) + " ON " + quoteIdentifier(table) + ";\n";
+    }
+
+    public String getDropIndexSql(String table, String indexName) {
+        if (indexName == null || indexName.isBlank()) {
+            throw new IllegalArgumentException("Index name must not be null/blank");
+        }
+        return "DROP INDEX " + quoteIdentifier(indexName) + " ON " + quoteIdentifier(table) + ";\n";
     }
 
     @Override
