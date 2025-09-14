@@ -1,7 +1,9 @@
 package org.jinx.model;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import org.jinx.migration.spi.visitor.SequenceVisitor;
 import org.jinx.migration.spi.visitor.TableContentVisitor;
 import org.jinx.migration.spi.visitor.TableGeneratorVisitor;
@@ -123,6 +125,8 @@ public class DiffResult {
 
     @Builder
     @Getter
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class RenamedTable {
         private EntityModel oldEntity;
         private EntityModel newEntity;

@@ -490,6 +490,21 @@ public class MySqlDialect extends AbstractDialect
         return "UUID()";
     }
 
+    @Override
+    public String getTableGeneratorPkColumnType() {
+        return "VARCHAR(255)";
+    }
+    
+    @Override
+    public String getTableGeneratorValueColumnType() {
+        return "BIGINT";
+    }
+    
+    @Override
+    public int getMaxIdentifierLength() {
+        return 64; // MySQL identifier limit
+    }
+
     // Liquibase helper
     public String getLiquibaseTypeName(ColumnModel column) {
         // If sqlTypeOverride is specified, use it directly

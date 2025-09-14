@@ -19,6 +19,16 @@ public class ColumnConfig {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private String defaultValueComputed;
     
+    // For InsertData operations
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String value;
+    
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String valueNumeric;
+    
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String valueComputed;
+    
     private Constraints constraints;
     private Boolean autoIncrement;
 
@@ -39,6 +49,11 @@ public class ColumnConfig {
         private String defaultValue;
         private String defaultValueSequenceNext;
         private String defaultValueComputed;
+        
+        // ── InsertData 전용 값 필드들 ──
+        private String value;
+        private String valueNumeric;
+        private String valueComputed;
 
         public ColumnConfigBuilder name(String name) {
             this.name = name;
@@ -87,6 +102,21 @@ public class ColumnConfig {
                 clearLowerPriorityValues("defaultValueComputed");
             }
             this.defaultValueComputed = defaultValueComputed;
+            return this;
+        }
+
+        public ColumnConfigBuilder value(String value) {
+            this.value = value;
+            return this;
+        }
+
+        public ColumnConfigBuilder valueNumeric(String valueNumeric) {
+            this.valueNumeric = valueNumeric;
+            return this;
+        }
+
+        public ColumnConfigBuilder valueComputed(String valueComputed) {
+            this.valueComputed = valueComputed;
             return this;
         }
 
@@ -154,12 +184,25 @@ public class ColumnConfig {
                 );
             }
 
+            int insertCount = 0;
+            if (value != null) insertCount++;
+            if (valueNumeric != null) insertCount++;
+            if (valueComputed != null) insertCount++;
+            if (insertCount > 1) {
+                throw new IllegalStateException(
+                    "ColumnConfig: Only one of value/valueNumeric/valueComputed may be set for InsertData."
+                );
+            }
+
             ColumnConfig config = new ColumnConfig();
             config.setName(name);
             config.setType(type);
             config.setDefaultValue(defaultValue);
             config.setDefaultValueSequenceNext(defaultValueSequenceNext);
             config.setDefaultValueComputed(defaultValueComputed);
+            config.setValue(value);
+            config.setValueNumeric(valueNumeric);
+            config.setValueComputed(valueComputed);
             config.setConstraints(constraints);
             config.setAutoIncrement(autoIncrement);
             return config;
