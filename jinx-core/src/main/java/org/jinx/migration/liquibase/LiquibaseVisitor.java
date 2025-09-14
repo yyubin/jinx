@@ -24,6 +24,34 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         this.idGenerator = idGenerator;
     }
 
+    private static class NamingUtil {
+        static String pkName(String tableName, List<String> columns) {
+            return "pk_" + tableName;
+        }
+        
+        static String uqName(String tableName, List<String> columns) {
+            return "uq_" + tableName + "_" + String.join("_", columns);
+        }
+        
+        static String ckName(String tableName, List<String> columns) {
+            return "ck_" + tableName;
+        }
+        
+        static String fkName(String fromTable, List<String> fromColumns, String toTable, List<String> toColumns) {
+            return "fk_" + fromTable + "_" + String.join("_", fromColumns) + "_" + toTable;
+        }
+    }
+
+    /**
+     * Gets table name safely with null checks
+     */
+    private String getTableNameSafely(String tableName) {
+        String name = tableName != null ? tableName : currentTableName;
+        if (name == null || name.trim().isEmpty()) {
+            throw new IllegalStateException("Table name is not available");
+        }
+        return name;
+    }
 
     // 복합 PK에서 문제 생길 수 있어서
     // 컬럼 constraints에는 primaryKey 표시를 하지 말고
@@ -66,7 +94,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         if (!pkCols.isEmpty()) {
             var addPk = AddPrimaryKeyConstraintChange.builder()
                     .config(AddPrimaryKeyConstraintConfig.builder()
-                            .constraintName("pk_" + currentTableName)
+                            .constraintName(NamingUtil.pkName(currentTableName, pkCols))
                             .tableName(currentTableName)
                             .columnNames(String.join(",", pkCols))
                             .build())
@@ -154,18 +182,25 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     @Override
     public void visitAddedTableGenerator(TableGeneratorModel tg) {
         dialectBundle.withTableGenerator(tgd -> {
+            String pkType = dialectBundle.liquibase()
+                    .map(lb -> lb.getTableGeneratorPkColumnType())
+                    .orElse("VARCHAR(255)");
+            String valueType = dialectBundle.liquibase()
+                    .map(lb -> lb.getTableGeneratorValueColumnType())
+                    .orElse("BIGINT");
+                    
             var createTable = CreateTableChange.builder()
                     .config(CreateTableConfig.builder()
                             .tableName(tg.getTable())
                             .columns(List.of(
                                     ColumnWrapper.builder().config(ColumnConfig.builder()
                                             .name(tg.getPkColumnName())
-                                            .type("varchar(255)")
+                                            .type(pkType)
                                             .constraints(Constraints.builder().primaryKey(true).build())
                                             .build()).build(),
                                     ColumnWrapper.builder().config(ColumnConfig.builder()
                                             .name(tg.getValueColumnName())
-                                            .type("bigint")
+                                            .type(valueType)
                                             .build()).build()
                             ))
                             .build())
@@ -209,6 +244,13 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     @Override
     public void visitModifiedTableGenerator(TableGeneratorModel newTableGenerator, TableGeneratorModel oldTableGenerator) {
         dialectBundle.withTableGenerator(tgDialect -> {
+            String pkType = dialectBundle.liquibase()
+                    .map(lb -> lb.getTableGeneratorPkColumnType())
+                    .orElse("VARCHAR(255)");
+            String valueType = dialectBundle.liquibase()
+                    .map(lb -> lb.getTableGeneratorValueColumnType())
+                    .orElse("BIGINT");
+                    
             DropTableGeneratorChange dropTable = DropTableGeneratorChange.builder()
                     .config(DropTableConfig.builder()
                             .tableName(oldTableGenerator.getTable())
@@ -221,14 +263,14 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                                     ColumnWrapper.builder()
                                             .config(ColumnConfig.builder()
                                                     .name(newTableGenerator.getPkColumnName())
-                                                    .type("varchar(255)")
+                                                    .type(pkType)
                                                     .constraints(Constraints.builder().primaryKey(true).build())
                                                     .build())
                                             .build(),
                                     ColumnWrapper.builder()
                                             .config(ColumnConfig.builder()
                                                     .name(newTableGenerator.getValueColumnName())
-                                                    .type("bigint")
+                                                    .type(valueType)
                                                     .build())
                                             .build()))
                             .build())
@@ -333,6 +375,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
 
     @Override
     public void visitAddedIndex(IndexModel index) {
+        String tableName = getTableNameSafely(index.getTableName());
         List<ColumnWrapper> indexColumns = index.getColumnNames().stream()
                 .map(colName -> ColumnWrapper.builder()
                         .config(ColumnConfig.builder().name(colName).build())
@@ -341,7 +384,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         CreateIndexChange createIndex = CreateIndexChange.builder()
                 .config(CreateIndexConfig.builder()
                         .indexName(index.getIndexName())
-                        .tableName(index.getTableName() != null ? index.getTableName() : currentTableName)
+                        .tableName(tableName)
                         .columns(indexColumns)
                         .build())
                 .build();
@@ -350,10 +393,11 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
 
     @Override
     public void visitDroppedIndex(IndexModel index) {
+        String tableName = getTableNameSafely(index.getTableName());
         DropIndexChange dropIndex = DropIndexChange.builder()
                 .config(DropIndexConfig.builder()
                         .indexName(index.getIndexName())
-                        .tableName(index.getTableName() != null ? index.getTableName() : currentTableName)
+                        .tableName(tableName)
                         .build())
                 .build();
         changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropIndex)));
@@ -361,16 +405,19 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
 
     @Override
     public void visitModifiedIndex(IndexModel newIndex, IndexModel oldIndex) {
+        String oldTableName = getTableNameSafely(oldIndex.getTableName());
+        String newTableName = getTableNameSafely(newIndex.getTableName());
+        
         DropIndexChange dropOldIndex = DropIndexChange.builder()
                 .config(DropIndexConfig.builder()
                         .indexName(oldIndex.getIndexName())
-                        .tableName(oldIndex.getTableName() != null ? oldIndex.getTableName() : currentTableName)
+                        .tableName(oldTableName)
                         .build())
                 .build();
         CreateIndexChange createNewIndex = CreateIndexChange.builder()
                 .config(CreateIndexConfig.builder()
                         .indexName(newIndex.getIndexName())
-                        .tableName(newIndex.getTableName() != null ? newIndex.getTableName() : currentTableName)
+                        .tableName(newTableName)
                         .columns(newIndex.getColumnNames().stream()
                                 .map(colName -> ColumnWrapper.builder()
                                         .config(ColumnConfig.builder().name(colName).build())
@@ -385,20 +432,26 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     @Override
     public void visitAddedConstraint(ConstraintModel constraint) {
         if (constraint.getType() == ConstraintType.UNIQUE) {
+            String constraintName = constraint.getName() != null 
+                    ? constraint.getName() 
+                    : NamingUtil.uqName(currentTableName, constraint.getColumns());
             AddUniqueConstraintChange uniqueChange = AddUniqueConstraintChange.builder()
                     .config(AddUniqueConstraintConfig.builder()
-                            .constraintName(constraint.getName() != null ? constraint.getName() : "uk_" + currentTableName + "_" + String.join("_", constraint.getColumns()))
+                            .constraintName(constraintName)
                             .tableName(currentTableName)
                             .columnNames(String.join(",", constraint.getColumns()))
                             .build())
                     .build();
             changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(uniqueChange)));
         } else if (constraint.getType() == ConstraintType.CHECK) {
+            String constraintName = constraint.getName() != null 
+                    ? constraint.getName() 
+                    : NamingUtil.ckName(currentTableName, constraint.getColumns());
             AddCheckConstraintChange checkChange = AddCheckConstraintChange.builder()
                     .config(AddCheckConstraintConfig.builder()
-                            .constraintName(constraint.getName() != null ? constraint.getName() : "ck_" + currentTableName)
+                            .constraintName(constraintName)
                             .tableName(currentTableName)
-                            .constraintExpression(constraint.getCheckClause().isPresent() ? constraint.getCheckClause().get() : "")
+                            .constraintExpression(constraint.getCheckClause().orElse(""))
                             .build())
                     .build();
             changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(checkChange)));
@@ -408,17 +461,23 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     @Override
     public void visitDroppedConstraint(ConstraintModel constraint) {
         if (constraint.getType() == ConstraintType.UNIQUE) {
+            String constraintName = constraint.getName() != null 
+                    ? constraint.getName() 
+                    : NamingUtil.uqName(currentTableName, constraint.getColumns());
             DropUniqueConstraintChange dropUnique = DropUniqueConstraintChange.builder()
                     .config(DropUniqueConstraintConfig.builder()
-                            .constraintName(constraint.getName() != null ? constraint.getName() : "uk_" + currentTableName + "_" + String.join("_", constraint.getColumns()))
+                            .constraintName(constraintName)
                             .tableName(currentTableName)
                             .build())
                     .build();
             changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropUnique)));
         } else if (constraint.getType() == ConstraintType.CHECK) {
+            String constraintName = constraint.getName() != null 
+                    ? constraint.getName() 
+                    : NamingUtil.ckName(currentTableName, constraint.getColumns());
             DropCheckConstraintChange dropCheck = DropCheckConstraintChange.builder()
                     .config(DropCheckConstraintConfig.builder()
-                            .constraintName(constraint.getName() != null ? constraint.getName() : "ck_" + currentTableName)
+                            .constraintName(constraintName)
                             .tableName(currentTableName)
                             .build())
                     .build();
@@ -437,12 +496,13 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         if (relationship.isNoConstraint()) {
             return; // NO_CONSTRAINT인 경우 FK 생성 생략
         }
-        String baseTable = relationship.getTableName() != null
-                ? relationship.getTableName()
-                : currentTableName;
+        String baseTable = getTableNameSafely(relationship.getTableName());
+        String constraintName = relationship.getConstraintName() != null 
+                ? relationship.getConstraintName()
+                : NamingUtil.fkName(baseTable, relationship.getColumns(), relationship.getReferencedTable(), relationship.getReferencedColumns());
         AddForeignKeyConstraintChange fkChange = AddForeignKeyConstraintChange.builder()
                 .config(AddForeignKeyConstraintConfig.builder()
-                        .constraintName(relationship.getConstraintName())
+                        .constraintName(constraintName)
                         .baseTableName(baseTable)
                         .baseColumnNames(String.join(",", relationship.getColumns()))
                         .referencedTableName(relationship.getReferencedTable())
@@ -459,10 +519,13 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         if (relationship.isNoConstraint()) {
             return;
         }
-        String baseTable = relationship.getTableName() != null ? relationship.getTableName() : currentTableName;
+        String baseTable = getTableNameSafely(relationship.getTableName());
+        String constraintName = relationship.getConstraintName() != null 
+                ? relationship.getConstraintName()
+                : NamingUtil.fkName(baseTable, relationship.getColumns(), relationship.getReferencedTable(), relationship.getReferencedColumns());
         DropForeignKeyConstraintChange dropFk = DropForeignKeyConstraintChange.builder()
                 .config(DropForeignKeyConstraintConfig.builder()
-                        .constraintName(relationship.getConstraintName())
+                        .constraintName(constraintName)
                         .baseTableName(baseTable)
                         .build())
                 .build();
@@ -479,7 +542,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     public void visitAddedPrimaryKey(List<String> pkColumns) {
         AddPrimaryKeyConstraintChange addPk = AddPrimaryKeyConstraintChange.builder()
                 .config(AddPrimaryKeyConstraintConfig.builder()
-                        .constraintName("pk_" + currentTableName)
+                        .constraintName(NamingUtil.pkName(currentTableName, pkColumns))
                         .tableName(currentTableName)
                         .columnNames(String.join(",", pkColumns))
                         .build())
@@ -489,9 +552,10 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
 
     @Override
     public void visitDroppedPrimaryKey() {
+        // PK는 보통 단일 제약이므로 빈 컬럼 리스트로 네이밍 생성
         DropPrimaryKeyConstraintChange dropPk = DropPrimaryKeyConstraintChange.builder()
                 .config(DropPrimaryKeyConstraintConfig.builder()
-                        .constraintName("pk_" + currentTableName)
+                        .constraintName(NamingUtil.pkName(currentTableName, List.of()))
                         .tableName(currentTableName)
                         .build())
                 .build();
@@ -597,27 +661,5 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         return column.getDefaultValue();
     }
     
-    /**
-     * Gets the effective default value considering generation strategy (kept for backward compatibility)
-     */
-    private String getEffectiveDefaultValue(ColumnModel column) {
-        return column.getDefaultValue();
-    }
-    
-    /**
-     * UUID 전략인 경우 computed default 값을 반환, 그렇지 않으면 null (deprecated, use getComputedDefault)
-     */
-    @Deprecated
-    private String getUuidComputedDefaultOrNull(ColumnModel column) {
-        return getComputedDefault(column);
-    }
-    
-    /**
-     * UUID 전략이 아닌 경우 일반 default 값을 반환, UUID 전략이면 null (deprecated, use getLiteralDefault)
-     */
-    @Deprecated
-    private String getNonComputedDefaultOrNull(ColumnModel column) {
-        return getLiteralDefault(column);
-    }
 
 }

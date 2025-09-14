@@ -32,4 +32,32 @@ public interface LiquibaseDialect extends BaseDialect{
     default boolean supportsIdentity() {
         return true; // Most modern databases support IDENTITY
     }
+
+    default boolean supportsDropCheck() { return true; }              // MySQL 8.0.16+ true, 구버전 false
+    default boolean allowLobLiteralDefault() { return false; }        // TEXT/BLOB 기본값 리터럴 허용 여부
+    default boolean pkDropNeedsName() { return false; }               // PK drop 시 이름 필요 DB 여부
+    default boolean preferUniqueConstraintOverUniqueIndex() { return true; } // UNIQUE를 제약으로 갈지 인덱스로 갈지
+    default boolean supportsComputedUuidDefault() { return getUuidDefaultValue() != null; }
+
+    /**
+     * Gets the SQL type for table generator primary key column
+     */
+    default String getTableGeneratorPkColumnType() {
+        return "VARCHAR(255)";
+    }
+    
+    /**
+     * Gets the SQL type for table generator value column  
+     */
+    default String getTableGeneratorValueColumnType() {
+        return "BIGINT";
+    }
+    
+    /**
+     * Gets the maximum identifier length for this database
+     */
+    default int getMaxIdentifierLength() {
+        return 63; // Standard SQL default
+    }
+
 }
