@@ -123,7 +123,7 @@ class MySqlDialectTest {
         when(id.isVersion()).thenReturn(false);
         when(id.getTemporalType()).thenReturn(null);
 
-        assertEquals("`id` BIGINT AUTO_INCREMENT", d.getColumnDefinitionSql(id));
+        assertEquals("`id` BIGINT NOT NULL AUTO_INCREMENT", d.getColumnDefinitionSql(id));
 
         ColumnModel uuid = mock(ColumnModel.class);
         when(uuid.getColumnName()).thenReturn("uuid");
