@@ -123,7 +123,7 @@ class MySqlDialectTest {
         when(id.isVersion()).thenReturn(false);
         when(id.getTemporalType()).thenReturn(null);
 
-        assertEquals("`id` BIGINT AUTO_INCREMENT DEFAULT 0", d.getColumnDefinitionSql(id));
+        assertEquals("`id` BIGINT AUTO_INCREMENT", d.getColumnDefinitionSql(id));
 
         ColumnModel uuid = mock(ColumnModel.class);
         when(uuid.getColumnName()).thenReturn("uuid");
@@ -232,10 +232,8 @@ class MySqlDialectTest {
         when(pk.getColumns()).thenReturn(List.of("id"));
         when(pk.getTableName()).thenReturn("users");
         assertEquals("PRIMARY KEY (`id`)", d.getConstraintDefinitionSql(pk));
-        assertEquals(
-                "ALTER TABLE `users` DROP PRIMARY KEY `pk_users`;\n",
-                d.getDropConstraintSql("users", pk)
-        );
+        assertEquals("ALTER TABLE `users` DROP PRIMARY KEY;\n",
+                d.getDropConstraintSql("users", pk));
 
         IndexModel idx = mock(IndexModel.class);
         when(idx.getIndexName()).thenReturn("ix_users_email");

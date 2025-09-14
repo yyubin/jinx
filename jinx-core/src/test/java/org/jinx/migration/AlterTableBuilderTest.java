@@ -67,17 +67,27 @@ class AlterTableBuilderTest {
     }
 
     @Test
-    @DisplayName("동일 priority 컨트리뷰터 간 상대 순서는 보장하지 않는다(정렬 정책 확인용)")
-    void same_priority_has_no_order_guarantee() {
+    @DisplayName("동일 priority 컨트리뷰터는 삽입 순서를 유지한다 (stable sort 보장)")
+    void same_priority_keeps_insertion_order() {
         DdlDialect dialect = mock(DdlDialect.class);
         AlterTableBuilder b = new AlterTableBuilder("t", dialect);
 
         b.add(new Piece(10, "A"))
                 .add(new Piece(10, "B"));
 
-        // 같은 priority의 상대 순서는 빌더 정책상 미보장
-        // 다만 두 조각이 모두 포함되는지만 확인
         String sql = b.build();
-        assertTrue(sql.equals("AB") || sql.equals("BA"));
+        assertEquals("AB", sql);
+    }
+
+    @Test
+    @DisplayName("동일 priority: 삽입 역순도 그대로 반영된다")
+    void same_priority_insertion_reverse() {
+        DdlDialect dialect = mock(DdlDialect.class);
+        AlterTableBuilder b = new AlterTableBuilder("t", dialect);
+
+        b.add(new Piece(10, "B"))
+                .add(new Piece(10, "A"));
+
+        assertEquals("BA", b.build());
     }
 }

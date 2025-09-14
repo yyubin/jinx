@@ -172,9 +172,9 @@ public class MySqlDialect extends AbstractDialect
         String javaType = c.getConversionClass() != null ? c.getConversionClass() : c.getJavaType();
         JavaTypeMapper.JavaType javaTypeMapped = javaTypeMapper.map(javaType);
 
-        String sqlType;
-        // If sqlTypeOverride is specified, use it directly
+        // 1) 타입 결정 + override의 auto_increment 포함 여부
         boolean overrideContainsIdentity = false;
+        String sqlType;
         if (c.getSqlTypeOverride() != null && !c.getSqlTypeOverride().trim().isEmpty()) {
             String override = c.getSqlTypeOverride().trim();
             overrideContainsIdentity = override.matches("(?i).*\\bauto_increment\\b.*");
@@ -194,28 +194,36 @@ public class MySqlDialect extends AbstractDialect
             sqlType = javaTypeMapped.getSqlType(c.getLength(), c.getPrecision(), c.getScale());
         }
 
+        // 2) AUTO_INCREMENT 여부 (override에 포함된 경우도 포함)
+        boolean isIdentityLike = overrideContainsIdentity || shouldUseAutoIncrement(c.getGenerationStrategy());
+
         StringBuilder sb = new StringBuilder();
         sb.append(quoteIdentifier(c.getColumnName())).append(" ").append(sqlType);
 
-        if (!c.isNullable()) sb.append(" NOT NULL");
-
-        if (c.getGenerationStrategy() == GenerationStrategy.IDENTITY && !overrideContainsIdentity) {
-            sb.append(getIdentityClause(c));
-        } else if (c.isManualPrimaryKey()) {
-            sb.append(" PRIMARY KEY");
+        // 3) IDENTITY면 NOT NULL 강제
+        if (!c.isNullable() || isIdentityLike) {
+            sb.append(" NOT NULL");
         }
 
-        if (c.getDefaultValue() != null) {
-            sb.append(" DEFAULT ").append(valueTransformer.quote(c.getDefaultValue(), javaTypeMapped));
-        } else if (c.getGenerationStrategy() == GenerationStrategy.UUID && getUuidDefaultValue() != null) {
-            // 함수형 기본값은 따옴표 없이 그대로 사용
-            sb.append(" DEFAULT ").append(getUuidDefaultValue());
-        } else if (javaTypeMapped.getDefaultValue() != null) {
-            sb.append(" DEFAULT ").append(valueTransformer.quote(javaTypeMapped.getDefaultValue(), javaTypeMapped));
+        // 4) IDENTITY이고 override에 auto_increment가 없으면 붙이기
+        if (c.getGenerationStrategy() == GenerationStrategy.IDENTITY && !overrideContainsIdentity) {
+            sb.append(getIdentityClause(c)); // " AUTO_INCREMENT"
+        }
+
+        // 5) 기본값 처리
+        if (!isIdentityLike) {
+            if (c.getDefaultValue() != null) {
+                sb.append(" DEFAULT ").append(valueTransformer.quote(c.getDefaultValue(), javaTypeMapped));
+            } else if (c.getGenerationStrategy() == GenerationStrategy.UUID && getUuidDefaultValue() != null) {
+                sb.append(" DEFAULT ").append(getUuidDefaultValue()); // 함수형 기본값은 quote 없이
+            } else if (javaTypeMapped.getDefaultValue() != null) {
+                sb.append(" DEFAULT ").append(valueTransformer.quote(javaTypeMapped.getDefaultValue(), javaTypeMapped));
+            }
         }
 
         return sb.toString();
     }
+
 
     @Override
     public String getAddColumnSql(String table, ColumnModel col) {
@@ -290,15 +298,29 @@ public class MySqlDialect extends AbstractDialect
     public String getDropConstraintSql(String table, ConstraintModel cons) {
         StringBuilder sb = new StringBuilder("ALTER TABLE ").append(quoteIdentifier(table));
         switch (cons.getType()) {
-            case UNIQUE -> sb.append(" DROP KEY ");
-            case CHECK -> sb.append(" DROP CHECK ");
-            case PRIMARY_KEY -> sb.append(" DROP PRIMARY KEY ");
-            case INDEX -> sb.append(" DROP INDEX ");
-            default -> sb.append(" DROP CONSTRAINT ");
+            case UNIQUE -> {
+                sb.append(" DROP KEY ").append(quoteIdentifier(cons.getName())).append(";\n");
+                return sb.toString();
+            }
+            case CHECK -> {
+                sb.append(" DROP CHECK ").append(quoteIdentifier(cons.getName())).append(";\n");
+                return sb.toString();
+            }
+            case PRIMARY_KEY -> {
+                sb.append(" DROP PRIMARY KEY;\n");
+                return sb.toString();
+            }
+            case INDEX -> {
+                sb.append(" DROP INDEX ").append(quoteIdentifier(cons.getName())).append(";\n");
+                return sb.toString();
+            }
+            default -> {
+                sb.append(" DROP CONSTRAINT ").append(quoteIdentifier(cons.getName())).append(";\n");
+                return sb.toString();
+            }
         }
-        sb.append(quoteIdentifier(cons.getName())).append(";\n");
-        return sb.toString();
     }
+
 
     @Override
     public String getModifyConstraintSql(String table, ConstraintModel newCons, ConstraintModel oldCons) {
