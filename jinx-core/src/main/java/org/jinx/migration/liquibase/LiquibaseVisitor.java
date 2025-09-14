@@ -6,6 +6,8 @@ import org.jinx.migration.liquibase.model.*;
 import org.jinx.migration.spi.visitor.*;
 import org.jinx.model.*;
 import org.jinx.model.DiffResult.*;
+import org.jinx.naming.Naming;
+import org.jinx.naming.DefaultNaming;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,31 +17,26 @@ import java.util.Objects;
 public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, SequenceVisitor, TableGeneratorVisitor, SqlGeneratingVisitor {
     private final DialectBundle dialectBundle;
     private final ChangeSetIdGenerator idGenerator;
+    private final Naming naming;
     private final List<ChangeSetWrapper> changeSets = new ArrayList<>();
     @Setter
     private String currentTableName;
 
     public LiquibaseVisitor(DialectBundle dialectBundle, ChangeSetIdGenerator idGenerator) {
-        this.dialectBundle = dialectBundle;
-        this.idGenerator = idGenerator;
+        this(dialectBundle, idGenerator, null);
     }
 
-    private static class NamingUtil {
-        static String pkName(String tableName, List<String> columns) {
-            return "pk_" + tableName;
-        }
-        
-        static String uqName(String tableName, List<String> columns) {
-            return "uq_" + tableName + "_" + String.join("_", columns);
-        }
-        
-        static String ckName(String tableName, List<String> columns) {
-            return "ck_" + tableName;
-        }
-        
-        static String fkName(String fromTable, List<String> fromColumns, String toTable, List<String> toColumns) {
-            return "fk_" + fromTable + "_" + String.join("_", fromColumns) + "_" + toTable;
-        }
+    public LiquibaseVisitor(DialectBundle dialectBundle, ChangeSetIdGenerator idGenerator, Naming naming) {
+        this.dialectBundle = dialectBundle;
+        this.idGenerator = idGenerator;
+        this.naming = naming != null ? naming : createDefaultNaming(dialectBundle);
+    }
+
+    private DefaultNaming createDefaultNaming(DialectBundle dialectBundle) {
+        int maxLength = dialectBundle.liquibase()
+                .map(lb -> lb.getMaxIdentifierLength())
+                .orElse(63);
+        return new DefaultNaming(maxLength);
     }
 
     /**
@@ -94,7 +91,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         if (!pkCols.isEmpty()) {
             var addPk = AddPrimaryKeyConstraintChange.builder()
                     .config(AddPrimaryKeyConstraintConfig.builder()
-                            .constraintName(NamingUtil.pkName(currentTableName, pkCols))
+                            .constraintName(naming.pkName(currentTableName, pkCols))
                             .tableName(currentTableName)
                             .columnNames(String.join(",", pkCols))
                             .build())
@@ -434,7 +431,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         if (constraint.getType() == ConstraintType.UNIQUE) {
             String constraintName = constraint.getName() != null 
                     ? constraint.getName() 
-                    : NamingUtil.uqName(currentTableName, constraint.getColumns());
+                    : naming.uqName(currentTableName, constraint.getColumns());
             AddUniqueConstraintChange uniqueChange = AddUniqueConstraintChange.builder()
                     .config(AddUniqueConstraintConfig.builder()
                             .constraintName(constraintName)
@@ -446,7 +443,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         } else if (constraint.getType() == ConstraintType.CHECK) {
             String constraintName = constraint.getName() != null 
                     ? constraint.getName() 
-                    : NamingUtil.ckName(currentTableName, constraint.getColumns());
+                    : naming.ckName(currentTableName, constraint.getColumns());
             AddCheckConstraintChange checkChange = AddCheckConstraintChange.builder()
                     .config(AddCheckConstraintConfig.builder()
                             .constraintName(constraintName)
@@ -463,7 +460,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         if (constraint.getType() == ConstraintType.UNIQUE) {
             String constraintName = constraint.getName() != null 
                     ? constraint.getName() 
-                    : NamingUtil.uqName(currentTableName, constraint.getColumns());
+                    : naming.uqName(currentTableName, constraint.getColumns());
             DropUniqueConstraintChange dropUnique = DropUniqueConstraintChange.builder()
                     .config(DropUniqueConstraintConfig.builder()
                             .constraintName(constraintName)
@@ -474,7 +471,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         } else if (constraint.getType() == ConstraintType.CHECK) {
             String constraintName = constraint.getName() != null 
                     ? constraint.getName() 
-                    : NamingUtil.ckName(currentTableName, constraint.getColumns());
+                    : naming.ckName(currentTableName, constraint.getColumns());
             DropCheckConstraintChange dropCheck = DropCheckConstraintChange.builder()
                     .config(DropCheckConstraintConfig.builder()
                             .constraintName(constraintName)
@@ -499,7 +496,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         String baseTable = getTableNameSafely(relationship.getTableName());
         String constraintName = relationship.getConstraintName() != null 
                 ? relationship.getConstraintName()
-                : NamingUtil.fkName(baseTable, relationship.getColumns(), relationship.getReferencedTable(), relationship.getReferencedColumns());
+                : naming.fkName(baseTable, relationship.getColumns(), relationship.getReferencedTable(), relationship.getReferencedColumns());
         AddForeignKeyConstraintChange fkChange = AddForeignKeyConstraintChange.builder()
                 .config(AddForeignKeyConstraintConfig.builder()
                         .constraintName(constraintName)
@@ -522,7 +519,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         String baseTable = getTableNameSafely(relationship.getTableName());
         String constraintName = relationship.getConstraintName() != null 
                 ? relationship.getConstraintName()
-                : NamingUtil.fkName(baseTable, relationship.getColumns(), relationship.getReferencedTable(), relationship.getReferencedColumns());
+                : naming.fkName(baseTable, relationship.getColumns(), relationship.getReferencedTable(), relationship.getReferencedColumns());
         DropForeignKeyConstraintChange dropFk = DropForeignKeyConstraintChange.builder()
                 .config(DropForeignKeyConstraintConfig.builder()
                         .constraintName(constraintName)
@@ -542,7 +539,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     public void visitAddedPrimaryKey(List<String> pkColumns) {
         AddPrimaryKeyConstraintChange addPk = AddPrimaryKeyConstraintChange.builder()
                 .config(AddPrimaryKeyConstraintConfig.builder()
-                        .constraintName(NamingUtil.pkName(currentTableName, pkColumns))
+                        .constraintName(naming.pkName(currentTableName, pkColumns))
                         .tableName(currentTableName)
                         .columnNames(String.join(",", pkColumns))
                         .build())
@@ -552,12 +549,16 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
 
     @Override
     public void visitDroppedPrimaryKey() {
-        // PK는 보통 단일 제약이므로 빈 컬럼 리스트로 네이밍 생성
+        boolean needsName = dialectBundle.liquibase()
+                .map(org.jinx.migration.spi.dialect.LiquibaseDialect::pkDropNeedsName)
+                .orElse(false);
+        DropPrimaryKeyConstraintConfig.DropPrimaryKeyConstraintConfigBuilder cfg =
+                DropPrimaryKeyConstraintConfig.builder().tableName(currentTableName);
+        if (needsName) {
+            cfg.constraintName(naming.pkName(currentTableName, List.of()));
+        }
         DropPrimaryKeyConstraintChange dropPk = DropPrimaryKeyConstraintChange.builder()
-                .config(DropPrimaryKeyConstraintConfig.builder()
-                        .constraintName(NamingUtil.pkName(currentTableName, List.of()))
-                        .tableName(currentTableName)
-                        .build())
+                .config(cfg.build())
                 .build();
         changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropPk)));
     }
@@ -617,7 +618,12 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         } else if (sequenceDefault != null) {
             builder.defaultValueSequenceNext(sequenceDefault);
         } else if (literalDefault != null) {
-            builder.defaultValue(literalDefault);
+            boolean allowLobDefault = dialectBundle.liquibase()
+                    .map(org.jinx.migration.spi.dialect.LiquibaseDialect::allowLobLiteralDefault)
+                    .orElse(false);
+            if (!column.isLob() || allowLobDefault) {
+                builder.defaultValue(literalDefault);
+            }
         }
     }
     
