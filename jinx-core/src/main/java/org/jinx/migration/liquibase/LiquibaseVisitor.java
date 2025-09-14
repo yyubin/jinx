@@ -91,7 +91,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         if (!pkCols.isEmpty()) {
             var addPk = AddPrimaryKeyConstraintChange.builder()
                     .config(AddPrimaryKeyConstraintConfig.builder()
-                            .constraintName(naming.pkName(currentTableName, List.of()))
+                            .constraintName(naming.pkName(currentTableName, pkCols))
                             .tableName(currentTableName)
                             .columnNames(String.join(",", pkCols))
                             .build())
@@ -552,7 +552,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     public void visitAddedPrimaryKey(List<String> pkColumns) {
         AddPrimaryKeyConstraintChange addPk = AddPrimaryKeyConstraintChange.builder()
                 .config(AddPrimaryKeyConstraintConfig.builder()
-                        .constraintName(naming.pkName(currentTableName, List.of()))
+                        .constraintName(naming.pkName(currentTableName, pkColumns))
                         .tableName(currentTableName)
                         .columnNames(String.join(",", pkColumns))
                         .build())
@@ -578,7 +578,21 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
 
     @Override
     public void visitModifiedPrimaryKey(List<String> newPkColumns, List<String> oldPkColumns) {
-        visitDroppedPrimaryKey();
+        // Drop old PK with specific column information
+        boolean needsName = dialectBundle.liquibase()
+                .map(org.jinx.migration.spi.dialect.LiquibaseDialect::pkDropNeedsName)
+                .orElse(false);
+        DropPrimaryKeyConstraintConfig.DropPrimaryKeyConstraintConfigBuilder dropCfg = 
+                DropPrimaryKeyConstraintConfig.builder().tableName(currentTableName);
+        if (needsName) {
+            dropCfg.constraintName(naming.pkName(currentTableName, List.of())); // Use consistent empty list
+        }
+        DropPrimaryKeyConstraintChange dropPk = DropPrimaryKeyConstraintChange.builder()
+                .config(dropCfg.build())
+                .build();
+        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropPk)));
+        
+        // Add new PK
         visitAddedPrimaryKey(newPkColumns);
     }
 

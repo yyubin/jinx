@@ -184,6 +184,16 @@ public class ColumnConfig {
                 );
             }
 
+            int insertCount = 0;
+            if (value != null) insertCount++;
+            if (valueNumeric != null) insertCount++;
+            if (valueComputed != null) insertCount++;
+            if (insertCount > 1) {
+                throw new IllegalStateException(
+                    "ColumnConfig: Only one of value/valueNumeric/valueComputed may be set for InsertData."
+                );
+            }
+
             ColumnConfig config = new ColumnConfig();
             config.setName(name);
             config.setType(type);
