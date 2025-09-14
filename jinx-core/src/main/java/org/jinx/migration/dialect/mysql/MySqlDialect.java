@@ -172,7 +172,6 @@ public class MySqlDialect extends AbstractDialect
         String javaType = c.getConversionClass() != null ? c.getConversionClass() : c.getJavaType();
         JavaTypeMapper.JavaType javaTypeMapped = javaTypeMapper.map(javaType);
 
-        // 1) 타입 결정 + override의 auto_increment 포함 여부
         boolean overrideContainsIdentity = false;
         String sqlType;
         if (c.getSqlTypeOverride() != null && !c.getSqlTypeOverride().trim().isEmpty()) {
@@ -194,28 +193,28 @@ public class MySqlDialect extends AbstractDialect
             sqlType = javaTypeMapped.getSqlType(c.getLength(), c.getPrecision(), c.getScale());
         }
 
-        // 2) AUTO_INCREMENT 여부 (override에 포함된 경우도 포함)
         boolean isIdentityLike = overrideContainsIdentity || shouldUseAutoIncrement(c.getGenerationStrategy());
 
         StringBuilder sb = new StringBuilder();
         sb.append(quoteIdentifier(c.getColumnName())).append(" ").append(sqlType);
 
-        // 3) IDENTITY면 NOT NULL 강제
         if (!c.isNullable() || isIdentityLike) {
             sb.append(" NOT NULL");
         }
 
-        // 4) IDENTITY이고 override에 auto_increment가 없으면 붙이기
-        if (c.getGenerationStrategy() == GenerationStrategy.IDENTITY && !overrideContainsIdentity) {
+        if (shouldUseAutoIncrement(c.getGenerationStrategy()) && !overrideContainsIdentity) {
             sb.append(getIdentityClause(c)); // " AUTO_INCREMENT"
         }
 
-        // 5) 기본값 처리
-        if (!isIdentityLike) {
+        if (c.isManualPrimaryKey()) {
+            sb.append(" PRIMARY KEY");
+        }
+
+        if (!isIdentityLike && !c.isLob()) {
             if (c.getDefaultValue() != null) {
                 sb.append(" DEFAULT ").append(valueTransformer.quote(c.getDefaultValue(), javaTypeMapped));
             } else if (c.getGenerationStrategy() == GenerationStrategy.UUID && getUuidDefaultValue() != null) {
-                sb.append(" DEFAULT ").append(getUuidDefaultValue()); // 함수형 기본값은 quote 없이
+                sb.append(" DEFAULT ").append(getUuidDefaultValue());
             } else if (javaTypeMapped.getDefaultValue() != null) {
                 sb.append(" DEFAULT ").append(valueTransformer.quote(javaTypeMapped.getDefaultValue(), javaTypeMapped));
             }
@@ -298,9 +297,8 @@ public class MySqlDialect extends AbstractDialect
     public String getDropConstraintSql(String table, ConstraintModel cons) {
         StringBuilder sb = new StringBuilder("ALTER TABLE ").append(quoteIdentifier(table));
         switch (cons.getType()) {
-            case UNIQUE -> {
-                sb.append(" DROP KEY ").append(quoteIdentifier(cons.getName())).append(";\n");
-                return sb.toString();
+            case UNIQUE, INDEX -> {
+                return getDropIndexSql(table, cons.getName());
             }
             case CHECK -> {
                 sb.append(" DROP CHECK ").append(quoteIdentifier(cons.getName())).append(";\n");
@@ -310,13 +308,9 @@ public class MySqlDialect extends AbstractDialect
                 sb.append(" DROP PRIMARY KEY;\n");
                 return sb.toString();
             }
-            case INDEX -> {
-                sb.append(" DROP INDEX ").append(quoteIdentifier(cons.getName())).append(";\n");
-                return sb.toString();
-            }
             default -> {
-                sb.append(" DROP CONSTRAINT ").append(quoteIdentifier(cons.getName())).append(";\n");
-                return sb.toString();
+                // DEFAULT, NOT_NULL, AUTO 등은 ALTER COLUMN 경로에서 처리
+                return "";
             }
         }
     }
@@ -337,6 +331,13 @@ public class MySqlDialect extends AbstractDialect
     @Override
     public String getDropIndexSql(String table, IndexModel index) {
         return "DROP INDEX " + quoteIdentifier(index.getIndexName()) + " ON " + quoteIdentifier(table) + ";\n";
+    }
+
+    public String getDropIndexSql(String table, String indexName) {
+        if (indexName == null || indexName.isBlank()) {
+            throw new IllegalArgumentException("Index name must not be null/blank");
+        }
+        return "DROP INDEX " + quoteIdentifier(indexName) + " ON " + quoteIdentifier(table) + ";\n";
     }
 
     @Override

@@ -178,7 +178,7 @@ class MySqlDialectTest {
         when(lob.isVersion()).thenReturn(false);
         when(lob.getTemporalType()).thenReturn(null);
 
-        assertEquals("`payload` TEXT DEFAULT ''", d.getColumnDefinitionSql(lob));
+        assertEquals("`payload` TEXT", d.getColumnDefinitionSql(lob));
     }
 
     @Test @DisplayName("컬럼 ADD/DROP/MODIFY/RENAME SQL")
@@ -224,7 +224,8 @@ class MySqlDialectTest {
         when(unique.getTableName()).thenReturn("users");
         assertEquals("CONSTRAINT `uq_user_email` UNIQUE (`email`)", d.getConstraintDefinitionSql(unique));
         assertEquals("ADD CONSTRAINT `uq_user_email` UNIQUE (`email`);\n", d.getAddConstraintSql("users", unique));
-        assertEquals("ALTER TABLE `users` DROP KEY `uq_user_email`;\n", d.getDropConstraintSql("users", unique));
+        assertEquals("DROP INDEX `uq_user_email` ON `users`;\n",
+                d.getDropConstraintSql("users", unique));
 
         ConstraintModel pk = mock(ConstraintModel.class);
         when(pk.getType()).thenReturn(ConstraintType.PRIMARY_KEY);
