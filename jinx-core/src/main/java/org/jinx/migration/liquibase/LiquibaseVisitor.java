@@ -91,7 +91,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         if (!pkCols.isEmpty()) {
             var addPk = AddPrimaryKeyConstraintChange.builder()
                     .config(AddPrimaryKeyConstraintConfig.builder()
-                            .constraintName(naming.pkName(currentTableName, pkCols))
+                            .constraintName(naming.pkName(currentTableName, List.of()))
                             .tableName(currentTableName)
                             .columnNames(String.join(",", pkCols))
                             .build())
@@ -212,11 +212,11 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                             .columns(List.of(
                                     ColumnWrapper.builder().config(ColumnConfig.builder()
                                             .name(tg.getPkColumnName())
-                                            .defaultValue(tg.getPkColumnValue()) // 필요시 valueComputed/… 고려
+                                            .value(tg.getPkColumnValue()) // 문자열 키
                                             .build()).build(),
                                     ColumnWrapper.builder().config(ColumnConfig.builder()
                                             .name(tg.getValueColumnName())
-                                            .defaultValue(String.valueOf(tg.getInitialValue()))
+                                            .valueNumeric(String.valueOf(tg.getInitialValue())) // 숫자값
                                             .build()).build()
                             )).build())
                     .build();
@@ -373,6 +373,9 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     @Override
     public void visitAddedIndex(IndexModel index) {
         String tableName = getTableNameSafely(index.getTableName());
+        String idxName = index.getIndexName() != null
+                ? index.getIndexName()
+                : naming.ixName(tableName, index.getColumnNames());
         List<ColumnWrapper> indexColumns = index.getColumnNames().stream()
                 .map(colName -> ColumnWrapper.builder()
                         .config(ColumnConfig.builder().name(colName).build())
@@ -380,7 +383,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                 .toList();
         CreateIndexChange createIndex = CreateIndexChange.builder()
                 .config(CreateIndexConfig.builder()
-                        .indexName(index.getIndexName())
+                        .indexName(idxName)
                         .tableName(tableName)
                         .columns(indexColumns)
                         .build())
@@ -391,9 +394,12 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     @Override
     public void visitDroppedIndex(IndexModel index) {
         String tableName = getTableNameSafely(index.getTableName());
+        String idxName = index.getIndexName() != null
+                ? index.getIndexName()
+                : naming.ixName(tableName, index.getColumnNames());
         DropIndexChange dropIndex = DropIndexChange.builder()
                 .config(DropIndexConfig.builder()
-                        .indexName(index.getIndexName())
+                        .indexName(idxName)
                         .tableName(tableName)
                         .build())
                 .build();
@@ -405,15 +411,22 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         String oldTableName = getTableNameSafely(oldIndex.getTableName());
         String newTableName = getTableNameSafely(newIndex.getTableName());
         
+        String oldIdxName = oldIndex.getIndexName() != null
+                ? oldIndex.getIndexName()
+                : naming.ixName(oldTableName, oldIndex.getColumnNames());
+        String newIdxName = newIndex.getIndexName() != null
+                ? newIndex.getIndexName()
+                : naming.ixName(newTableName, newIndex.getColumnNames());
+        
         DropIndexChange dropOldIndex = DropIndexChange.builder()
                 .config(DropIndexConfig.builder()
-                        .indexName(oldIndex.getIndexName())
+                        .indexName(oldIdxName)
                         .tableName(oldTableName)
                         .build())
                 .build();
         CreateIndexChange createNewIndex = CreateIndexChange.builder()
                 .config(CreateIndexConfig.builder()
-                        .indexName(newIndex.getIndexName())
+                        .indexName(newIdxName)
                         .tableName(newTableName)
                         .columns(newIndex.getColumnNames().stream()
                                 .map(colName -> ColumnWrapper.builder()
@@ -539,7 +552,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     public void visitAddedPrimaryKey(List<String> pkColumns) {
         AddPrimaryKeyConstraintChange addPk = AddPrimaryKeyConstraintChange.builder()
                 .config(AddPrimaryKeyConstraintConfig.builder()
-                        .constraintName(naming.pkName(currentTableName, pkColumns))
+                        .constraintName(naming.pkName(currentTableName, List.of()))
                         .tableName(currentTableName)
                         .columnNames(String.join(",", pkColumns))
                         .build())
