@@ -218,7 +218,7 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
         }
 
         Optional<EntityModel> joinTableEntityOp = joinSupport.createJoinTableEntity(details, ownerPks, targetPks);
-        if (joinTableEntityOp == null) return;
+        if (joinTableEntityOp.isEmpty()) return;
         EntityModel joinTableEntity = joinTableEntityOp.get();
         joinSupport.ensureJoinTableColumns(joinTableEntity, ownerPks, targetPks, ownerFkToPkMap, targetFkToPkMap, attr);
         joinSupport.ensureJoinTableRelationships(joinTableEntity, details);

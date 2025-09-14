@@ -11,9 +11,6 @@ import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.util.*;
 
-/**
- * Utility class providing common validation and support functions for relationship processing
- */
 public final class RelationshipSupport {
     
     private final ProcessingContext context;
