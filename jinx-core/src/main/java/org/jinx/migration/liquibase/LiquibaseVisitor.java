@@ -19,6 +19,8 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     private final ChangeSetIdGenerator idGenerator;
     private final Naming naming;
     private final List<ChangeSetWrapper> changeSets = new ArrayList<>();
+    // PK 컬럼 캐시: tableName -> pkColumns
+    private final java.util.Map<String, java.util.List<String>> pkColumnsCache = new java.util.HashMap<>();
     @Setter
     private String currentTableName;
 
@@ -61,6 +63,9 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                 .filter(ColumnModel::isPrimaryKey)
                 .map(ColumnModel::getColumnName)
                 .toList();
+
+        // 캐시에 저장
+        pkColumnsCache.put(currentTableName, pkCols);
 
         List<ColumnWrapper> columns = table.getColumns().values().stream()
                 .map(col -> {
@@ -550,6 +555,9 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
 
     @Override
     public void visitAddedPrimaryKey(List<String> pkColumns) {
+        // 캐시에 저장
+        pkColumnsCache.put(currentTableName, pkColumns);
+
         AddPrimaryKeyConstraintChange addPk = AddPrimaryKeyConstraintChange.builder()
                 .config(AddPrimaryKeyConstraintConfig.builder()
                         .constraintName(naming.pkName(currentTableName, pkColumns))
@@ -565,34 +573,33 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         boolean needsName = dialectBundle.liquibase()
                 .map(org.jinx.migration.spi.dialect.LiquibaseDialect::pkDropNeedsName)
                 .orElse(false);
+
+        // 캐시에서 현재 PK 컬럼 회수 (없으면 빈 리스트)
+        java.util.List<String> pkCols = pkColumnsCache.getOrDefault(currentTableName, java.util.List.of());
+
         DropPrimaryKeyConstraintConfig.DropPrimaryKeyConstraintConfigBuilder cfg =
                 DropPrimaryKeyConstraintConfig.builder().tableName(currentTableName);
         if (needsName) {
-            cfg.constraintName(naming.pkName(currentTableName, List.of()));
+            cfg.constraintName(naming.pkName(currentTableName, pkCols));
         }
+
         DropPrimaryKeyConstraintChange dropPk = DropPrimaryKeyConstraintChange.builder()
                 .config(cfg.build())
                 .build();
         changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropPk)));
+
+        // 드랍 후 캐시 정리
+        pkColumnsCache.remove(currentTableName);
     }
 
     @Override
     public void visitModifiedPrimaryKey(List<String> newPkColumns, List<String> oldPkColumns) {
-        // Drop old PK with specific column information
-        boolean needsName = dialectBundle.liquibase()
-                .map(org.jinx.migration.spi.dialect.LiquibaseDialect::pkDropNeedsName)
-                .orElse(false);
-        DropPrimaryKeyConstraintConfig.DropPrimaryKeyConstraintConfigBuilder dropCfg = 
-                DropPrimaryKeyConstraintConfig.builder().tableName(currentTableName);
-        if (needsName) {
-            dropCfg.constraintName(naming.pkName(currentTableName, List.of())); // Use consistent empty list
-        }
-        DropPrimaryKeyConstraintChange dropPk = DropPrimaryKeyConstraintChange.builder()
-                .config(dropCfg.build())
-                .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropPk)));
-        
-        // Add new PK
+        // 드랍 전에 기존 PK 컬럼을 캐시에 넣어 DROP 이름 재현
+        pkColumnsCache.put(currentTableName, oldPkColumns);
+        visitDroppedPrimaryKey();
+
+        // ADD 전 캐시 갱신
+        pkColumnsCache.put(currentTableName, newPkColumns);
         visitAddedPrimaryKey(newPkColumns);
     }
 
