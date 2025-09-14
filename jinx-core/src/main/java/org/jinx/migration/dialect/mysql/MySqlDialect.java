@@ -174,11 +174,16 @@ public class MySqlDialect extends AbstractDialect
 
         boolean overrideContainsIdentity = false;
         boolean overrideContainsNotNull = false;
+        boolean overrideContainsDefault = false;
+        boolean overrideContainsPrimaryKey = false;
+
         String sqlType;
         if (c.getSqlTypeOverride() != null && !c.getSqlTypeOverride().trim().isEmpty()) {
             String override = c.getSqlTypeOverride().trim();
-            overrideContainsIdentity = override.matches("(?i).*\\bauto_increment\\b.*");
-            overrideContainsNotNull = override.matches("(?i).*\\bnot\\s+null\\b.*");
+            overrideContainsIdentity    = override.matches("(?i).*\\bauto_increment\\b.*");
+            overrideContainsNotNull     = override.matches("(?i).*\\bnot\\s+null\\b.*");
+            overrideContainsDefault     = override.matches("(?i).*\\bdefault\\b.*");
+            overrideContainsPrimaryKey  = override.matches("(?i).*\\bprimary\\s+key\\b.*");
             sqlType = override;
         } else if (c.isLob()) {
             sqlType = c.getJavaType().equals("java.lang.String") ? "TEXT" : "BLOB";
@@ -200,25 +205,23 @@ public class MySqlDialect extends AbstractDialect
         StringBuilder sb = new StringBuilder();
         sb.append(quoteIdentifier(c.getColumnName())).append(" ").append(sqlType);
 
-        if (!c.isNullable() || isIdentityLike) {
-            if (!overrideContainsNotNull) {
-                sb.append(" NOT NULL");
-            }
+        if ((!c.isNullable() || isIdentityLike) && !overrideContainsNotNull) {
+            sb.append(" NOT NULL");
         }
 
         if (shouldUseAutoIncrement(c.getGenerationStrategy()) && !overrideContainsIdentity) {
             sb.append(getIdentityClause(c)); // " AUTO_INCREMENT"
         }
 
-        if (c.isManualPrimaryKey()) {
+        if (c.isManualPrimaryKey() && !overrideContainsPrimaryKey) {
             sb.append(" PRIMARY KEY");
         }
 
-        if (!isIdentityLike && !c.isLob()) {
+        if (!isIdentityLike && !c.isLob() && !overrideContainsDefault) {
             if (c.getDefaultValue() != null) {
                 sb.append(" DEFAULT ").append(valueTransformer.quote(c.getDefaultValue(), javaTypeMapped));
             } else if (c.getGenerationStrategy() == GenerationStrategy.UUID && getUuidDefaultValue() != null) {
-                sb.append(" DEFAULT ").append(getUuidDefaultValue());
+                sb.append(" DEFAULT ").append(getUuidDefaultValue()); // 함수형 기본값은 quote 없이
             } else if (javaTypeMapped.getDefaultValue() != null) {
                 sb.append(" DEFAULT ").append(valueTransformer.quote(javaTypeMapped.getDefaultValue(), javaTypeMapped));
             }
