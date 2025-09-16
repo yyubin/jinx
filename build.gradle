@@ -1,14 +1,23 @@
 plugins {
     id 'java'
+    id 'signing'
+    id("io.github.sgtsilvio.gradle.maven-central-publishing") version "0.4.1"
 }
 
-group = 'org.jinx'
-version = '1.0-SNAPSHOT'
+group = 'io.github.yyubin'
+version = '0.0.1'
 
-repositories {
-    mavenCentral()
+
+allprojects {
+    repositories { mavenCentral() }
+
+    group = rootProject.group
+    version = rootProject.version
+
+    tasks.withType(Javadoc) {
+        options.addStringOption('Xdoclint:none', '-quiet')
+    }
 }
-
 
 ext {
     versions = [
@@ -23,21 +32,9 @@ ext {
     ]
 }
 
-
 subprojects {
-    apply plugin: 'java'
+    apply plugin: 'java-library'
     apply plugin: 'jacoco'
-
-    group = 'org.jinx'
-    version = '1.0-SNAPSHOT'
-
-    repositories {
-        mavenCentral()
-    }
-
-    jacoco {
-        toolVersion = "0.8.12"
-    }
 
     dependencies {
         compileOnly "org.projectlombok:lombok:${versions.lombok}"
@@ -54,26 +51,16 @@ subprojects {
 
     test {
         useJUnitPlatform()
-        finalizedBy jacocoTestReport
+        finalizedBy 'jacocoTestReport'
+    }
+
+    jacoco {
+        toolVersion = "0.8.12"
     }
 
     jacocoTestReport {
-        executionData fileTree(dir: "$buildDir", includes: [
-                "jacoco/test.exec", "jacoco/test*.exec"
-        ])
         reports {
             xml.required = true
-            html.required = true
-        }
-
-        afterEvaluate {
-            classDirectories.setFrom(files(classDirectories.files.collect {
-                fileTree(dir: it, exclude: [
-                        '**/*$MockitoMock$*.*',
-                        '**/model/**',
-                        '**/*Builder*.*' // Lombok 빌더 클래스 제외
-                ])
-            }))
         }
     }
 }

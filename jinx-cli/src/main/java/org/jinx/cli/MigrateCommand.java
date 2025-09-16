@@ -3,6 +3,11 @@ package org.jinx.cli;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jinx.migration.DatabaseType;
 import org.jinx.model.DialectBundle;
+import org.jinx.options.JinxOptions;
+import org.jinx.naming.DefaultNaming;
+import org.jinx.config.ConfigurationLoader;
+import org.jinx.migration.baseline.BaselineManager;
+import org.jinx.migration.MigrationInfo;
 import org.jinx.migration.output.LiquibaseYamlHandler;
 import org.jinx.migration.output.SqlMigrationHandler;
 import org.jinx.migration.output.SqlRollbackHandler;
@@ -18,6 +23,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
+import java.util.Map;
 
 @CommandLine.Command(
         name = "migrate",
@@ -41,21 +47,29 @@ public class MigrateCommand implements Callable<Integer> {
     private boolean generateRollback;
     @CommandLine.Option(names = "--liquibase", description = "Liquibase YAML을 함께 생성합니다.")
     private boolean generateLiquibase;
+    @CommandLine.Option(names = "--max-length", description = "생성되는 제약조건/인덱스 이름의 최대 길이", defaultValue = "30")
+    private int maxLength = JinxOptions.Naming.MAX_LENGTH_DEFAULT;
+    @CommandLine.Option(names = "--profile", description = "사용할 설정 프로파일 (dev, prod, test 등)")
+    private String profile;
 
     @Override
     public Integer call() {
         try {
-            // 1. 스키마 파일 로드 및 기본 검증
-            List<SchemaModel> schemas = loadAndValidateSchemas();
-            if (schemas.isEmpty()) {
-                System.out.println("No changes detected or not enough schema files to compare.");
+            // 1. 설정 로드 및 적용
+            applyConfiguration();
+
+            // 2. Baseline vs HEAD 비교
+            BaselineManager baselineManager = new BaselineManager(outputDir);
+            SchemaModel baseline = baselineManager.loadBaseline();
+            SchemaModel head = loadLatestSchema();
+
+            if (head == null) {
+                System.out.println("No HEAD schema found. Run compilation first.");
                 return 0;
             }
-            SchemaModel oldSchema = schemas.get(1);
-            SchemaModel newSchema = schemas.get(0);
 
-            // 2. 스키마 비교 및 변경점 확인
-            DiffResult diff = new SchemaDiffer().diff(oldSchema, newSchema);
+            // 3. 스키마 비교 및 변경점 확인
+            DiffResult diff = new SchemaDiffer().diff(baseline, head);
             if (!isChanged(diff)) {
                 System.out.println("No changes detected.");
                 return 0;
@@ -64,8 +78,8 @@ public class MigrateCommand implements Callable<Integer> {
             // 3. 위험한 변경 감지 및 처리
             handleDangerousChanges(diff);
 
-            // 4. 마이그레이션 파일 생성
-            generateMigrationOutputs(diff, oldSchema, newSchema);
+            // 4. 마이그레이션 파일 생성 (with hash information)
+            generateMigrationOutputs(diff, baseline, head, baselineManager);
 
             System.out.println("Migration files generated successfully in " + outputDir);
             return 0;
@@ -82,25 +96,25 @@ public class MigrateCommand implements Callable<Integer> {
         }
     }
 
-    private List<SchemaModel> loadAndValidateSchemas() throws IOException {
+    /**
+     * Load the latest (HEAD) schema file
+     */
+    private SchemaModel loadLatestSchema() throws IOException {
         if (!Files.exists(schemaDir)) {
-            throw new IOException("Schema directory not found: " + schemaDir);
+            return null;
         }
 
         List<Path> schemaPaths = Files.list(schemaDir)
                 .filter(p -> p.getFileName().toString().matches(SCHEMA_FILE_PATTERN))
                 .sorted((a, b) -> b.getFileName().toString().compareTo(a.getFileName().toString()))
-                .limit(2) // 최신 2개만 가져옴
+                .limit(1) // 최신 1개만
                 .toList();
 
-        if (schemaPaths.size() < 2) {
-            return List.of();
+        if (schemaPaths.isEmpty()) {
+            return null;
         }
 
-        SchemaModel newSchema = loadSchema(schemaPaths.get(0));
-        SchemaModel oldSchema = loadSchema(schemaPaths.get(1));
-
-        return List.of(newSchema, oldSchema);
+        return loadSchema(schemaPaths.get(0));
     }
 
 
@@ -121,18 +135,29 @@ public class MigrateCommand implements Callable<Integer> {
         }
     }
 
-    private void generateMigrationOutputs(DiffResult diff, SchemaModel oldSchema, SchemaModel newSchema) throws IOException {
+    private void generateMigrationOutputs(DiffResult diff, SchemaModel baseline, SchemaModel head, BaselineManager baselineManager) throws IOException {
         var bundle = resolveDialects(dialectName);
-        new SqlMigrationHandler().handle(diff, oldSchema, newSchema, bundle, outputDir);
+        var naming = new DefaultNaming(maxLength);
+
+        // Generate hashes for header
+        String baselineHash = baselineManager.getBaselineHash().orElse("initial");
+        String headHash = baselineManager.generateSchemaHash(head);
+
+        // Create migration info for headers
+        MigrationInfo migrationInfo = new MigrationInfo(baselineHash, headHash, head.getVersion());
+
+        // Generate migration SQL with header
+        new SqlMigrationHandler().handle(diff, baseline, head, bundle, outputDir, migrationInfo);
 
         if (generateRollback) {
-            new SqlRollbackHandler().handle(diff, oldSchema, newSchema, bundle, outputDir);
+            new SqlRollbackHandler().handle(diff, baseline, head, bundle, outputDir);
         }
 
         if (generateLiquibase) {
-            new LiquibaseYamlHandler().handle(diff, oldSchema, newSchema, bundle, outputDir);
+            new LiquibaseYamlHandler().handle(diff, baseline, head, bundle, outputDir, naming, migrationInfo);
         }
     }
+
 
     private SchemaModel loadSchema(Path path) throws IOException {
         return new ObjectMapper().readValue(path.toFile(), SchemaModel.class);
@@ -154,6 +179,28 @@ public class MigrateCommand implements Callable<Integer> {
 
         public List<String> getReasons() {
             return reasons;
+        }
+    }
+
+    /**
+     * 설정 파일과 프로파일을 로드하여 CLI 옵션에 적용합니다.
+     * CLI 옵션이 명시적으로 지정되지 않은 경우에만 설정 파일 값을 사용합니다.
+     */
+    private void applyConfiguration() {
+        ConfigurationLoader loader = new ConfigurationLoader();
+        Map<String, String> config = loader.loadConfiguration(profile);
+
+        // CLI에서 maxLength가 기본값이면 설정 파일의 값을 사용
+        if (maxLength == JinxOptions.Naming.MAX_LENGTH_DEFAULT) {
+            String configMaxLength = config.get(JinxOptions.Naming.MAX_LENGTH_KEY);
+            if (configMaxLength != null) {
+                try {
+                    maxLength = Integer.parseInt(configMaxLength);
+                } catch (NumberFormatException e) {
+                    System.err.println("Warning: Invalid maxLength in configuration: " + configMaxLength +
+                                     ". Using default: " + JinxOptions.Naming.MAX_LENGTH_DEFAULT);
+                }
+            }
         }
     }
 

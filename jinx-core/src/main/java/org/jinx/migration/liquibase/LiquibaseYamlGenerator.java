@@ -1,15 +1,30 @@
 package org.jinx.migration.liquibase;
 
 import org.jinx.migration.liquibase.model.*;
+import org.jinx.migration.MigrationInfo;
 import org.jinx.model.DialectBundle;
 import org.jinx.model.DiffResult;
 import org.jinx.model.DiffResult.*;
 import org.jinx.model.SchemaModel;
+import org.jinx.naming.Naming;
 
 public class LiquibaseYamlGenerator {
     public DatabaseChangeLog generate(DiffResult diff, SchemaModel oldSchema, SchemaModel newSchema, DialectBundle dialectBundle) {
+        return generate(diff, oldSchema, newSchema, dialectBundle, null, null);
+    }
+
+    public DatabaseChangeLog generate(DiffResult diff, SchemaModel oldSchema, SchemaModel newSchema, DialectBundle dialectBundle, Naming naming) {
+        return generate(diff, oldSchema, newSchema, dialectBundle, naming, null);
+    }
+
+    public DatabaseChangeLog generate(DiffResult diff, SchemaModel oldSchema, SchemaModel newSchema, DialectBundle dialectBundle, Naming naming, MigrationInfo migrationInfo) {
         ChangeSetIdGenerator idGenerator = new ChangeSetIdGenerator();
-        LiquibaseVisitor visitor = new LiquibaseVisitor(dialectBundle, idGenerator);
+        LiquibaseVisitor visitor = new LiquibaseVisitor(dialectBundle, idGenerator, naming);
+
+        // Set migration info for hash embedding
+        if (migrationInfo != null) {
+            visitor.setMigrationInfo(migrationInfo);
+        }
 
         // 1. 시퀀스 변경 (ADDED, DROPPED, MODIFIED)
         diff.sequenceAccept(visitor, SequenceDiff.Type.values());

@@ -10,5 +10,6 @@ import java.util.List;
 public class ChangeSet {
     private String id;
     private String author;
+    private String comment;
     private List<Change> changes;
 }

@@ -1,6 +1,8 @@
 plugins {
-    id 'java'
+    id 'java-library'
     id 'application'
+    id 'maven-publish'
+    id 'signing'
 }
 
 dependencies {
@@ -18,4 +20,50 @@ dependencies {
 
 application {
     mainClass = 'org.jinx.cli.JinxCli'
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifactId = 'jinx-cli'
+            pom {
+                name = 'jinx-cli'
+                description = 'Jinx CLI'
+                url = 'https://github.com/yyubin/jinx'
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'yyubin'
+                        name = 'Yubin'
+                        email = 'yyubin@gmail.com'
+                    }
+                }
+                scm {
+                    connection = 'scm:git:git://github.com/yyubin/jinx.git'
+                    developerConnection = 'scm:git:ssh://github.com/yyubin/jinx.git'
+                    url = 'https://github.com/yyubin/jinx'
+                }
+            }
+        }
+    }
+}
+
+if (System.getenv('SIGNING_KEY') != null) {
+    signing {
+        def key = System.getenv('SIGNING_KEY')
+        def pass = System.getenv('SIGNING_PASSWORD')
+        useInMemoryPgpKeys(key, pass)
+        sign publishing.publications.mavenJava
+    }
 }

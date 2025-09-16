@@ -1,6 +1,13 @@
 plugins {
-    id 'java-library' // 'java' 대신 'java-library' 사용
+    id 'java-library'
+    id 'maven-publish'
+    id 'signing'
 }
+
+group = 'io.github.yyubin'
+version = '0.0.1'
+
+repositories { mavenCentral() }
 
 dependencies {
     api "jakarta.persistence:jakarta.persistence-api:${versions.jpaApi}"
@@ -9,4 +16,50 @@ dependencies {
     implementation "com.fasterxml.jackson.core:jackson-core:${versions.jackson}"
     implementation "com.fasterxml.jackson.core:jackson-annotations:${versions.jackson}"
     implementation "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:${versions.jackson}"
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    publications {
+        create('mavenJava', MavenPublication) {
+            from components.java
+            artifactId = 'jinx-core'
+            pom {
+                name = 'Jinx'
+                description = 'JPA DDL generation & Gradle plugin'
+                url = 'https://github.com/yyubin/jinx'
+                licenses {
+                    license {
+                        name = 'Apache-2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0'
+                    }
+                }
+                scm {
+                    url = 'https://github.com/yyubin/jinx'
+                    connection = 'scm:git:https://github.com/yyubin/jinx.git'
+                    developerConnection = 'scm:git:git@github.com:yyubin/jinx.git'
+                }
+                developers {
+                    developer {
+                        id = 'yyubin'
+                        name = 'Yubin'
+                        url = 'https://github.com/yyubin'
+                    }
+                }
+            }
+        }
+    }
+}
+
+if (System.getenv('SIGNING_KEY') != null) {
+    signing {
+        def key = System.getenv('SIGNING_KEY')
+        def pass = System.getenv('SIGNING_PASSWORD')
+        useInMemoryPgpKeys(key, pass)
+        sign publishing.publications.mavenJava
+    }
 }
