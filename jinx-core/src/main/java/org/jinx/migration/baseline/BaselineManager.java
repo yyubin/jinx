@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jinx.model.SchemaModel;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -38,7 +39,7 @@ public class BaselineManager {
 
             // Generate SHA-256 hash
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(content.getBytes());
+            byte[] hash = digest.digest(content.getBytes(StandardCharsets.UTF_8));
 
             // Convert to hex string
             StringBuilder hexString = new StringBuilder();
@@ -80,7 +81,7 @@ public class BaselineManager {
             }
 
             BaselineMetadata metadata = objectMapper.readValue(metadataFile.toFile(), BaselineMetadata.class);
-            return Optional.of(metadata.getSchemaHash());
+            return Optional.ofNullable(metadata.getSchemaHash()).filter(s -> !s.isBlank());
 
         } catch (IOException e) {
             return Optional.empty();

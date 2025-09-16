@@ -2,7 +2,9 @@ package org.jinx.config;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
+import lombok.ToString;
 
+import java.util.HashMap;
 import java.util.Map;
 
 @Data
@@ -12,7 +14,7 @@ public class JinxConfiguration {
      * 프로파일별 설정 맵
      */
     @JsonProperty("profiles")
-    private Map<String, ProfileConfiguration> profiles;
+    private Map<String, ProfileConfiguration> profiles = new HashMap<>();
 
     /**
      * 개별 프로파일 설정
@@ -55,7 +57,7 @@ public class JinxConfiguration {
         @JsonProperty("username")
         private String username;
 
-        @JsonProperty("password")
+        @ToString.Exclude
         private String password;
     }
 

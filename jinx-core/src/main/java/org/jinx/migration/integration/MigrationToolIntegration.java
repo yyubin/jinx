@@ -55,7 +55,7 @@ public class MigrationToolIntegration {
      */
     public static boolean isAppliedViaFlyway(String jdbcUrl, String username, String password, String targetHash) {
         String query = """
-                SELECT version, description
+                SELECT version, description, script
                 FROM flyway_schema_history
                 WHERE success = true
                 ORDER BY installed_on DESC
@@ -69,7 +69,9 @@ public class MigrationToolIntegration {
             String hashPatternFw = "jinxHead_" + head.replace(':','_');
             while (rs.next()) {
                 String script = rs.getString("script");
-                if (script != null && script.contains(hashPatternFw)) {
+                String description = rs.getString("description");
+                // Flyway는 스크립트 파일명을 저장하므로, 파일명이나 description에서 해시 확인해야 함
+                if ((script != null && script.contains(hashPatternFw)) || (description != null && description.contains(hashPatternFw))) {
                     return true;
                 }
             }
@@ -130,7 +132,7 @@ public class MigrationToolIntegration {
         if (databaseType.contains("mysql")) {
             return """
                 INSERT INTO jinx_schema_state (id, current_hash, version, applied_at, applied_by)
-                VALUES (1, ?, ?, CURRENT_TIMESTAMP, ?)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
                 ON DUPLICATE KEY UPDATE
                     current_hash = VALUES(current_hash),
                     version = VALUES(version),
@@ -140,7 +142,7 @@ public class MigrationToolIntegration {
         } else if (databaseType.contains("postgresql")) {
             return """
                 INSERT INTO jinx_schema_state (id, current_hash, version, applied_at, applied_by)
-                VALUES (1, ?, ?, CURRENT_TIMESTAMP, ?)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
                 ON CONFLICT (id) DO UPDATE SET
                     current_hash = EXCLUDED.current_hash,
                     version = EXCLUDED.version,
@@ -151,7 +153,7 @@ public class MigrationToolIntegration {
             // Fallback for other databases - simple INSERT (may fail on duplicate)
             return """
                 INSERT INTO jinx_schema_state (id, current_hash, version, applied_at, applied_by)
-                VALUES (1, ?, ?, CURRENT_TIMESTAMP, ?)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
                 """;
         }
     }

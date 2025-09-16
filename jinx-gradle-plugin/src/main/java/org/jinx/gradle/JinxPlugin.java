@@ -1,13 +1,14 @@
 package org.jinx.gradle;
 
+import org.gradle.api.GradleException;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.tasks.JavaExec;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.jinx.config.ConfigurationLoader;
 import org.jinx.options.JinxOptions;
 
-import java.io.File;
 import java.util.Map;
 
 /**
@@ -22,32 +23,44 @@ import java.util.Map;
 public class JinxPlugin implements Plugin<Project> {
 
     private static final String EXTENSION_NAME = "jinx";
+    private static final String CFG_JINX_RUNTIME = "jinxRuntime";
 
     @Override
     public void apply(Project project) {
         // 1. Create jinx extension
         JinxExtension extension = project.getExtensions().create(EXTENSION_NAME, JinxExtension.class);
 
-        // 2. Configure JavaCompile tasks after project evaluation
-        project.afterEvaluate(this::configureJavaCompileTasks);
+        // 2. Create a dedicated configuration for the Jinx CLI tool
+        Configuration jinxRuntime = project.getConfigurations().maybeCreate(CFG_JINX_RUNTIME);
+        jinxRuntime.setCanBeConsumed(false);
+        jinxRuntime.setCanBeResolved(true);
+        jinxRuntime.setVisible(false);
 
-        // 3. Create CLI tasks
-        createCliTasks(project, extension);
+        // 3. Add jinx-cli dependency to the configuration
+        String pluginVersion = String.valueOf(project.getVersion());
+        project.getDependencies().add(CFG_JINX_RUNTIME, "org.jinx:jinx-cli:" + pluginVersion);
+
+        // 4. Configure JavaCompile tasks after project evaluation
+        project.afterEvaluate(p -> configureJavaCompileTasks(p, extension));
+
+        // 5. Create CLI tasks
+        createCliTasks(project, extension, jinxRuntime);
     }
 
-    private void configureJavaCompileTasks(Project project) {
-        JinxExtension extension = project.getExtensions().getByType(JinxExtension.class);
-
+    private void configureJavaCompileTasks(Project project, JinxExtension extension) {
         project.getTasks().withType(JavaCompile.class).configureEach(task -> {
+            if (!task.getName().equals("compileJava")) {
+                return; // Only apply to the main compile task
+            }
             // Load configuration with priority: Gradle DSL > YAML file > defaults
             Map<String, String> resolvedConfig = resolveConfiguration(project, extension);
 
             // Apply configuration as -A options
             resolvedConfig.forEach((key, value) -> {
-                task.getOptions().getCompilerArgs().add("-A" + key + "=" + value);
+                if (value != null && !value.isBlank()) {
+                    task.getOptions().getCompilerArgs().add("-A" + key + "=" + value);
+                }
             });
-
-            project.getLogger().info("Applied Jinx configuration to {}: {}", task.getName(), resolvedConfig);
         });
     }
 
@@ -71,7 +84,7 @@ public class JinxPlugin implements Plugin<Project> {
         return config;
     }
 
-    private void createCliTasks(Project project, JinxExtension extension) {
+    private void createCliTasks(Project project, JinxExtension extension, Configuration jinxRuntime) {
         // Create jinxMigrate task
         project.getTasks().register("jinxMigrate", JavaExec.class, task -> {
             task.setGroup("jinx");
@@ -79,35 +92,34 @@ public class JinxPlugin implements Plugin<Project> {
 
             // Configure main class and classpath
             task.getMainClass().set("org.jinx.cli.JinxCli");
-
-            // Set classpath after evaluation to ensure configurations are available
-            project.afterEvaluate(p -> {
-                if (project.getConfigurations().findByName("runtimeClasspath") != null) {
-                    task.setClasspath(project.getConfigurations().getByName("runtimeClasspath"));
-                }
-            });
+            task.setClasspath(jinxRuntime);
 
             // Set default arguments
             task.args("db", "migrate");
 
-            // Apply configuration
+            // Apply configuration from extension after project evaluation
             project.afterEvaluate(p -> {
-                // Add profile argument if specified
                 if (extension.getProfile().isPresent()) {
                     task.args("--profile", extension.getProfile().get());
                 }
-
-                // Add other CLI arguments based on extension configuration
                 if (extension.getNaming().getMaxLength().isPresent()) {
                     task.args("--max-length", extension.getNaming().getMaxLength().get().toString());
                 }
-
                 if (extension.getDatabase().getDialect().isPresent()) {
                     task.args("--dialect", extension.getDatabase().getDialect().get());
                 }
-
                 if (extension.getOutput().getDirectory().isPresent()) {
                     task.args("--out", extension.getOutput().getDirectory().get());
+                }
+            });
+
+            // Add a check to ensure the CLI runtime is available
+            task.doFirst(t -> {
+                if (jinxRuntime.isEmpty()) {
+                    throw new GradleException(
+                      "Jinx CLI runtime not resolved. " +
+                      "Check plugin version or repository settings for org.jinx:jinx-cli."
+                    );
                 }
             });
         });
