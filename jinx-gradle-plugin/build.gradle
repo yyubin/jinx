@@ -2,6 +2,7 @@ plugins {
     id 'java-gradle-plugin'
     id 'maven-publish'
     id 'signing'
+    id("io.github.sgtsilvio.gradle.maven-central-publishing") version "0.4.1"
 }
 
 dependencies {
@@ -21,7 +22,7 @@ dependencies {
 gradlePlugin {
     plugins {
         jinx {
-            id = 'org.jinx.gradle'
+            id = 'io.github.yyubin.jinx'
             implementationClass = 'org.jinx.gradle.JinxPlugin'
             displayName = 'Jinx Gradle Plugin'
             description = 'Gradle plugin for Jinx JPA DDL generation tool'
@@ -67,15 +68,50 @@ afterEvaluate {
                     }
                 }
             }
+
+            // 플러그인 마커에도 메타데이터 추가
+            all { pub ->
+                if (pub.name.contains('PluginMarkerMaven')) {
+                    pub.pom {
+                        name = 'Jinx Gradle Plugin Marker'
+                        description = 'Gradle plugin marker for Jinx JPA DDL generation tool'
+                        url = 'https://github.com/yyubin/jinx'
+                        licenses {
+                            license {
+                                name = 'The Apache License, Version 2.0'
+                                url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                            }
+                        }
+                        developers {
+                            developer {
+                                id = 'yyubin'
+                                name = 'Yubin'
+                                email = 'yyubin@gmail.com'
+                            }
+                        }
+                        scm {
+                            connection = 'scm:git:git://github.com/yyubin/jinx.git'
+                            developerConnection = 'scm:git:ssh://github.com/yyubin/jinx.git'
+                            url = 'https://github.com/yyubin/jinx'
+                        }
+                    }
+                }
+            }
         }
     }
 
-    if (System.getenv('SIGNING_KEY') != null) {
+    if (project.findProperty("signingKey") != null) {
         signing {
-            def key = System.getenv('SIGNING_KEY')
-            def pass = System.getenv('SIGNING_PASSWORD')
+            def key = project.findProperty("signingKey") ?: System.getenv('ORG_GRADLE_PROJECT_signingKey')
+            def pass = project.findProperty("signingPassword") ?: System.getenv('ORG_GRADLE_PROJECT_signingPassword')
             useInMemoryPgpKeys(key, pass)
             sign publishing.publications.pluginMaven
+            // 플러그인 마커도 서명
+            publishing.publications.all { pub ->
+                if (pub.name.contains('PluginMarkerMaven')) {
+                    sign pub
+                }
+            }
         }
     }
 }

@@ -3,6 +3,7 @@ plugins {
     id 'application'
     id 'maven-publish'
     id 'signing'
+    id("io.github.sgtsilvio.gradle.maven-central-publishing") version "0.4.1"
 }
 
 dependencies {
@@ -59,10 +60,10 @@ publishing {
     }
 }
 
-if (System.getenv('SIGNING_KEY') != null) {
+if (project.findProperty("signingKey") != null) {
     signing {
-        def key = System.getenv('SIGNING_KEY')
-        def pass = System.getenv('SIGNING_PASSWORD')
+        def key = project.findProperty("signingKey") ?: System.getenv('ORG_GRADLE_PROJECT_signingKey')
+        def pass = project.findProperty("signingPassword") ?: System.getenv('ORG_GRADLE_PROJECT_signingPassword')
         useInMemoryPgpKeys(key, pass)
         sign publishing.publications.mavenJava
     }
