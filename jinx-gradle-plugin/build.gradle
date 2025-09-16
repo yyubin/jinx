@@ -1,0 +1,30 @@
+plugins {
+    id 'java-gradle-plugin'
+    id 'maven-publish'
+}
+
+dependencies {
+    implementation project(':jinx-core')
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.15.2'
+
+    testImplementation platform("org.junit:junit-bom:${versions.junit}")
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation("org.mockito:mockito-core:${versions.mockito}")
+    testImplementation("org.assertj:assertj-core:${versions.assertj}")
+    testImplementation gradleTestKit()
+}
+
+gradlePlugin {
+    plugins {
+        jinx {
+            id = 'org.jinx.gradle'
+            implementationClass = 'org.jinx.gradle.JinxPlugin'
+            displayName = 'Jinx Gradle Plugin'
+            description = 'Gradle plugin for Jinx JPA DDL generation tool'
+        }
+    }
+}
+
+test {
+    useJUnitPlatform()
+}

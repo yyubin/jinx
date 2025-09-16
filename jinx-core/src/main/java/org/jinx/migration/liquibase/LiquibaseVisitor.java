@@ -3,6 +3,7 @@ package org.jinx.migration.liquibase;
 import lombok.Getter;
 import lombok.Setter;
 import org.jinx.migration.liquibase.model.*;
+import org.jinx.migration.MigrationInfo;
 import org.jinx.migration.spi.visitor.*;
 import org.jinx.model.*;
 import org.jinx.model.DiffResult.*;
@@ -23,6 +24,8 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
     private final java.util.Map<String, java.util.List<String>> pkColumnsCache = new java.util.HashMap<>();
     @Setter
     private String currentTableName;
+    @Setter
+    private MigrationInfo migrationInfo;
 
     public LiquibaseVisitor(DialectBundle dialectBundle, ChangeSetIdGenerator idGenerator) {
         this(dialectBundle, idGenerator, null);
@@ -39,6 +42,17 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                 .map(lb -> lb.getMaxIdentifierLength())
                 .orElse(63);
         return new DefaultNaming(maxLength);
+    }
+
+    /**
+     * Creates a ChangeSet wrapper with hash metadata in the comment if MigrationInfo is available
+     */
+    private ChangeSetWrapper createChangeSetWithHash(String id, List<Change> changes) {
+        String comment = null;
+        if (migrationInfo != null) {
+            comment = String.format("jinxHead=sha256:%s", migrationInfo.getHeadHash());
+        }
+        return LiquibaseUtils.createChangeSet(id, changes, comment);
     }
 
     /**
@@ -91,7 +105,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                         .build())
                 .build();
 
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(createTable)));
+        changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(createTable)));
 
         if (!pkCols.isEmpty()) {
             var addPk = AddPrimaryKeyConstraintChange.builder()
@@ -101,7 +115,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                             .columnNames(String.join(",", pkCols))
                             .build())
                     .build();
-            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(addPk)));
+            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(addPk)));
         }
 
         // 고유/체크 제약도 반영
@@ -120,7 +134,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                         .tableName(table.getTableName())
                         .build())
                 .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropTable)));
+        changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(dropTable)));
     }
 
     @Override
@@ -131,7 +145,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                         .newTableName(renamed.getNewEntity().getTableName())
                         .build())
                 .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(renameTable)));
+        changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(renameTable)));
     }
 
     // 시퀀스 관련 방문 메서드
@@ -145,7 +159,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                             .incrementBy(String.valueOf(sequence.getAllocationSize()))
                             .build())
                     .build();
-            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(createSequence)));
+            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(createSequence)));
         });
     }
 
@@ -157,7 +171,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                             .sequenceName(sequence.getName())
                             .build())
                     .build();
-            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropSequence)));
+            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(dropSequence)));
         });
     }
 
@@ -176,8 +190,8 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                             .incrementBy(String.valueOf(newSequence.getAllocationSize()))
                             .build())
                     .build();
-            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropSequence)));
-            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(createSequence)));
+            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(dropSequence)));
+            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(createSequence)));
         });
     }
 
@@ -208,7 +222,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                             .build())
                     .build();
 
-            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(createTable)));
+            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(createTable)));
 
             // 초기 row insert
             var insert = InsertDataChange.builder()
@@ -226,7 +240,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                             )).build())
                     .build();
 
-            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(insert)));
+            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(insert)));
         });
     }
 
@@ -239,7 +253,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                             .tableName(tableGenerator.getTable())
                             .build())
                     .build();
-            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropTable)));
+            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(dropTable)));
         });
     }
 
@@ -277,8 +291,8 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                                             .build()))
                             .build())
                     .build();
-            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropTable)));
-            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(createTable)));
+            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(dropTable)));
+            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(createTable)));
         });
     }
 
@@ -302,7 +316,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                                 .build()))
                         .build())
                 .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(addColumn)));
+        changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(addColumn)));
     }
 
     @Override
@@ -313,7 +327,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                         .columnName(column.getColumnName())
                         .build())
                 .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropColumn)));
+        changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(dropColumn)));
     }
 
     @Override
@@ -372,7 +386,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                         .newColumnName(newColumn.getColumnName())
                         .build())
                 .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(renameColumn)));
+        changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(renameColumn)));
     }
 
     @Override
@@ -393,7 +407,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                         .columns(indexColumns)
                         .build())
                 .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(createIndex)));
+        changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(createIndex)));
     }
 
     @Override
@@ -408,7 +422,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                         .tableName(tableName)
                         .build())
                 .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropIndex)));
+        changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(dropIndex)));
     }
 
     @Override
@@ -440,8 +454,8 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                                 .toList())
                         .build())
                 .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropOldIndex)));
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(createNewIndex)));
+        changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(dropOldIndex)));
+        changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(createNewIndex)));
     }
 
     @Override
@@ -457,7 +471,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                             .columnNames(String.join(",", constraint.getColumns()))
                             .build())
                     .build();
-            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(uniqueChange)));
+            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(uniqueChange)));
         } else if (constraint.getType() == ConstraintType.CHECK) {
             String constraintName = constraint.getName() != null 
                     ? constraint.getName() 
@@ -469,7 +483,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                             .constraintExpression(constraint.getCheckClause().orElse(""))
                             .build())
                     .build();
-            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(checkChange)));
+            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(checkChange)));
         }
     }
 
@@ -485,7 +499,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                             .tableName(currentTableName)
                             .build())
                     .build();
-            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropUnique)));
+            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(dropUnique)));
         } else if (constraint.getType() == ConstraintType.CHECK) {
             String constraintName = constraint.getName() != null 
                     ? constraint.getName() 
@@ -496,7 +510,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                             .tableName(currentTableName)
                             .build())
                     .build();
-            changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropCheck)));
+            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(dropCheck)));
         }
     }
 
@@ -526,7 +540,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                         .onUpdate(relationship.getOnUpdate() != null ? relationship.getOnUpdate().name().replace('_',' ') : null)
                         .build())
                 .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(fkChange)));
+        changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(fkChange)));
     }
 
     @Override
@@ -544,7 +558,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                         .baseTableName(baseTable)
                         .build())
                 .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropFk)));
+        changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(dropFk)));
     }
 
     @Override
@@ -565,7 +579,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                         .columnNames(String.join(",", pkColumns))
                         .build())
                 .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(addPk)));
+        changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(addPk)));
     }
 
     @Override
@@ -586,7 +600,7 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
         DropPrimaryKeyConstraintChange dropPk = DropPrimaryKeyConstraintChange.builder()
                 .config(cfg.build())
                 .build();
-        changeSets.add(LiquibaseUtils.createChangeSet(idGenerator.nextId(), List.of(dropPk)));
+        changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(dropPk)));
 
         // 드랍 후 캐시 정리
         pkColumnsCache.remove(currentTableName);

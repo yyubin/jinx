@@ -34,8 +34,14 @@ class LiquibaseYamlHandlerTest {
 
         try (MockedConstruction<LiquibaseYamlGenerator> mc =
                      mockConstruction(LiquibaseYamlGenerator.class,
-                             (mock, ctx) -> when(mock.generate(eq(diff), eq(oldSchema), eq(newSchema), eq(dialect)))
-                                     .thenReturn(fakeChangeLog))) {
+                             (mock, ctx) -> {
+                                 when(mock.generate(eq(diff), eq(oldSchema), eq(newSchema), eq(dialect)))
+                                         .thenReturn(fakeChangeLog);
+                                 when(mock.generate(eq(diff), eq(oldSchema), eq(newSchema), eq(dialect), isNull()))
+                                         .thenReturn(fakeChangeLog);
+                                 when(mock.generate(eq(diff), eq(oldSchema), eq(newSchema), eq(dialect), isNull(), isNull()))
+                                         .thenReturn(fakeChangeLog);
+                             })) {
 
             LiquibaseYamlHandler handler = new LiquibaseYamlHandler();
 

@@ -6,7 +6,9 @@ import picocli.CommandLine;
         name = "db",
         description = "데이터베이스 관련 명령어",
         subcommands = {
-                MigrateCommand.class
+                MigrateCommand.class,
+                VerifyCommand.class,
+                PromoteBaselineCommand.class
         }
 )
 public class DbCommand {

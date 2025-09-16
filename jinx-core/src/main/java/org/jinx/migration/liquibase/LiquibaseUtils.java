@@ -7,10 +7,15 @@ import java.util.List;
 
 public class LiquibaseUtils {
     public static ChangeSetWrapper createChangeSet(String id, List<Change> changes) {
+        return createChangeSet(id, changes, null);
+    }
+
+    public static ChangeSetWrapper createChangeSet(String id, List<Change> changes, String comment) {
         return ChangeSetWrapper.builder()
                 .changeSet(ChangeSet.builder()
                         .id(id)
                         .author("auto-generated")
+                        .comment(comment)
                         .changes(changes)
                         .build())
                 .build();

@@ -9,6 +9,8 @@ import org.jinx.model.EntityModel;
 import org.jinx.model.SchemaModel;
 import org.jinx.naming.DefaultNaming;
 import org.jinx.naming.Naming;
+import org.jinx.options.JinxOptions;
+import org.jinx.config.ConfigurationLoader;
 import org.jinx.processor.JpaSqlGeneratorProcessor;
 
 import javax.annotation.processing.Messager;
@@ -25,6 +27,7 @@ import java.io.Writer;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.Map;
 
 @Getter
 public class ProcessingContext {
@@ -54,15 +57,54 @@ public class ProcessingContext {
     public ProcessingContext(ProcessingEnvironment processingEnv, SchemaModel schemaModel) {
         this.processingEnv = processingEnv;
         this.schemaModel = schemaModel;
-        String maxLenOpt = processingEnv.getOptions().getOrDefault("jinx.naming.maxLength", "30");
-        int maxLength = 30;
-        try { maxLength = Integer.parseInt(maxLenOpt); }
-        catch (NumberFormatException e) {
-            getMessager().printMessage(Diagnostic.Kind.WARNING,
-                    "Invalid jinx.naming.maxLength: " + maxLenOpt + " (use default " + maxLength + ")");
-        }
+
+        // 설정 로드 (프로파일 지원)
+        Map<String, String> config = loadConfiguration(processingEnv);
+        int maxLength = parseMaxLength(config);
+
         this.naming = new DefaultNaming(maxLength);
         this.attributeDescriptorFactory = new AttributeDescriptorFactory(processingEnv.getTypeUtils(), processingEnv.getElementUtils(), this);
+    }
+
+    /**
+     * 프로파일을 고려하여 설정을 로드합니다.
+     * 우선순위: -A 옵션 > 설정 파일 > 기본값
+     */
+    private Map<String, String> loadConfiguration(ProcessingEnvironment processingEnv) {
+        // 프로파일 결정: -Ajinx.profile > JINX_PROFILE 환경변수 > dev
+        String profile = processingEnv.getOptions().get(JinxOptions.Profile.PROCESSOR_KEY);
+
+        ConfigurationLoader loader = new ConfigurationLoader();
+        Map<String, String> config = loader.loadConfiguration(profile);
+
+        // -A 옵션으로 명시적으로 지정된 값들이 있으면 덮어쓰기
+        String explicitMaxLength = processingEnv.getOptions().get(JinxOptions.Naming.MAX_LENGTH_KEY);
+        if (explicitMaxLength != null) {
+            Map<String, String> mutableConfig = new HashMap<>(config);
+            mutableConfig.put(JinxOptions.Naming.MAX_LENGTH_KEY, explicitMaxLength);
+            return mutableConfig;
+        }
+
+        return config;
+    }
+
+    /**
+     * 설정에서 maxLength 값을 파싱합니다.
+     */
+    private int parseMaxLength(Map<String, String> config) {
+        String maxLenOpt = config.get(JinxOptions.Naming.MAX_LENGTH_KEY);
+        int maxLength = JinxOptions.Naming.MAX_LENGTH_DEFAULT;
+
+        if (maxLenOpt != null) {
+            try {
+                maxLength = Integer.parseInt(maxLenOpt);
+            } catch (NumberFormatException e) {
+                getMessager().printMessage(Diagnostic.Kind.WARNING,
+                        "Invalid " + JinxOptions.Naming.MAX_LENGTH_KEY + ": " + maxLenOpt + " (use default " + maxLength + ")");
+            }
+        }
+
+        return maxLength;
     }
 
 
