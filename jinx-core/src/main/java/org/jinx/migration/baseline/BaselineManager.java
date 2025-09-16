@@ -1,6 +1,9 @@
 package org.jinx.migration.baseline;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import org.jinx.model.SchemaModel;
 
 import java.io.IOException;
@@ -26,7 +29,10 @@ public class BaselineManager {
 
     public BaselineManager(Path outputDir) {
         this.outputDir = outputDir;
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = new ObjectMapper()
+                .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+                .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)
+                .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);;
     }
 
     /**
