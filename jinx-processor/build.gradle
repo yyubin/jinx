@@ -1,5 +1,8 @@
 plugins {
-    id 'java'
+    id 'java-library'
+    id 'maven-publish'
+    id 'signing'
+    id("io.github.sgtsilvio.gradle.maven-central-publishing") version "0.4.1"
 }
 
 dependencies {
@@ -16,4 +19,50 @@ dependencies {
 
     testImplementation "jakarta.persistence:jakarta.persistence-api:${versions.jpaApi}"
 
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifactId = 'jinx-processor'
+            pom {
+                name = 'jinx-processor'
+                description = 'Jinx Annotation Processor'
+                url = 'https://github.com/yyubin/jinx'
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'yyubin'
+                        name = 'Yubin'
+                        email = 'yyubin@gmail.com'
+                    }
+                }
+                scm {
+                    connection = 'scm:git:git://github.com/yyubin/jinx.git'
+                    developerConnection = 'scm:git:ssh://github.com/yyubin/jinx.git'
+                    url = 'https://github.com/yyubin/jinx'
+                }
+            }
+        }
+    }
+}
+
+if (project.findProperty("signingKey") != null) {
+    signing {
+        def key = project.findProperty("signingKey") ?: System.getenv('ORG_GRADLE_PROJECT_signingKey')
+        def pass = project.findProperty("signingPassword") ?: System.getenv('ORG_GRADLE_PROJECT_signingPassword')
+        useInMemoryPgpKeys(key, pass)
+        sign publishing.publications.mavenJava
+    }
 }

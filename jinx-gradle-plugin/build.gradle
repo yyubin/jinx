@@ -1,11 +1,15 @@
 plugins {
     id 'java-gradle-plugin'
     id 'maven-publish'
+    id 'signing'
 }
 
 dependencies {
     implementation project(':jinx-core')
     implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.15.2'
+
+    compileOnly "org.projectlombok:lombok:${versions.lombok}"
+    annotationProcessor "org.projectlombok:lombok:${versions.lombok}"
 
     testImplementation platform("org.junit:junit-bom:${versions.junit}")
     testImplementation 'org.junit.jupiter:junit-jupiter'
@@ -27,4 +31,51 @@ gradlePlugin {
 
 test {
     useJUnitPlatform()
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            named('pluginMaven', MavenPublication) {
+                artifactId = 'jinx-gradle-plugin'
+                pom {
+                    name = 'jinx-gradle-plugin'
+                    description = 'Gradle plugin for Jinx JPA DDL generation tool'
+                    url = 'https://github.com/yyubin/jinx'
+                    licenses {
+                        license {
+                            name = 'The Apache License, Version 2.0'
+                            url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                        }
+                    }
+                    developers {
+                        developer {
+                            id = 'yyubin'
+                            name = 'Yubin'
+                            email = 'yyubin@gmail.com'
+                        }
+                    }
+                    scm {
+                        connection = 'scm:git:git://github.com/yyubin/jinx.git'
+                        developerConnection = 'scm:git:ssh://github.com/yyubin/jinx.git'
+                        url = 'https://github.com/yyubin/jinx'
+                    }
+                }
+            }
+        }
+    }
+
+    if (System.getenv('SIGNING_KEY') != null) {
+        signing {
+            def key = System.getenv('SIGNING_KEY')
+            def pass = System.getenv('SIGNING_PASSWORD')
+            useInMemoryPgpKeys(key, pass)
+            sign publishing.publications.pluginMaven
+        }
+    }
 }
