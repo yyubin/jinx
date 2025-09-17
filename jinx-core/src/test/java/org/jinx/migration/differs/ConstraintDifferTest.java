@@ -120,7 +120,7 @@ class ConstraintDifferTest {
                 .tableName("T")
                 .type(ConstraintType.CHECK)
                 .columns(new ArrayList<>(List.of("A")))
-                .checkClause(Optional.of("( A  >  0 )"))
+                .checkClause("( A  >  0 )") // Optional 제거, 평문 문자열 사용
                 .build();
 
         var newCk = ConstraintModel.builder()
@@ -128,7 +128,7 @@ class ConstraintDifferTest {
                 .tableName("T")
                 .type(ConstraintType.CHECK)
                 .columns(new ArrayList<>(List.of("A")))
-                .checkClause(Optional.of("a>=1")) // 의미/표현 달라짐
+                .checkClause("a>=1") // 표현 달라짐
                 .build();
 
         var oldE = entity("T", Map.of("CK_POSITIVE", oldCk));
@@ -144,16 +144,17 @@ class ConstraintDifferTest {
         assertThat(diff.getChangeDetail()).contains("checkClause changed");
     }
 
-
     @Test
     @DisplayName("INDEX 이름만 변경(다른 속성은 동일) → MODIFIED(이름 변경)")
     void index_rename_is_modified_by_name_change() {
+        // 주의: 현재 구현에서 INDEX가 ConstraintModel로 관리된다면 아래 케이스 유지.
+        // 만약 IndexModel로 분리되었다면, 이 테스트는 IndexDiffer 쪽으로 이전해야 함.
         var oldIdx = ConstraintModel.builder()
                 .name("IX_OLD")
                 .tableName("T")
                 .type(ConstraintType.INDEX)
                 .columns(new ArrayList<>(List.of("A", "B")))
-                .options(Optional.of("NONUNIQUE")) // 현 구현은 비교에 사용 안 함
+                .options("NONUNIQUE") // Optional 제거
                 .build();
 
         var newIdx = ConstraintModel.builder()
@@ -161,7 +162,7 @@ class ConstraintDifferTest {
                 .tableName("T")
                 .type(ConstraintType.INDEX)
                 .columns(new ArrayList<>(List.of("A", "B")))
-                .options(Optional.of("UNIQUE")) // 변경되어도 이름 비교 외엔 반영 안 됨
+                .options("UNIQUE") // 이름 비교가 핵심, 옵션은 비교에서 사용 안 함
                 .build();
 
         var oldE = entity("T", Map.of("IX_OLD", oldIdx));

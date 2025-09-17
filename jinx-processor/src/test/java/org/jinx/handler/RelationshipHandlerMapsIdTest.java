@@ -96,7 +96,7 @@ class RelationshipHandlerMapsIdTest {
 
         VariableElement diagElem = mock(VariableElement.class);
         AttributeDescriptor d = AttributeDescriptorFactory.withDiagnostic(
-                AttributeDescriptorFactory.setOf("com.example.User", "user", m2o, mapsId),
+                AttributeDescriptorFactory.setOf("com.example.User.java", "user", m2o, mapsId),
                 diagElem
         );
 
@@ -158,7 +158,7 @@ class RelationshipHandlerMapsIdTest {
 
         VariableElement diagElem = mock(VariableElement.class);
         AttributeDescriptor d = AttributeDescriptorFactory.withDiagnostic(
-                AttributeDescriptorFactory.setOf("com.example.User", "customer", m2o, mapsId),
+                AttributeDescriptorFactory.setOf("com.example.User.java", "customer", m2o, mapsId),
                 diagElem
         );
 
@@ -209,7 +209,7 @@ class RelationshipHandlerMapsIdTest {
 
         VariableElement diagElem = mock(VariableElement.class);
         AttributeDescriptor d = AttributeDescriptorFactory.withDiagnostic(
-                AttributeDescriptorFactory.setOf("com.example.User", "user", m2o, mapsId),
+                AttributeDescriptorFactory.setOf("com.example.User.java", "user", m2o, mapsId),
                 diagElem
         );
 

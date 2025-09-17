@@ -2,10 +2,7 @@ package org.jinx.model;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.FetchType;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import org.jinx.model.naming.CaseNormalizer;
 
 import java.util.ArrayList;
@@ -17,7 +14,7 @@ import java.util.stream.Collectors;
 
 @Data
 @Builder
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PUBLIC)
 @AllArgsConstructor
 public class RelationshipModel {
     private RelationshipType type;

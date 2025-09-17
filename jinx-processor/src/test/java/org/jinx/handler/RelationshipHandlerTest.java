@@ -93,7 +93,7 @@ class RelationshipHandlerTest {
         @DisplayName("should use cached descriptors if available")
         void shouldUseCachedDescriptors() {
             // Arrange
-            AttributeDescriptor cachedDescriptor = AttributeDescriptorFactory.setOf("com.example.User", "user", mock(ManyToOne.class));
+            AttributeDescriptor cachedDescriptor = AttributeDescriptorFactory.setOf("com.example.User.java", "user", mock(ManyToOne.class));
             when(context.getCachedDescriptors(ownerType)).thenReturn(List.of(cachedDescriptor));
             EntityModel ownerEntity = EntityModelMother.javaEntity("com.example.Order", "orders");
             when(p1.supports(cachedDescriptor)).thenReturn(true);
@@ -141,7 +141,7 @@ class RelationshipHandlerTest {
         void shouldDelegateToFirstSupporter() {
             // Arrange
             EntityModel ownerEntity = EntityModelMother.javaEntity("com.example.Order", "orders");
-            AttributeDescriptor descriptor = AttributeDescriptorFactory.setOf("com.example.User", "user", mock(ManyToOne.class));
+            AttributeDescriptor descriptor = AttributeDescriptorFactory.setOf("com.example.User.java", "user", mock(ManyToOne.class));
 
             // p1 does not support it, p2 does
             when(p1.supports(descriptor)).thenReturn(false);
@@ -160,7 +160,7 @@ class RelationshipHandlerTest {
         void shouldLogErrorForUnhandledRelationship() {
             // Arrange
             EntityModel ownerEntity = EntityModelMother.javaEntity("com.example.Order", "orders");
-            AttributeDescriptor descriptor = AttributeDescriptorFactory.setOf("com.example.User", "user", mock(ManyToOne.class));
+            AttributeDescriptor descriptor = AttributeDescriptorFactory.setOf("com.example.User.java", "user", mock(ManyToOne.class));
             // Both processors say they don't support it
             when(p1.supports(descriptor)).thenReturn(false);
             when(p2.supports(descriptor)).thenReturn(false);

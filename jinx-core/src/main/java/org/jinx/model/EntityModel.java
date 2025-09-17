@@ -2,11 +2,7 @@ package org.jinx.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.InheritanceType;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -15,7 +11,7 @@ import java.util.Map;
 
 @Data
 @Builder
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PUBLIC)
 @AllArgsConstructor
 public class EntityModel {
     private String entityName;

@@ -17,12 +17,13 @@ public class ConstraintManager {
     }
 
     public void addUniqueIfAbsent(EntityModel entity, String table, List<String> cols, Optional<String> whereOpt) {
+        String where = whereOpt.orElse(null);
         String key = ConstraintKeys.canonicalKey(
                 ConstraintType.UNIQUE.name(),
                 entity.getSchema(),
                 table,
                 cols,
-                whereOpt.orElse(null)
+                where
         );
         if (entity.getConstraints().containsKey(key)) return;
 
@@ -33,30 +34,32 @@ public class ConstraintManager {
                 .tableName(table)
                 .type(ConstraintType.UNIQUE)
                 .columns(cols)
-                .where(whereOpt)
+                .where(where) // <-- nullable string
                 .build();
 
         entity.getConstraints().put(key, c);
     }
 
     public void removeUniqueIfPresent(EntityModel entity, String table, List<String> cols, Optional<String> whereOpt) {
+        String where = whereOpt.orElse(null);
         String key = ConstraintKeys.canonicalKey(
                 ConstraintType.UNIQUE.name(),
                 entity.getSchema(),
                 table,
                 cols,
-                whereOpt.orElse(null)
+                where
         );
         entity.getConstraints().remove(key);
     }
 
     public Optional<ConstraintModel> findUnique(EntityModel entity, String table, List<String> cols, Optional<String> whereOpt) {
+        String where = whereOpt.orElse(null);
         String key = ConstraintKeys.canonicalKey(
                 ConstraintType.UNIQUE.name(),
                 entity.getSchema(),
                 table,
                 cols,
-                whereOpt.orElse(null)
+                where
         );
         return Optional.ofNullable(entity.getConstraints().get(key));
     }

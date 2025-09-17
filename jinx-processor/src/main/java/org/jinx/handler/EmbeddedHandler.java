@@ -69,14 +69,46 @@ public class EmbeddedHandler {
         processEmbeddedInternal(attribute, ownerEntity, processedTypes, true, "", attribute.name(), nameOverrides, tableOverrides, columnOverrides, assocOverrides);
 
         List<ColumnModel> pksAfter = context.findAllPrimaryKeyColumns(ownerEntity);
-        List<String> newPkColumnNames = pksAfter.stream()
-            .filter(c -> !pksBefore.contains(c))
-            .map(ColumnModel::getColumnName)
-            .toList();
+        List<ColumnModel> newPks = pksAfter.stream()
+                .filter(c -> !pksBefore.contains(c))
+                .toList();
 
-        if (!newPkColumnNames.isEmpty()) {
-            context.registerPkAttributeColumns(ownerEntity.getFqcn(), attribute.name(), newPkColumnNames);
+        if (!newPks.isEmpty()) {
+            newPks.forEach(c -> {
+                c.setPrimaryKey(true); // FIX: PK 플래그 세팅
+                // FIX: tableName 보정
+                if (c.getTableName() == null || c.getTableName().isEmpty()) {
+                    c.setTableName(ownerEntity.getTableName());
+                }
+            });
+
+            // 키 등록 시 두 형태 모두 등록: "customerId"와 "id.customerId"
+            List<String> columnNames = newPks.stream().map(ColumnModel::getColumnName).toList();
+            context.registerPkAttributeColumns(ownerEntity.getFqcn(), attribute.name(), columnNames);
+
+            // 각 임베디드 필드에 대해서도 개별 키 등록
+            for (ColumnModel pk : newPks) {
+                String columnName = pk.getColumnName();
+                String embeddedFieldName = extractEmbeddedFieldName(columnName, attribute.name());
+                if (embeddedFieldName != null) {
+                    context.registerPkAttributeColumns(ownerEntity.getFqcn(), embeddedFieldName, List.of(columnName));
+                    // "id.fieldName" 형태도 등록
+                    context.registerPkAttributeColumns(ownerEntity.getFqcn(), attribute.name() + "." + embeddedFieldName, List.of(columnName));
+                }
+            }
         }
+    }
+
+    /**
+     * 임베디드 PK 컬럼명에서 원래 필드명을 추출합니다.
+     * 예: "id_customerId" -> "customerId"
+     */
+    private String extractEmbeddedFieldName(String columnName, String embeddedAttributeName) {
+        String prefix = embeddedAttributeName + "_";
+        if (columnName.startsWith(prefix)) {
+            return columnName.substring(prefix.length());
+        }
+        return null;
     }
 
     private void processEmbeddedInternal(

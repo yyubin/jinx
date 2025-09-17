@@ -60,7 +60,7 @@ class ConstraintHandlerTest {
         ConstraintModel model = constraintsList.get(0);
         assertThat(model.getName()).isEqualTo("chk_age");
         assertThat(model.getType()).isEqualTo(ConstraintType.CHECK);
-        assertThat(model.getCheckClause().get()).isEqualTo("age > 18");
+        assertThat(model.getCheckClause()).isEqualTo("age > 18");
         assertThat(model.getTableName()).isEqualTo("users");
         assertThat(model.getColumns()).containsExactly("age");
     }
@@ -95,7 +95,7 @@ class ConstraintHandlerTest {
 
         assertThat(checkModel).isNotNull();
         assertThat(checkModel.getName()).isEqualTo("chk_email_format");
-        assertThat(checkModel.getCheckClause().get()).isEqualTo("email LIKE '%@%'");
+        assertThat(checkModel.getCheckClause()).isEqualTo("email LIKE '%@%'");
     }
 
     @Test

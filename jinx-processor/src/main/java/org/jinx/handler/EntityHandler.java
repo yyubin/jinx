@@ -481,70 +481,93 @@ public class EntityHandler {
             if (existing.getComment() == null && col.getComment() != null) existing.setComment(col.getComment());
         }
 
+        // @Column(unique=true) → UNIQUE 제약 자동 추가
         if (columnAnn != null && columnAnn.unique()) {
             context.getConstraintManager().addUniqueIfAbsent(
                     entity,
                     targetTable,
                     List.of(col.getColumnName()),
-                    Optional.empty()
+                    Optional.empty() // ConstraintManager 내부에서 .orElse(null)로 표준화
             );
         }
 
+        // 커스텀 제약 수집
         List<ConstraintModel> collected = new ArrayList<>();
         processConstraints(descriptor.elementForDiagnostics(), col.getColumnName(), collected, targetTable);
 
         for (ConstraintModel c : collected) {
+            // where / name null-safe 정규화
+            String where = normalizeBlankToNull(c.getWhere());
+            String name  = normalizeBlankToNull(c.getName());
+
             switch (c.getType()) {
                 case INDEX -> {
-                    String ixName = (c.getName() == null || c.getName().isEmpty())
+                    String ixName = (name == null)
                             ? context.getNaming().ixName(c.getTableName(), c.getColumns())
-                            : c.getName();
+                            : name;
+
                     entity.getIndexes().putIfAbsent(ixName, IndexModel.builder()
                             .indexName(ixName)
                             .tableName(c.getTableName())
                             .columnNames(c.getColumns())
                             .build());
                 }
-                case UNIQUE -> context.getConstraintManager().addUniqueIfAbsent(
-                        entity, c.getTableName(), c.getColumns(), c.getWhere());
+                case UNIQUE -> {
+                    // ConstraintManager는 Optional 받아도 되고 내부에서 null 변환
+                    context.getConstraintManager().addUniqueIfAbsent(
+                            entity,
+                            c.getTableName(),
+                            c.getColumns(),
+                            Optional.ofNullable(where)
+                    );
+                }
                 case PRIMARY_KEY -> {
-                    String name = (c.getName() == null || c.getName().isEmpty())
+                    String pkName = (name == null)
                             ? context.getNaming().pkName(c.getTableName(), c.getColumns())
-                            : c.getName();
+                            : name;
+
                     String key = ConstraintKeys.canonicalKey(
                             ConstraintType.PRIMARY_KEY.name(),
                             entity.getSchema(),
                             c.getTableName(),
                             c.getColumns(),
-                            c.getWhere().orElse(null)
+                            where // 이미 null 표준화됨
                     );
-                    c.setName(name);
+
+                    c.setName(pkName);
                     entity.getConstraints().putIfAbsent(key, c);
                 }
                 case NOT_NULL, CHECK, DEFAULT -> {
-                    String name = c.getName();
-                    if (name == null || name.isEmpty()) {
+                    // 이름 자동 생성
+                    if (name == null) {
                         name = switch (c.getType()) {
-                            case CHECK     -> context.getNaming().ckName(c.getTableName(), c.getColumns());
-                            case NOT_NULL  -> context.getNaming().nnName(c.getTableName(), c.getColumns());
-                            case DEFAULT   -> context.getNaming().dfName(c.getTableName(), c.getColumns());
-                            default        -> context.getNaming().autoName(c.getTableName(), c.getColumns());
+                            case CHECK    -> context.getNaming().ckName(c.getTableName(), c.getColumns());
+                            case NOT_NULL -> context.getNaming().nnName(c.getTableName(), c.getColumns());
+                            case DEFAULT  -> context.getNaming().dfName(c.getTableName(), c.getColumns());
+                            default       -> context.getNaming().autoName(c.getTableName(), c.getColumns());
                         };
                         c.setName(name);
                     }
+
                     String key = ConstraintKeys.canonicalKey(
                             c.getType().name(),
                             entity.getSchema(),
                             c.getTableName(),
                             c.getColumns(),
-                            c.getWhere().orElse(null)
+                            where
                     );
+                    c.setWhere(where); // 빈 문자열 → null로 정규화 반영
                     entity.getConstraints().putIfAbsent(key, c);
                 }
                 default -> {
+                    // 기타 타입은 현재 처리 없음
                 }
             }
         }
+    }
+
+    private static String normalizeBlankToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s;
     }
 
     private String determineTargetTableFromDescriptor(Column column, Map<String, SecondaryTable> tableMappings, String defaultTable) {

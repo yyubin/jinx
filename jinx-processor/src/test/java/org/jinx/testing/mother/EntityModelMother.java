@@ -5,7 +5,7 @@ import org.jinx.model.EntityModel;
 
 public final class EntityModelMother {
     public static EntityModel usersWithPkIdLong() {
-        EntityModel e = EntityModel.builder().entityName("User").tableName("users").fqcn("com.example.User").build();
+        EntityModel e = EntityModel.builder().entityName("User.java").tableName("users").fqcn("com.example.User.java").build();
         e.putColumn(ColumnModel.builder()
                 .tableName("users")
                 .columnName("id")

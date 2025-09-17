@@ -1,9 +1,6 @@
 package org.jinx.model;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.util.List;
 import java.util.Optional;
@@ -11,12 +8,12 @@ import java.util.Optional;
 @Data
 @Builder
 @AllArgsConstructor
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PUBLIC)
 public class SecondaryTableModel {
     private String name;
-    private Optional<String> catalog;
-    private Optional<String> schema;
-    private Optional<String> comment;
-    private Optional<String> options;
+    private String catalog;
+    private String schema;
+    private String comment;
+    private String options;
     private List<PrimaryKeyJoinColumnModel> pkJoinColumns;
 }

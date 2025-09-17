@@ -6,6 +6,7 @@ import org.jinx.model.IndexModel;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
@@ -14,7 +15,8 @@ public final class ConstraintShapes {
 
     public static String shapeKey(ConstraintModel c) {
         String table = norm(c.getTableName());
-        var cols = c.getColumns().stream().map(ConstraintShapes::norm).toList();
+        List<String> colsInput = c.getColumns() != null ? c.getColumns() : List.of();
+        List<String> cols = colsInput.stream().map(ConstraintShapes::norm).toList();
 
         String colsKey;
         if (c.getType() == ConstraintType.UNIQUE || c.getType() == ConstraintType.PRIMARY_KEY) {
@@ -22,11 +24,12 @@ public final class ConstraintShapes {
             Collections.sort(sorted);
             colsKey = String.join(",", sorted);
         } else {
+            // 순서 의미 유지
             colsKey = String.join(",", cols);
         }
 
-        String whereKey = c.getWhere() != null && c.getWhere().isPresent()
-                ? norm(c.getWhere().get())
+        String whereKey = normalizeBlankToNull(c.getWhere()) != null
+                ? norm(c.getWhere())
                 : "_";
 
         return c.getType() + "|" + table + "|" + colsKey + "|" + whereKey;
@@ -35,12 +38,18 @@ public final class ConstraintShapes {
     public static String shapeKey(IndexModel ix) {
         // 인덱스는 순서 의미 유지
         String table = norm(ix.getTableName());
-        String colsKey = ix.getColumnNames().stream().map(ConstraintShapes::norm)
+        String colsKey = (ix.getColumnNames() != null ? ix.getColumnNames() : List.<String>of())
+                .stream()
+                .map(ConstraintShapes::norm)
                 .collect(Collectors.joining(","));
         return "IX|" + table + "|" + colsKey;
     }
 
     private static String norm(String s) {
         return s == null ? "" : s.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizeBlankToNull(String s) {
+        return (s == null || s.trim().isEmpty()) ? null : s;
     }
 }

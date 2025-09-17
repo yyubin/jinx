@@ -58,8 +58,8 @@ public class TableAdapter implements TableLike {
             constraints.add(ConstraintModel.builder()
                     .name(cc.name().isBlank() ? context.getNaming().ckName(table.name(), cc) : cc.name())
                     .type(ConstraintType.CHECK)
-                    .checkClause(Optional.ofNullable(cc.constraint()))
-                    .options(Optional.ofNullable(cc.options()))
+                    .checkClause(cc.constraint())
+                    .options(cc.options())
                     .build());
         }
         return constraints;

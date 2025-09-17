@@ -473,17 +473,22 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                     .build();
             changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(uniqueChange)));
         } else if (constraint.getType() == ConstraintType.CHECK) {
-            String constraintName = constraint.getName() != null 
-                    ? constraint.getName() 
+            String constraintName = constraint.getName() != null
+                    ? constraint.getName()
                     : naming.ckName(currentTableName, constraint.getColumns());
-            AddCheckConstraintChange checkChange = AddCheckConstraintChange.builder()
-                    .config(AddCheckConstraintConfig.builder()
-                            .constraintName(constraintName)
-                            .tableName(currentTableName)
-                            .constraintExpression(constraint.getCheckClause().orElse(""))
-                            .build())
-                    .build();
-            changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(checkChange)));
+            String expr = constraint.getCheckClause();
+            if (expr == null || expr.isBlank()) {
+                return; // 체크 제약식이 없으면 무시
+            } else {
+                AddCheckConstraintChange checkChange = AddCheckConstraintChange.builder()
+                        .config(AddCheckConstraintConfig.builder()
+                                .constraintName(constraintName)
+                                .tableName(currentTableName)
+                                .constraintExpression(expr)
+                                .build())
+                        .build();
+                changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(checkChange)));
+            }
         }
     }
 

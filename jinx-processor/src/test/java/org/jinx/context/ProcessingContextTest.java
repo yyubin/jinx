@@ -103,7 +103,7 @@ class ProcessingContextTest {
                 .build();
 
         EntityModel entity = EntityModel.builder()
-                .entityName("User")
+                .entityName("User.java")
                 .build();
         entity.putColumn(col);
 
@@ -119,11 +119,12 @@ class ProcessingContextTest {
     @Test
     void saveModelToJson_writesFileUnderJinxFolder() {
         JavaFileObject userEntity = JavaFileObjects.forSourceLines(
-                "com.example.User",
+                "com.example.User",  // FQCN (확장자 X)
                 "package com.example;",
                 "import jakarta.persistence.*;",
                 "@Entity public class User { @Id Long id; }"
         );
+
 
         Compilation c = Compiler.javac()
                 .withProcessors(new JpaSqlGeneratorProcessor())

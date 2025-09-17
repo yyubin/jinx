@@ -88,7 +88,7 @@ class ElementCollectionHandlerTwoPhaseTest {
     @DisplayName("검증 성공 시: 일괄 커밋 후 스키마에 putIfAbsent로 등록(Set<String> 기본 케이스)")
     void validatePhase_Succeeds_ShouldCommitAndRegister() {
         // Arrange: PK(id: Long)가 있는 소유자 + Set<String> 속성
-        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User", "users");
+        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User.java", "users");
         when(context.findAllPrimaryKeyColumns(owner))
                 .thenReturn(List.of(owner.findColumn("users", "id")));
 

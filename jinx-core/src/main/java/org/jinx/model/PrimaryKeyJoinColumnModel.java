@@ -4,7 +4,7 @@ import lombok.*;
 
 @Builder
 @Data
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PUBLIC)
 @AllArgsConstructor
 public class PrimaryKeyJoinColumnModel {
     private String name;

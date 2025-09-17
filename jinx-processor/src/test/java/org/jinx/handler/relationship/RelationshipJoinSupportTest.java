@@ -219,7 +219,7 @@ class RelationshipJoinSupportTest {
     void createJoinTableEntity_success_creates_columns_with_not_null_and_types() {
         // given
         String jtName = "user_role";
-        var ownerEntity = newEntity("User", "users");
+        var ownerEntity = newEntity("User.java", "users");
         var refEntity = newEntity("Role", "roles");
 
         // owner/ref PK 스키마
@@ -258,7 +258,7 @@ class RelationshipJoinSupportTest {
     void createJoinTableEntity_error_if_pk_missing() {
         // given
         String jtName = "user_role";
-        var ownerEntity = newEntity("User", "users");
+        var ownerEntity = newEntity("User.java", "users");
         var refEntity = newEntity("Role", "roles");
 
         // owner/ref PK 스키마 — owner의 id는 없음(에러 유도)
