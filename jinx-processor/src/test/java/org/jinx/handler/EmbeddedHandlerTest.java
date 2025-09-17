@@ -136,7 +136,7 @@ class EmbeddedHandlerTest {
     @Test
     void processEmbedded_Simple_AddsPrefixedColumns() {
         // Arrange
-        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User", "users");
+        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User.java", "users");
         AttributeDescriptor streetAttr = mockAttribute("street", "java.lang.String");
         AttributeDescriptor cityAttr = mockAttribute("city", "java.lang.String");
         DeclaredType addressType = mockEmbeddableType("com.ex.Address", List.of(streetAttr, cityAttr));
@@ -157,7 +157,7 @@ class EmbeddedHandlerTest {
     @Test
     void processEmbedded_Nested_AddsCumulativePrefixes() {
         // Arrange
-        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User", "users");
+        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User.java", "users");
 
         // Innermost embeddable: Coordinates
         AttributeDescriptor latAttr = mockAttribute("lat", "double");
@@ -169,7 +169,7 @@ class EmbeddedHandlerTest {
         when(coordsAttr.type()).thenReturn(coordsType);
         DeclaredType locationType = mockEmbeddableType("com.ex.Location", List.of(coordsAttr));
 
-        // Top-level @Embedded attribute in User
+        // Top-level @Embedded attribute in User.java
         AttributeDescriptor embedAttr = mock(AttributeDescriptor.class);
         when(embedAttr.type()).thenReturn(locationType);
         when(embedAttr.name()).thenReturn("home");
@@ -186,7 +186,7 @@ class EmbeddedHandlerTest {
     @Test
     void processEmbedded_ColumnNamePrecedence_PrefersOverridesAndExplicitNames() {
         // Arrange
-        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User", "users");
+        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User.java", "users");
 
         // field1: default name, should be prefixed
         AttributeDescriptor field1Attr = mockAttribute("field1", "java.lang.String");
@@ -339,7 +339,7 @@ class EmbeddedHandlerTest {
     @Test
     void processEmbeddedRelationship_CompositePkWithoutJoinColumns_LogsError() {
         // Arrange
-        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User", "users");
+        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User.java", "users");
 
         EntityModel compositePkEntity = EntityModelMother.javaEntity("com.ex.Composite", "composites");
         ColumnModel pk1 = EntityModelMother.pkColumn("composites", "pk1", "int");

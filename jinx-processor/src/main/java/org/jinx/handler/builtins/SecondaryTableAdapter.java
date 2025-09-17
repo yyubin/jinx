@@ -12,6 +12,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
+import static com.google.common.base.Strings.emptyToNull;
+
 public class SecondaryTableAdapter implements TableLike {
     private final SecondaryTable secondaryTable;
     private final ProcessingContext context;
@@ -52,12 +54,17 @@ public class SecondaryTableAdapter implements TableLike {
                     .build());
         }
         for (CheckConstraint cc : secondaryTable.check()) {
-            constraints.add(ConstraintModel.builder()
-                    .name(cc.name().isBlank() ? context.getNaming().ckName(secondaryTable.name(), cc) : cc.name())
-                    .type(ConstraintType.CHECK)
-                    .checkClause(Optional.ofNullable(cc.constraint()))
-                    .options(Optional.ofNullable(cc.options()))
-                    .build());
+            String expr = cc.constraint();
+            if (expr != null && !expr.isBlank()) {
+                constraints.add(ConstraintModel.builder()
+                        .name(cc.name().isBlank()
+                                ? context.getNaming().ckName(secondaryTable.name(), cc)
+                                : cc.name())
+                        .type(ConstraintType.CHECK)
+                        .checkClause(expr)
+                        .options(emptyToNull(cc.options()))
+                        .build());
+            }
         }
         return constraints;
     }

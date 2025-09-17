@@ -141,13 +141,13 @@ public class ConstraintDiffer implements EntityComponentDiffer {
         }
 
         // CHECK / WHERE / OPTIONS 은 비교
-        if (!eqOptNorm(oldC.getCheckClause(), newC.getCheckClause())) {
+        if (!eqStrNorm(oldC.getCheckClause(), newC.getCheckClause())) {
             d.append("checkClause changed; ");
         }
-        if (!eqOptNorm(oldC.getWhere(), newC.getWhere())) {
+        if (!eqStrNorm(oldC.getWhere(), newC.getWhere())) {
             d.append("where changed; ");
         }
-        if (!eqOpt(oldC.getOptions(), newC.getOptions())) {
+        if (!eqStr(oldC.getOptions(), newC.getOptions())) {
             d.append("options changed from ").append(oldC.getOptions()).append(" to ").append(newC.getOptions()).append("; ");
         }
 
@@ -173,6 +173,19 @@ public class ConstraintDiffer implements EntityComponentDiffer {
         String la = a != null && a.isPresent() ? a.get() : null;
         String lb = b != null && b.isPresent() ? b.get() : null;
         return Objects.equals(la, lb);
+    }
+
+    private static String norm(String s) {
+        if (s == null) return "";
+        return s.trim().replaceAll("\\s+", " ");
+    }
+
+    private static boolean eqStrNorm(String a, String b) {
+        return Objects.equals(norm(a), norm(b));
+    }
+
+    private static boolean eqStr(String a, String b) {
+        return Objects.equals(a, b);
     }
 
 }

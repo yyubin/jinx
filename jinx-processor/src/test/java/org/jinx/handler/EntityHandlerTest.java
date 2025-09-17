@@ -101,16 +101,16 @@ class EntityHandlerTest {
     @DisplayName("기본 흐름: 엔티티 가등록 후 제너레이터/제약/필드 처리 위임 호출")
     void handle_registersAndDelegates() {
         // Arrange
-        TypeElement type = mockTypeElement("com.ex.User", "User");
+        TypeElement type = mockTypeElement("com.ex.User.java", "User.java");
 
         // Act
         handler.handle(type);
 
         // Assert: 가등록 (엔티티 키는 FQCN)
         ArgumentCaptor<EntityModel> captor = ArgumentCaptor.forClass(EntityModel.class);
-        verify(entitiesMap, times(1)).putIfAbsent(eq("com.ex.User"), captor.capture());
+        verify(entitiesMap, times(1)).putIfAbsent(eq("com.ex.User.java"), captor.capture());
         EntityModel model = captor.getValue();
-        assertEquals("User", model.getTableName());
+        assertEquals("User.java", model.getTableName());
         assertTrue(model.isValid());
 
         // 제너레이터 처리 위임

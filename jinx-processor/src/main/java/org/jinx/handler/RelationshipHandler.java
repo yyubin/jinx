@@ -311,7 +311,7 @@ public class RelationshipHandler {
     }
 
     /**
-     * PK 승격 확인 및 설정
+     * PK 승격 확인 및 설정, 중복된 임베디드 PK 컬럼 제거
      */
     private void ensureAllArePrimaryKeys(EntityModel ownerEntity, String tableName, List<String> columnNames, AttributeDescriptor descriptor) {
         for (String columnName : columnNames) {
@@ -329,8 +329,49 @@ public class RelationshipHandler {
             if (column.isNullable()) {
                 column.setNullable(false);
             }
+
+            // 중복된 임베디드 PK 컬럼 제거
+            removeDuplicateEmbeddedPkColumns(ownerEntity, columnName, descriptor);
         }
         refreshPrimaryKeyConstraint(ownerEntity, tableName);
+    }
+
+    /**
+     * @MapsId FK 컬럼과 중복되는 임베디드 PK 컬럼을 제거합니다.
+     * 예: customer_id (FK->PK)가 있으면 id_customerId (임베디드 PK)를 제거
+     */
+    private void removeDuplicateEmbeddedPkColumns(EntityModel ownerEntity, String fkColumnName, AttributeDescriptor descriptor) {
+        MapsId mapsId = descriptor.getAnnotation(MapsId.class);
+        if (mapsId == null) return;
+
+        String keyPath = mapsId.value();
+        if (keyPath.isEmpty()) return;
+
+        // 중복될 수 있는 임베디드 PK 컬럼명 생성
+        List<String> possibleEmbeddedPkColumns = List.of(
+            "id_" + keyPath,           // "id_customerId"
+            "id." + keyPath,          // "id.customerId" (잘못된 컬럼명이지만 확인)
+            keyPath                   // "customerId" (직접)
+        );
+
+        for (String embeddedPkColumn : possibleEmbeddedPkColumns) {
+            if (!embeddedPkColumn.equals(fkColumnName)) {
+                // FK 컬럼과 다른 이름의 임베디드 PK 컬럼을 찾아서 제거
+                ColumnModel duplicateColumn = ownerEntity.getColumns().values().stream()
+                    .filter(col -> embeddedPkColumn.equals(col.getColumnName()))
+                    .filter(ColumnModel::isPrimaryKey)
+                    .findFirst()
+                    .orElse(null);
+
+                if (duplicateColumn != null) {
+                    // 중복 컬럼 제거
+                    ownerEntity.getColumns().entrySet()
+                        .removeIf(entry -> entry.getValue() == duplicateColumn);
+
+                    // Removed duplicate embedded PK column
+                }
+            }
+        }
     }
 
     private void refreshPrimaryKeyConstraint(EntityModel entity, String tableName) {
@@ -391,9 +432,37 @@ public class RelationshipHandler {
             return List.of();
         }
 
-        // 2. For composite keys, look up the attribute path in the context map.
+        // 2. For composite keys, look up the attribute path in the context map with flexible matching
         String fqcn = ownerEntity.getFqcn() != null ? ownerEntity.getFqcn() : ownerEntity.getEntityName();
-        List<String> cols = context.getPkColumnsForAttribute(fqcn, attributeName);
+
+        // 여러 형태의 키로 시도
+        List<String> possibleKeys = List.of(
+            attributeName,                    // "customerId"
+            "id." + attributeName,           // "id.customerId"
+            "id"                             // fallback to embedded id itself
+        );
+
+        List<String> cols = null;
+        for (String key : possibleKeys) {
+            cols = context.getPkColumnsForAttribute(fqcn, key);
+            if (cols != null && !cols.isEmpty()) {
+                break;
+            }
+        }
+
+        // 3. 직접 매칭도 시도: FK 컬럼명과 일치하는 PK 컬럼이 있는지 확인
+        if ((cols == null || cols.isEmpty()) && where != null) {
+            JoinColumn joinColumn = where.getAnnotation(JoinColumn.class);
+            if (joinColumn != null && !joinColumn.name().isEmpty()) {
+                String fkColumnName = joinColumn.name();
+                // FK 컬럼명과 일치하는 PK 컬럼이 있는지 확인
+                boolean hasPkWithSameName = allPkColumns.stream()
+                    .anyMatch(pk -> fkColumnName.equals(pk.getColumnName()));
+                if (hasPkWithSameName) {
+                    cols = List.of(fkColumnName);
+                }
+            }
+        }
 
         if (cols == null || cols.isEmpty()) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,

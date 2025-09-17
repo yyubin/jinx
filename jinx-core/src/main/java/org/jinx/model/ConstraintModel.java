@@ -1,9 +1,6 @@
 package org.jinx.model;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -12,7 +9,7 @@ import java.util.Optional;
 
 @Data
 @Builder
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PUBLIC)
 @AllArgsConstructor
 public class ConstraintModel {
     private String name;
@@ -24,7 +21,7 @@ public class ConstraintModel {
     @Builder.Default private List<String> referencedColumns = new ArrayList<>();
     private OnDeleteAction onDelete;
     private OnUpdateAction onUpdate;
-    @Builder.Default private Optional<String> checkClause = Optional.empty();
-    @Builder.Default private Optional<String> where = Optional.empty();
-    @Builder.Default private Optional<String> options = Optional.empty();
+    private String checkClause;
+    private String where;
+    private String options;
 }

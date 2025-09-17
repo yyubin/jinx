@@ -61,9 +61,13 @@ public class AttributeDescriptorFactory {
         AccessType defaultAccessType = AccessUtils.determineAccessType(typeElement);
         List<AttributeDescriptor> descriptors = new ArrayList<>();
         Map<String, AttributeCandidate> attributeCandidates = collectAttributeCandidates(typeElement);
+
+
         for (AttributeCandidate candidate : attributeCandidates.values()) {
-            selectAttributeDescriptor(candidate, defaultAccessType)
-                .ifPresent(descriptors::add);
+            Optional<AttributeDescriptor> descriptor = selectAttributeDescriptor(candidate, defaultAccessType);
+            if (descriptor.isPresent()) {
+                descriptors.add(descriptor.get());
+            }
         }
         return descriptors;
     }
@@ -73,10 +77,12 @@ public class AttributeDescriptorFactory {
         ExecutableElement getter = candidate.getGetter();
         Access fieldAccess = (field != null) ? field.getAnnotation(Access.class) : null;
         Access getterAccess = (getter != null) ? getter.getAnnotation(Access.class) : null;
+
         if (fieldAccess != null && getterAccess != null) {
             messager.printMessage(Diagnostic.Kind.ERROR, String.format("Conflicting @Access annotations on both field '%s' and getter '%s' for property '%s'.", field.getSimpleName(), getter.getSimpleName(), candidate.getName()), field);
             return Optional.empty();
         }
+
         if (fieldAccess != null) {
             if (fieldAccess.value() == AccessType.FIELD) {
                 return Optional.of(new FieldAttributeDescriptor(field, typeUtils, elements));
@@ -88,6 +94,7 @@ public class AttributeDescriptorFactory {
                 return createPropertyDescriptor(getter);
             }
         }
+
         if (getterAccess != null) {
             if (getterAccess.value() == AccessType.PROPERTY) {
                 return createPropertyDescriptor(getter);
@@ -99,27 +106,43 @@ public class AttributeDescriptorFactory {
                 return Optional.of(new FieldAttributeDescriptor(field, typeUtils, elements));
             }
         }
+
         boolean fieldHasMapping = hasMappingAnnotation(field);
         boolean getterHasMapping = hasMappingAnnotation(getter);
+
         if (fieldHasMapping && getterHasMapping) {
             messager.printMessage(Diagnostic.Kind.ERROR, String.format("Conflicting JPA mapping annotations on both field '%s' and getter '%s' for property '%s'. Remove the annotation from one of them to resolve ambiguity.", field.getSimpleName(), getter.getSimpleName(), candidate.getName()), field != null ? field : getter);
             return Optional.empty();
         }
+
         if (fieldHasMapping) {
             return Optional.of(new FieldAttributeDescriptor(field, typeUtils, elements));
         }
+
         if (getterHasMapping) {
             return createPropertyDescriptor(getter);
         }
-        if (defaultAccessType == AccessType.PROPERTY && getter != null) {
-            return createPropertyDescriptor(getter);
+
+        // Fallback logic for fields/properties without explicit mapping annotations
+        if (defaultAccessType == AccessType.PROPERTY) {
+            if (getter != null) {
+                return createPropertyDescriptor(getter);
+            }
+            // If no getter but field exists, fall back to field access
+            if (field != null) {
+                return Optional.of(new FieldAttributeDescriptor(field, typeUtils, elements));
+            }
+        } else {
+            // Default FIELD access or when defaultAccessType is FIELD
+            if (field != null) {
+                return Optional.of(new FieldAttributeDescriptor(field, typeUtils, elements));
+            }
+            // If no field but getter exists, fall back to property access
+            if (getter != null) {
+                return createPropertyDescriptor(getter);
+            }
         }
-        if (field != null) {
-            return Optional.of(new FieldAttributeDescriptor(field, typeUtils, elements));
-        }
-        if (getter != null) {
-            return createPropertyDescriptor(getter);
-        }
+
         return Optional.empty();
     }
     
@@ -216,7 +239,8 @@ public class AttributeDescriptorFactory {
         collectAttributesFromHierarchy(AccessUtils.getSuperclass(typeElement), candidates);
         boolean isEntity = typeElement.getAnnotation(jakarta.persistence.Entity.class) != null;
         boolean isMappedSuperclass = typeElement.getAnnotation(jakarta.persistence.MappedSuperclass.class) != null;
-        if (isEntity || isMappedSuperclass) {
+        boolean isEmbeddable = typeElement.getAnnotation(jakarta.persistence.Embeddable.class) != null;
+        if (isEntity || isMappedSuperclass || isEmbeddable) {
             for (Element element : typeElement.getEnclosedElements()) {
                 if (element.getModifiers().contains(Modifier.STATIC) || !isAccessible(element)) {
                     continue;

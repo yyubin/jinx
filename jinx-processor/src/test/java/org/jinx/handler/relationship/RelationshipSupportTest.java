@@ -67,7 +67,7 @@ class RelationshipSupportTest {
     void resolveJoinColumnTable_secondaryOk() {
         EntityModel owner = mock(EntityModel.class);
         when(owner.getTableName()).thenReturn("users");
-        when(owner.getEntityName()).thenReturn("User");
+        when(owner.getEntityName()).thenReturn("User.java");
 
         SecondaryTableModel st = mock(SecondaryTableModel.class);
         when(st.getName()).thenReturn("user_ext");
@@ -85,7 +85,7 @@ class RelationshipSupportTest {
     void resolveJoinColumnTable_invalidWarns() {
         EntityModel owner = mock(EntityModel.class);
         when(owner.getTableName()).thenReturn("users");
-        when(owner.getEntityName()).thenReturn("User");
+        when(owner.getEntityName()).thenReturn("User.java");
         when(owner.getSecondaryTables()).thenReturn(List.of());
 
         JoinColumn jc = mock(JoinColumn.class);

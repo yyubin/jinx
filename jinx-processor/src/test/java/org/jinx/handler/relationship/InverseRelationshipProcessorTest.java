@@ -114,22 +114,22 @@ class InverseRelationshipProcessorTest {
 
             TypeElement targetEl = mock(TypeElement.class);
             Name qn = mock(Name.class);
-            when(qn.toString()).thenReturn("com.example.User");
+            when(qn.toString()).thenReturn("com.example.User.java");
             when(targetEl.getQualifiedName()).thenReturn(qn);
 
             // ★ elements.getTypeElement(...)도 반환하도록
-            when(elements.getTypeElement("com.example.User")).thenReturn(targetEl);
+            when(elements.getTypeElement("com.example.User.java")).thenReturn(targetEl);
 
             // ★ schemaModel.getEntities().put(...) 로 엔티티 존재하게
             EntityModel targetEntityModel = mock(EntityModel.class);
-            entities.put("com.example.User", targetEntityModel);
+            entities.put("com.example.User.java", targetEntityModel);
 
             when(support.resolveTargetEntity(attr, null, null, null, ann))
                     .thenReturn(Optional.of(targetEl));
 
-            when(context.isMappedByVisited("com.example.User", "groups")).thenReturn(false);
-            doNothing().when(context).markMappedByVisited("com.example.User", "groups");
-            doNothing().when(context).unmarkMappedByVisited("com.example.User", "groups");
+            when(context.isMappedByVisited("com.example.User.java", "groups")).thenReturn(false);
+            doNothing().when(context).markMappedByVisited("com.example.User.java", "groups");
+            doNothing().when(context).unmarkMappedByVisited("com.example.User.java", "groups");
 
             AttributeDescriptor mappedSide = mock(AttributeDescriptor.class);
             when(mappedSide.name()).thenReturn("groups");
@@ -227,18 +227,18 @@ class InverseRelationshipProcessorTest {
 
             TypeElement targetEl = mock(TypeElement.class);
             Name qn = mock(Name.class);
-            when(qn.toString()).thenReturn("com.example.User");
-            when(elements.getTypeElement("com.example.User")).thenReturn(targetEl);
+            when(qn.toString()).thenReturn("com.example.User.java");
+            when(elements.getTypeElement("com.example.User.java")).thenReturn(targetEl);
             when(targetEl.getQualifiedName()).thenReturn(qn);
             when(support.resolveTargetEntity(attr, null, null, null, ann)).thenReturn(Optional.of(targetEl));
 
-            when(context.isMappedByVisited("com.example.User", "groups")).thenReturn(false);
-            doNothing().when(context).markMappedByVisited("com.example.User", "groups");
-            doNothing().when(context).unmarkMappedByVisited("com.example.User", "groups");
+            when(context.isMappedByVisited("com.example.User.java", "groups")).thenReturn(false);
+            doNothing().when(context).markMappedByVisited("com.example.User.java", "groups");
+            doNothing().when(context).unmarkMappedByVisited("com.example.User.java", "groups");
 
             EntityModel targetEntityModel = mock(EntityModel.class);
-            entities.put("com.example.User", targetEntityModel);
-            when(elements.getTypeElement("com.example.User")).thenReturn(targetEl);
+            entities.put("com.example.User.java", targetEntityModel);
+            when(elements.getTypeElement("com.example.User.java")).thenReturn(targetEl);
             when(support.resolveTargetEntity(attr, null, null, null, ann))
                     .thenReturn(Optional.of(targetEl));
 

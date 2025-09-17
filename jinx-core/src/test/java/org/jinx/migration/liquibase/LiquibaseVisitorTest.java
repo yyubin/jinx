@@ -344,7 +344,7 @@ class LiquibaseVisitorExtraTest {
         when(ck.getType()).thenReturn(ConstraintType.CHECK);
         when(ck.getName()).thenReturn("ck_orders_total");
         when(ck.getColumns()).thenReturn(List.of("total"));
-        when(ck.getCheckClause()).thenReturn(Optional.of("total >= 0"));
+        when(ck.getCheckClause()).thenReturn("total >= 0");
 
         int before = visitor.getChangeSets().size();
         visitor.visitDroppedConstraint(ck);

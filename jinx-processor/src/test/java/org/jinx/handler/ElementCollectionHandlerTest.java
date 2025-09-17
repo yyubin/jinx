@@ -91,7 +91,7 @@ class ElementCollectionHandlerTest {
     @DisplayName("가장 기본적인 Set<String> 타입의 ElementCollection을 처리하여 컬렉션 테이블을 생성한다")
     void process_BasicSetOfString_ShouldCreateCollectionTable() {
         // Arrange
-        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User", "users");
+        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.User.java", "users");
         when(context.findAllPrimaryKeyColumns(owner)).thenReturn(
                 List.of(owner.findColumn("users", "id"))
         );

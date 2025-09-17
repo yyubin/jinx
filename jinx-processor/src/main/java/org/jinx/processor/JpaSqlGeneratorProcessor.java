@@ -30,7 +30,7 @@ import java.util.*;
         "org.jinx.annotation.Constraints",
         "org.jinx.annotation.Identity"
 })
-@SupportedSourceVersion(SourceVersion.RELEASE_17)
+@SupportedSourceVersion(SourceVersion.RELEASE_21)
 public class JpaSqlGeneratorProcessor extends AbstractProcessor {
 
     public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
@@ -135,9 +135,15 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         }
 
         if (roundEnv.processingOver()) {
-            // 1. 상속 해석
+            // 1. 상속 해석 (COLLECTION_TABLE은 제외)
             for (EntityModel entityModel : context.getSchemaModel().getEntities().values()) {
                 if (!entityModel.isValid()) continue;
+
+                // COLLECTION_TABLE 타입은 실제 엔티티가 아니므로 상속 해석에서 제외
+                if (entityModel.getTableType() == org.jinx.model.EntityModel.TableType.COLLECTION_TABLE) {
+                    continue;
+                }
+
                 String entityName = entityModel.getFqcn() != null ? entityModel.getFqcn() : entityModel.getEntityName();
                 TypeElement typeElement = context.getElementUtils().getTypeElement(entityName);
                 if (typeElement == null) {
@@ -152,10 +158,16 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
             }
             // Relationships are now processed during entity handling via AttributeDescriptor
 
-            // 3. 최종 PK 검증 (2차 패스)
+            // 3. 최종 PK 검증 (2차 패스) - COLLECTION_TABLE은 제외
             for (Map.Entry<String, EntityModel> e : context.getSchemaModel().getEntities().entrySet()) {
                 EntityModel em = e.getValue();
                 if (!em.isValid()) continue;
+
+                // COLLECTION_TABLE 타입은 실제 엔티티가 아니므로 PK 검증에서 제외
+                if (em.getTableType() == org.jinx.model.EntityModel.TableType.COLLECTION_TABLE) {
+                    continue;
+                }
+
                 if (context.findAllPrimaryKeyColumns(em).isEmpty()) {
                     // FQN을 사용하여 TypeElement 조회
                     TypeElement te = context.getElementUtils().getTypeElement(e.getKey());

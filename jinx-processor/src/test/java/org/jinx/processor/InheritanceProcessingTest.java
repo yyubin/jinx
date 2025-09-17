@@ -28,10 +28,10 @@ class InheritanceProcessingTest extends AbstractProcessorTest {
         EntityModel productEntity = schema.getEntities().get("entities.Product");
         assertThat(productEntity).isNotNull();
 
-        // BaseEntity의 필드(id, createdAt)와 Product의 필드(productName)가 모두 포함되었는지 확인
-        assertThat(productEntity.getColumns()).hasSize(3);
+        // BaseEntity의 필드(id, createdAt)와 Product의 필드(productName, name, price)가 모두 포함되었는지 확인
+        assertThat(productEntity.getColumns()).hasSize(5);
         assertThat(productEntity.getColumns().keySet().stream().map(Object::toString))
-            .contains("Product::id", "Product::createdAt", "Product::productName");
+            .contains("Product::id", "Product::createdAt", "Product::productName", "Product::name", "Product::price");
 
         // PK가 잘 상속되었는지 확인
         assertThat(productEntity.findColumn("Product", "id").isPrimaryKey()).isTrue();
