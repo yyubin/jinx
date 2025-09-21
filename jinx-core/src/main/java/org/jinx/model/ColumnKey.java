@@ -14,7 +14,7 @@ import java.util.Objects;
  * - canonical: DB별 대소문자 정규화 규칙을 적용한 비교/Map 키 용도
  * - display: 원본 대소문자를 보존한 표시/로그 용도
  */
-public final class ColumnKey {
+public final class ColumnKey implements Comparable<ColumnKey> {
     private static final String DELIMITER = "::";
     
     private final String canonical;  // 정규화된 키 (DB 비교용)
@@ -106,5 +106,11 @@ public final class ColumnKey {
     @Override
     public String toString() {
         return display;
+    }
+
+    @Override
+    public int compareTo(ColumnKey o) {
+        if (o == null) return 1;
+        return this.canonical.compareTo(o.canonical);
     }
 }
