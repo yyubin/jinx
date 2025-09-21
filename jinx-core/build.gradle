@@ -6,7 +6,6 @@ plugins {
 }
 
 group = 'io.github.yyubin'
-version = '0.0.4'
 
 repositories { mavenCentral() }
 

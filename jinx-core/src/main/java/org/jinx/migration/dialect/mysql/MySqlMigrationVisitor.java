@@ -132,13 +132,4 @@ public class MySqlMigrationVisitor extends AbstractMigrationVisitor implements
     public void visitModifiedRelationship(RelationshipModel newRelationship, RelationshipModel oldRelationship) {
         alterBuilder.add(new RelationshipModifyContributor(alterBuilder.getTableName(), newRelationship, oldRelationship));
     }
-
-    @Override
-    public String getGeneratedSql() {
-        String alterSql = alterBuilder.build();
-        if (!alterSql.isEmpty()) {
-            sql.add(alterSql);
-        }
-        return sql.toString();
-    }
 }
