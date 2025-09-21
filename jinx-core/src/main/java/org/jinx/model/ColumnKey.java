@@ -109,16 +109,8 @@ public final class ColumnKey implements Comparable<ColumnKey> {
     }
 
     @Override
-    public int compareTo(ColumnKey other) {
-        if (other == null) {
-            return 1; // null보다 항상 크게
-        }
-        // canonical 우선 비교
-        int cmp = this.canonical.compareTo(other.canonical);
-        if (cmp != 0) {
-            return cmp;
-        }
-        // canonical이 같으면 display로 tie-break
-        return this.display.compareTo(other.display);
+    public int compareTo(ColumnKey o) {
+        if (o == null) return 1;
+        return this.canonical.compareTo(o.canonical);
     }
 }
