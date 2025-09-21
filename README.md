@@ -1,199 +1,307 @@
-# Jinx (WIP) — JPA → DDL/Liquibase migration generator
+# Jinx — JPA → DDL / Liquibase Migration Generator
 
-> ⚠️ 아직 릴리즈 전(WIP)입니다. 내부 구조 리팩토링과 기능 쪼개기 진행 중이에요.
+Jinx는 JPA 애노테이션을 스캔해 **스키마 스냅샷(JSON)** 을 만들고,
 
-Jinx는 JPA 애노테이션을 스캔해 **스키마 스냅샷(JSON)** 을 만들고, 이전 스냅샷과 비교하여 **DB 마이그레이션 SQL**(및 선택적으로 **롤백 SQL**, **Liquibase YAML**)을 생성합니다.
-목표는 **DB/Dialect 의존성을 최소화**하면서도 **DDL 품질과 가독성**을 확보하는 것입니다.
+이전 스냅샷과 비교하여 **DB 마이그레이션 SQL**과 **Liquibase YAML**을 자동 생성하는 도구입니다.
 
----
+👉 최신 릴리즈: **0.0.7**
 
-## 빠른 개요
-
-### 파이프라인
-
-1. **Annotation Processor** (`jinx-processor`)
-
-    * `@Entity` 등 JPA 애노테이션을 스캔해 `SchemaModel`을 생성
-    * `build/classes/java/main/jinx/schema-YYYYMMDDHHmmss.json` 으로 출력
-2. **CLI 비교/생성기** (`migrate` 커맨드)
-
-    * 최신 2개의 스냅샷을 비교 → `DiffResult` 생성
-    * `DialectBundle`(DB 방언 묶음)을 주입받아 SQL / Liquibase YAML 생성
-
-### 현재 지원 상태(요약)
-
-* **DDL**: 테이블/컬럼/PK/인덱스/제약/외래키/컬럼 리네임/테이블 리네임
-* **ID 전략**: `IDENTITY`(MySQL: `AUTO_INCREMENT`), `SEQUENCE`(방언 제공 시), `TABLE`(TableGenerator)
-* **Liquibase YAML**: 주요 change 생성 + 타입 매핑
-* **초기 데이터**: Liquibase `insert` change DTO 추가 (WIP)
-* **DB 방언**: MySQL 우선 구현 (Sequence 미사용), 기타는 인터페이스 확장으로 확장 가능
+👉 샘플 엔티티/JSON/SQL은 [jinx-test 저장소](https://github.com/yyubin/jinx-test)에서 확인할 수 있습니다.
 
 ---
 
-## 리팩토링 하이라이트
+## 🚀 빠른 시작
 
-### 1) Dialect 분리
+### 1. 의존성 추가
 
-기존 단일 인터페이스를 아래처럼 역할별로 분해했습니다.
+Gradle (예시):
 
-* `BaseDialect` : 공통(식별자 quoting, 타입 매퍼/값 변환기 제공 등)
-* `DdlDialect` : 테이블/컬럼/PK/제약/인덱스/관계 등 **DDL 생성**
-* `IdentityDialect` : `IDENTITY` 컬럼 문법 제공
-* `SequenceDialect` : 시퀀스 DDL
-* `TableGeneratorDialect` : Table generator 테이블/초기값 DDL
-* (Liquibase 타입 네이밍이 필요한 경우) `LiquibaseDialect`
+```
+dependencies {
+    annotationProcessor "org.jinx:jinx-processor:0.0.7"
+    implementation "org.jinx:jinx-cli:0.0.7"
+}
 
-> **MySQL 구현**: `MySqlDialect`는 `BaseDialect + DdlDialect`를 기본으로, `IdentityDialect`, `TableGeneratorDialect`만 선택적으로 구현합니다. (시퀀스는 미구현)
-
-### 2) DialectBundle
-
-여러 방언 인터페이스를 한 번에 전달하기 위한 번들:
-
-```java
-var mysql = new MySqlDialect();
-var bundle = DialectBundle.builder(mysql, DatabaseType.MYSQL)
-    .identity(mysql)
-    .tableGenerator(mysql)
-    // .sequence(...)  // MySQL은 미지정
-    .build();
 ```
 
-### 3) Visitor 체계 재구성
+> JDK 21+ 필요합니다.
+>
 
-마이그레이션 처리 단위를 역할별 Visitor로 분리:
+---
 
-* `TableVisitor` : 테이블 생성/삭제/리네임
-* `TableContentVisitor` : 컬럼/PK/인덱스/제약/관계의 추가/삭제/수정
-* `TableGeneratorVisitor` : TableGenerator 추가/삭제/수정
-* `SequenceVisitor` : 시퀀스 추가/삭제/수정
-* 공통 상위: `SqlGeneratingVisitor` (생성 SQL 수집)
-
-`VisitorFactory` 가 `DialectBundle`에 맞는 Visitor Provider를 만듭니다.
-(MySQL의 경우 Table/Content 전용 visitor, TableGenerator 전용 visitor로 분리)
-
-### 4) Builder + Contributor 패턴
-
-SQL 생성은 **Builder**가 orchestration, **Contributor**가 구체 SQL 조각을 구성:
-
-* **Builder**
-
-    * `CreateTableBuilder`(Body + Post 단계)
-    * `AlterTableBuilder`
-    * `TableGeneratorBuilder`
-* **Contributor 인터페이스**
-
-    * 공통: `SqlContributor { int priority(); }`
-    * 세부: `DdlContributor`, `TableGeneratorContributor`, `SequenceContributor` …
-    * 마커: `TableBodyContributor`, `PostCreateContributor` 등
-
-예) `CreateTableBuilder`에 기본 파츠를 한번에 추가:
+### 2. 엔티티 작성
 
 ```java
-new CreateTableBuilder(entity.getTableName(), ddlDialect)
-    .defaultsFrom(entity)   // 컬럼, 제약, 인덱스 Contributor 자동 주입
-    .build();
+@Entity
+public class Bird {
+    @Id @GeneratedValue
+    private Long id;
+    private String name;
+    private Long zooId;
+}
+
 ```
 
-### 5) MigrationGenerator 단계화
+---
 
-마이그레이션 생성 순서를 **명시적 단계**로 고정:
+### 3. 스냅샷 생성
 
-1. **Pre-Objects**: `Sequence`, `TableGenerator` (ADDED/MODIFIED)
-2. **파괴적 변경**
+빌드하면 `build/classes/java/main/jinx/` 경로에 스키마 스냅샷이 생성됩니다.
 
-    * ModifiedEntity의 **DROP Phase** (FK/인덱스/제약/컬럼 제거 등)
-    * 테이블 **DROP/RENAME**
-3. **구성적 변경**
+예시: `schema-20250922010911.json`
 
-    * 테이블 **CREATE**
-    * ModifiedEntity의 **ALTER Phase** (컬럼/인덱스/제약 추가/수정)
-4. **FK 추가 Phase** (참조 일관성 확보 후)
-5. **Post-Objects**: `Sequence`, `TableGenerator` (DROPPED)
+```json
+{
+  "entities": {
+    "org.example.Bird": {
+      "tableName": "Bird",
+      "columns": {
+        "bird::id": { "type": "BIGINT", "primaryKey": true, "autoIncrement": true },
+        "bird::name": { "type": "VARCHAR(255)" },
+        "bird::zoo_id": { "type": "BIGINT" }
+      },
+      "indexes": {
+        "ix_bird__zoo_id": { "columns": ["zoo_id"] }
+      }
+    }
+  }
+}
+
+```
 
 ---
 
-## Liquibase 생성 (WIP)
+### 4. 마이그레이션 실행
 
-* `LiquibaseYamlGenerator` + `LiquibaseVisitor`
-* Phase는 SQL과 동일한 순서를 따르며, ChangeSet ID는 `ChangeSetIdGenerator` 제공
-* DTO 모델: `…Change` + `…Config` (Jackson 직렬화)
-* `LiquibaseUtils`
-
-    * `buildConstraints(...)`
-    * `buildConstraintsWithoutPK(...)` (PK 제외 제약만 반영)
-    * `createChangeSet(id, changes)`
-
-### 새로 추가된 DTO (예시)
-
-* `InsertDataChange` / `InsertDataConfig` / `ColumnValue`
-  → 초기 데이터 삽입용 `insert` change 표현
-
----
-
-## CLI 사용법
+최신 2개의 스냅샷을 비교해 SQL과 Liquibase YAML을 생성합니다.
 
 ```bash
-# 최신 두 개 스키마 스냅샷 비교 → SQL/LB 생성
 jinx migrate \
   -p build/classes/java/main/jinx \
   -d mysql \
   --out build/jinx \
   --rollback \
-  --liquibase \
-  --force
-```
-
-옵션:
-
-* `-p, --path` : 스키마 JSON 폴더 (기본 `build/classes/java/main/jinx`)
-* `-d, --dialect` : `mysql` 등
-* `--out` : 결과 저장 경로 (기본 `build/jinx`)
-* `--rollback` : 롤백 SQL 생성
-* `--liquibase` : Liquibase YAML 생성
-* `--force` : 위험 변경(예: Enum 매핑 변경) 강행
-
-스키마 파일은 `schema-YYYYMMDDHHmmss.json` 패턴으로 저장됩니다. CLI는 최신 2개를 비교합니다.
-
----
-
-## 프로세서(Annotation Processor)
-
-* JDK 17+
-* 주요 핸들러
-
-    * `EntityHandler`, `RelationshipHandler`, `InheritanceHandler`
-    * `EmbeddedHandler`, `ElementCollectionHandler`
-    * `ConstraintHandler`, `SequenceHandler`, `TableGeneratorHandler`
-    * `ColumnHandler`(필드/타입 기반 Resolver), `AbstractColumnResolver`
-* 출력: `SchemaModel` JSON
-
----
-
-## 디렉터리(개략)
+  --liquibase
 
 ```
-jinx-processor/         # Annotation Processor
-jinx-migration/         # Diff → SQL/LB 생성기, Dialect/Visitor/Contributor/Builder
-jinx-cli/               # picocli 기반 CLI
+
+생성된 SQL 예시:
+
+```sql
+CREATE TABLE `Bird` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(255),
+  `zoo_id` BIGINT,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE INDEX `ix_bird__zoo_id` ON `Bird` (`zoo_id`);
+
+```
+
+Liquibase YAML도 함께 출력됩니다:
+
+```yaml
+databaseChangeLog:
+  - changeSet:
+      id: 20250922010911-1
+      author: jinx
+      changes:
+        - createTable:
+            tableName: Bird
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: name
+                  type: VARCHAR(255)
+              - column:
+                  name: zoo_id
+                  type: BIGINT
+
 ```
 
 ---
 
-## 개발 메모
+## 📂 예시 프로젝트
 
-* Java 17+, 빌드 도구는 Gradle/Maven 아무거나 OK
-* Annotation Processing 활성화 필요
-* DB별 방언 구현은 **인터페이스만 구현**하면 번들에 **선택적으로** 끼울 수 있습니다. (예: MySQL은 Sequence 미구현)
+더 많은 엔티티, 스냅샷, 마이그레이션 SQL 샘플은 👉 [jinx-test](https://github.com/yyubin/jinx-test) 저장소에서 확인하세요.
 
 ---
 
-## 라이선스
+## ⚙️ CLI 옵션
 
-미정 (WIP)
+| 옵션 | 설명 | 기본값 |
+| --- | --- | --- |
+| `-p, --path` | 스키마 JSON 디렉토리 | `build/classes/java/main/jinx` |
+| `-d, --dialect` | DB 방언 (예: `mysql`) | - |
+| `--out` | 결과 저장 경로 | `build/jinx` |
+| `--rollback` | 롤백 SQL 생성 | 비활성 |
+| `--liquibase` | Liquibase YAML 생성 | 비활성 |
+| `--force` | 위험 변경 강제 허용 | 비활성 |
 
 ---
 
-## 문의/기여
+## 🔧 Gradle에서 Jinx CLI 실행하기
 
-PR/이슈 환영합니다. 구조 개선/새 Dialect/테스트 케이스 추가 등 어떤 형태든 💛
-(특히 Liquibase 모델/출력과 DDL 일관성 검증 테스트 환영)
+아래처럼 **전용 configuration + JavaExec 태스크**를 추가하면, 빌드 산출물(스키마 스냅샷) 생성 → CLI 실행까지 한 번에 돌릴 수 있습니다.
+
+> 스냅샷은 classes(컴파일) 단계에서 생성되므로, 태스크에 dependsOn 'classes'를 꼭 걸어둡니다.
+>
+
+**`build.gradle` 예시 (Gradle 8+, JDK 21)**
+
+```
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.5'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'org.jinx'
+version = '0.0.1-SNAPSHOT'
+description = 'jinx-test'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+    jinxCli
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    compileOnly 'org.projectlombok:lombok'
+    runtimeOnly 'com.mysql:mysql-connector-j'
+    annotationProcessor 'org.projectlombok:lombok'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // Jinx (0.0.7)
+    implementation       "io.github.yyubin:jinx-core:0.0.7"
+    annotationProcessor  "io.github.yyubin:jinx-processor:0.0.7"
+
+    // CLI (transitive 포함)
+    jinxCli              "io.github.yyubin:jinx-cli:0.0.7"
+}
+
+// gradle -P 속성으로 오버라이드 가능한 기본값
+ext.defaultJinxPath      = "build/classes/java/main/jinx"
+ext.defaultJinxDialect   = "mysql"
+ext.defaultJinxOut       = "build/jinx"
+
+tasks.register('jinxMigrate', JavaExec) {
+    group = 'jinx'
+    description = 'Run Jinx CLI to generate migration SQL / Liquibase YAML'
+    classpath = configurations.jinxCli
+    mainClass = 'org.jinx.cli.JinxCli'
+
+    // 프로젝트 속성으로 덮어쓰기 가능
+    def p  = (String) (project.findProperty("jinxPath")    ?: defaultJinxPath)
+    def d  = (String) (project.findProperty("jinxDialect") ?: defaultJinxDialect)
+    def out= (String) (project.findProperty("jinxOut")     ?: defaultJinxOut)
+
+    // 플래그성 옵션: 존재 여부만 체크
+    def withLb  = project.hasProperty("jinxLiquibase")
+    def withRb  = project.hasProperty("jinxRollback")
+    def force   = project.hasProperty("jinxForce")
+
+    // 당신의 CLI 서브커맨드 구조에 맞춰 인자 작성
+    // (예: 'db migrate' 또는 'migrate' 중 프로젝트에 맞게 사용)
+    args 'db', 'migrate',
+         '-p', p,
+         '-d', d,
+         '--out', out
+
+    if (withLb) args '--liquibase'
+    if (withRb) args '--rollback'
+    if (force)  args '--force'
+
+    // 스냅샷이 먼저 생성되도록
+    dependsOn 'classes'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+```
+
+### ▶️ 실행 예시
+
+기본값(경로/방언/출력경로)으로 실행
+
+```bash
+./gradlew jinxMigrate
+
+```
+
+파라미터를 바꿔 실행(프로젝트 속성으로 오버라이드)
+
+```bash
+./gradlew jinxMigrate \
+  -PjinxPath=build/classes/java/main/jinx \
+  -PjinxDialect=mysql \
+  -PjinxOut=build/jinx \
+  -PjinxLiquibase \
+  -PjinxRollback
+
+```
+
+Windows PowerShell:
+
+```powershell
+.\gradlew.bat jinxMigrate -PjinxDialect=mysql -PjinxLiquibase
+
+```
+
+> 참고: Gradle의 --args는 기본 run 태스크용 옵션입니다. 위처럼 프로젝트 속성(-P) 으로 받는 게 커스텀 JavaExec 태스크에선 가장 깔끔하고 이식성도 좋습니다.
+>
+
+### ✅ 체크리스트(자주 나오는 이슈)
+
+- **스냅샷이 하나뿐**이면 “최신 2개 비교”가 불가합니다. 새 빌드를 한 번 더 돌려 스냅샷을 2개 이상 확보하세요.
+- IDE에서 **Annotation Processing 활성화**가 꺼져 있으면 스냅샷이 안 생깁니다.
+- 방언(`d`)은 현재 `mysql` 우선 지원입니다. 다른 DB는 추후 Dialect 확장으로 추가하세요.
+
+### 📦 더 많은 예시
+
+실제 엔티티/스냅샷/SQL 산출물은 여기에서 확인하세요:
+
+**jinx-test** → https://github.com/yyubin/jinx-test
+
+---
+
+## 📌 현재 지원 기능
+
+- 테이블/컬럼/PK/인덱스/제약/리네임 등 주요 DDL
+- ID 전략: `IDENTITY`, `SEQUENCE`, `TABLE`
+- Liquibase YAML 출력
+- MySQL Dialect 기본 제공 (다른 DB는 인터페이스 확장으로 추가 가능)
+
+---
+
+## 🤝 기여
+
+- 새로운 DB 방언 추가
+- DDL ↔ Liquibase 매핑 검증
+- 테스트 케이스 확충
+- 문서 보강
+
+PR과 이슈 환영합니다 🙌
