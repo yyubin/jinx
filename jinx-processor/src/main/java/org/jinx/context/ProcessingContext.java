@@ -121,7 +121,6 @@ public class ProcessingContext {
     }
 
     public void saveModelToJson() {
-        System.out.println("SchemaModel: " + schemaModel);
         if (schemaModel.getEntities().isEmpty()) {
             return;
         }
