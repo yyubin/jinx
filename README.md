@@ -1,5 +1,9 @@
 # Jinx — JPA → DDL / Liquibase Migration Generator
 
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.yyubin/jinx-core.svg)](https://central.sonatype.com/artifact/io.github.yyubin/jinx-core)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
+
 Jinx는 JPA 애노테이션을 스캔해 **스키마 스냅샷(JSON)** 을 만들고,
 
 이전 스냅샷과 비교하여 **DB 마이그레이션 SQL**과 **Liquibase YAML**을 자동 생성하는 도구입니다.
@@ -294,6 +298,11 @@ Windows PowerShell:
 - ID 전략: `IDENTITY`, `SEQUENCE`, `TABLE`
 - Liquibase YAML 출력
 - MySQL Dialect 기본 제공 (다른 DB는 인터페이스 확장으로 추가 가능)
+
+---
+
+## 📜 라이센스
+Jinx is licensed under the [Apache License 2.0](LICENSE).
 
 ---
 
