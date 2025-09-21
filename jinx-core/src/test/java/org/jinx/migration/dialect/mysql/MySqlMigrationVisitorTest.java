@@ -278,4 +278,31 @@ class MySqlMigrationVisitorTest {
                 PrimaryKeyAddContributor.class.getSimpleName()
         ), sql);
     }
+
+    @Test
+    void getGeneratedSql_diffNull_returnsEmptyAndNoNpe() {
+        DdlDialect dialect = mock(DdlDialect.class);
+        MySqlMigrationVisitor visitor = new MySqlMigrationVisitor(null, dialect);
+        assertDoesNotThrow(() -> {
+            String sql = visitor.getGeneratedSql();
+            assertEquals("", sql);
+        });
+    }
+
+    @Test
+    void getGeneratedSql_diffPresentButNoAlter_noNpeAndEmptyAlter() {
+        DdlDialect dialect = mock(DdlDialect.class);
+
+        EntityModel newEntity = EntityModel.builder().tableName("animals").build();
+        DiffResult.ModifiedEntity diff = DiffResult.ModifiedEntity.builder()
+                .newEntity(newEntity)
+                .build();
+
+        MySqlMigrationVisitor visitor = new MySqlMigrationVisitor(diff, dialect);
+
+        assertDoesNotThrow(() -> {
+            String sql = visitor.getGeneratedSql();
+            assertEquals("", sql);
+        });
+    }
 }
