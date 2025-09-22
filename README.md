@@ -3,33 +3,30 @@
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.yyubin/jinx-core.svg)](https://central.sonatype.com/artifact/io.github.yyubin/jinx-core)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
+Jinx는 JPA 애노테이션을 스캔해 **스키마 스냅샷(JSON)** 을 만들고, 이전 스냅샷과 비교하여 **DB 마이그레이션 SQL**과 **Liquibase YAML**을 자동 생성하는 도구입니다.
 
-Jinx는 JPA 애노테이션을 스캔해 **스키마 스냅샷(JSON)** 을 만들고,
+**현재 MySQL 우선 지원** | **JDK 21+ 필요** | **최신 릴리즈: 0.0.7**
 
-이전 스냅샷과 비교하여 **DB 마이그레이션 SQL**과 **Liquibase YAML**을 자동 생성하는 도구입니다.
+## 왜 Jinx인가?
 
-👉 최신 릴리즈: **0.0.7**
+- **JPA 애노테이션 → 스냅샷 → diff 기반 자동 생성**: 수동 DDL 작성 불필요
+- **DDL + Liquibase YAML 동시 출력**: 기존 마이그레이션 도구와 호환
+- **Phase 기반 점진적 변경**: rename/backfill 등 안전한 마이그레이션 지원 (로드맵)
 
-👉 샘플 엔티티/JSON/SQL은 [jinx-test 저장소](https://github.com/yyubin/jinx-test)에서 확인할 수 있습니다.
+샘플 엔티티/JSON/SQL은 [jinx-test 저장소](https://github.com/yyubin/jinx-test)에서 확인할 수 있습니다.
 
 ---
 
-## 🚀 빠른 시작
+## 빠른 시작
 
 ### 1. 의존성 추가
 
-Gradle (예시):
-
-```
+```gradle
 dependencies {
-    annotationProcessor "org.jinx:jinx-processor:0.0.7"
-    implementation "org.jinx:jinx-cli:0.0.7"
+    annotationProcessor "io.github.yyubin:jinx-processor:0.0.7"
+    implementation "io.github.yyubin:jinx-core:0.0.7"
 }
-
 ```
-
-> JDK 21+ 필요합니다.
->
 
 ---
 
@@ -52,6 +49,10 @@ public class Bird {
 
 빌드하면 `build/classes/java/main/jinx/` 경로에 스키마 스냅샷이 생성됩니다.
 
+**파일명 규칙**: `schema-<yyyyMMddHHmmss>.json` (KST 기준, 충돌 방지)
+
+**인덱스 자동 유추**: `Long zooId` → `zoo_id` 컬럼 → `ix_<table>__<column>` 인덱스 생성
+
 예시: `schema-20250922010911.json`
 
 ```json
@@ -70,7 +71,6 @@ public class Bird {
     }
   }
 }
-
 ```
 
 ---
@@ -86,7 +86,6 @@ jinx migrate \
   --out build/jinx \
   --rollback \
   --liquibase
-
 ```
 
 생성된 SQL 예시:
@@ -131,13 +130,13 @@ databaseChangeLog:
 
 ---
 
-## 📂 예시 프로젝트
+## 예시 프로젝트
 
-더 많은 엔티티, 스냅샷, 마이그레이션 SQL 샘플은 👉 [jinx-test](https://github.com/yyubin/jinx-test) 저장소에서 확인하세요.
+더 많은 엔티티, 스냅샷, 마이그레이션 SQL 샘플은 [jinx-test](https://github.com/yyubin/jinx-test) 저장소에서 확인하세요.
 
 ---
 
-## ⚙️ CLI 옵션
+## CLI 옵션
 
 | 옵션 | 설명 | 기본값 |
 | --- | --- | --- |
@@ -150,12 +149,11 @@ databaseChangeLog:
 
 ---
 
-## 🔧 Gradle에서 Jinx CLI 실행하기
+---
 
-아래처럼 **전용 configuration + JavaExec 태스크**를 추가하면, 빌드 산출물(스키마 스냅샷) 생성 → CLI 실행까지 한 번에 돌릴 수 있습니다.
+## Advanced: Gradle 통합
 
-> 스냅샷은 classes(컴파일) 단계에서 생성되므로, 태스크에 dependsOn 'classes'를 꼭 걸어둡니다.
->
+**전용 configuration + JavaExec 태스크**를 추가하면, 빌드 산출물(스키마 스냅샷) 생성 → CLI 실행까지 한 번에 돌릴 수 있습니다.
 
 **`build.gradle` 예시 (Gradle 8+, JDK 21)**
 
@@ -226,9 +224,8 @@ tasks.register('jinxMigrate', JavaExec) {
     def withRb  = project.hasProperty("jinxRollback")
     def force   = project.hasProperty("jinxForce")
 
-    // 당신의 CLI 서브커맨드 구조에 맞춰 인자 작성
-    // (예: 'db migrate' 또는 'migrate' 중 프로젝트에 맞게 사용)
-    args 'db', 'migrate',
+    // CLI 서브커맨드: migrate
+    args 'migrate',
          '-p', p,
          '-d', d,
          '--out', out
@@ -247,7 +244,7 @@ tasks.named('test') {
 
 ```
 
-### ▶️ 실행 예시
+### 실행 예시
 
 기본값(경로/방언/출력경로)으로 실행
 
@@ -278,13 +275,13 @@ Windows PowerShell:
 > 참고: Gradle의 --args는 기본 run 태스크용 옵션입니다. 위처럼 프로젝트 속성(-P) 으로 받는 게 커스텀 JavaExec 태스크에선 가장 깔끔하고 이식성도 좋습니다.
 >
 
-### ✅ 체크리스트(자주 나오는 이슈)
+### 체크리스트(자주 나오는 이슈)
 
 - **스냅샷이 하나뿐**이면 “최신 2개 비교”가 불가합니다. 새 빌드를 한 번 더 돌려 스냅샷을 2개 이상 확보하세요.
 - IDE에서 **Annotation Processing 활성화**가 꺼져 있으면 스냅샷이 안 생깁니다.
-- 방언(`d`)은 현재 `mysql` 우선 지원입니다. 다른 DB는 추후 Dialect 확장으로 추가하세요.
+- 방언(`d`)은 현재 `mysql` 우선 지원입니다. 다른 DB는 SPI 인터페이스(`org.jinx.dialect.Dialect`) 구현으로 확장 가능합니다.
 
-### 📦 더 많은 예시
+### 더 많은 예시
 
 실제 엔티티/스냅샷/SQL 산출물은 여기에서 확인하세요:
 
@@ -292,25 +289,25 @@ Windows PowerShell:
 
 ---
 
-## 📌 현재 지원 기능
+## 현재 지원 기능
 
 - 테이블/컬럼/PK/인덱스/제약/리네임 등 주요 DDL
 - ID 전략: `IDENTITY`, `SEQUENCE`, `TABLE`
 - Liquibase YAML 출력
-- MySQL Dialect 기본 제공 (다른 DB는 인터페이스 확장으로 추가 가능)
+- MySQL Dialect 기본 제공 (다른 DB는 SPI 인터페이스 확장으로 추가 가능)
 
 ---
 
-## 📜 라이센스
+## 라이센스
 Jinx is licensed under the [Apache License 2.0](LICENSE).
 
 ---
 
-## 🤝 기여
+## 기여
 
 - 새로운 DB 방언 추가
 - DDL ↔ Liquibase 매핑 검증
 - 테스트 케이스 확충
 - 문서 보강
 
-PR과 이슈 환영합니다 🙌
+PR과 이슈 환영합니다.
