@@ -1,48 +1,48 @@
-# 새로운 데이터베이스 방언 추가하기
+# Adding New Database Dialect
 
-> 📖 **Read this guide in English**: [Adding New Database Dialect](./adding-new-database-dialect.md)
+> 📖 **한국어로 읽기**: [새로운 데이터베이스 방언 추가하기](./새로운-데이터베이스-방언-추가하기.md)
 
-이 가이드는 Jinx에 새로운 데이터베이스 방언을 추가하는 방법을 단계별로 설명합니다. Jinx는 확장 가능한 SPI(Service Provider Interface) 기반 아키텍처를 사용하여 다양한 데이터베이스를 지원합니다.
+This guide provides step-by-step instructions for adding new database dialect support to Jinx. Jinx uses an extensible SPI (Service Provider Interface) based architecture to support various databases.
 
-## 목차
+## Table of Contents
 
-1. [방언 아키텍처 개요](#방언-아키텍처-개요)
-2. [단계별 구현 가이드](#단계별-구현-가이드)
-3. [SPI 인터페이스 구현](#spi-인터페이스-구현)
-4. [방언 번들 구성](#방언-번들-구성)
-5. [VisitorFactory 등록](#visitorfactory-등록)
-6. [CLI 통합](#cli-통합)
-7. [테스트 작성](#테스트-작성)
-8. [실제 예시: PostgreSQL 방언 추가](#실제-예시-postgresql-방언-추가)
+1. [Dialect Architecture Overview](#dialect-architecture-overview)
+2. [Step-by-Step Implementation Guide](#step-by-step-implementation-guide)
+3. [SPI Interface Implementation](#spi-interface-implementation)
+4. [Dialect Bundle Configuration](#dialect-bundle-configuration)
+5. [VisitorFactory Registration](#visitorfactory-registration)
+6. [CLI Integration](#cli-integration)
+7. [Writing Tests](#writing-tests)
+8. [Real Example: Adding PostgreSQL Dialect](#real-example-adding-postgresql-dialect)
 
-## 방언 아키텍처 개요
+## Dialect Architecture Overview
 
-### 핵심 컴포넌트
+### Core Components
 
-Jinx의 방언 시스템은 다음과 같은 계층으로 구성됩니다:
+Jinx's dialect system consists of the following layers:
 
 ```
 DialectBundle
-├── BaseDialect (기본 식별자 처리)
-├── DdlDialect (DDL 생성)
-├── IdentityDialect (AUTO_INCREMENT 등)
-├── SequenceDialect (시퀀스 지원)
-├── TableGeneratorDialect (테이블 기반 ID 생성)
-└── LiquibaseDialect (Liquibase 출력)
+├── BaseDialect (Basic identifier handling)
+├── DdlDialect (DDL generation)
+├── IdentityDialect (AUTO_INCREMENT etc.)
+├── SequenceDialect (Sequence support)
+├── TableGeneratorDialect (Table-based ID generation)
+└── LiquibaseDialect (Liquibase output)
 ```
 
-### SPI 인터페이스
+### SPI Interfaces
 
 ```java
-// 기본 정책
+// Basic policies
 public interface IdentifierPolicy {
-    int maxLength();              // 식별자 최대 길이 (30, 63, 64, 128 등)
-    String quote(String raw);     // 식별자 인용 (`foo`, "foo", [foo])
-    String normalizeCase(String raw);  // 대소문자 정규화 (Oracle → toUpperCase)
-    boolean isKeyword(String raw);     // 예약어 확인
+    int maxLength();              // Max identifier length (30, 63, 64, 128 etc.)
+    String quote(String raw);     // Identifier quoting (`foo`, "foo", [foo])
+    String normalizeCase(String raw);  // Case normalization (Oracle → toUpperCase)
+    boolean isKeyword(String raw);     // Reserved word check
 }
 
-// 타입 매핑
+// Type mapping
 public interface JavaTypeMapper {
     JavaType map(String className);
 
@@ -53,17 +53,17 @@ public interface JavaTypeMapper {
     }
 }
 
-// 값 변환
+// Value transformation
 public interface ValueTransformer {
     String quote(String value, JavaTypeMapper.JavaType type);
 }
 ```
 
-## 단계별 구현 가이드
+## Step-by-Step Implementation Guide
 
-### 1. 패키지 구조 생성
+### 1. Create Package Structure
 
-새로운 방언을 위한 패키지를 생성합니다:
+Create packages for the new dialect:
 
 ```
 jinx-core/src/main/java/org/jinx/migration/dialect/postgresql/
@@ -72,10 +72,10 @@ jinx-core/src/main/java/org/jinx/migration/dialect/postgresql/
 ├── PostgreSqlJavaTypeMapper.java
 ├── PostgreSqlValueTransformer.java
 ├── PostgreSqlMigrationVisitor.java
-└── PostgreSqlUtil.java (필요시)
+└── PostgreSqlUtil.java (if needed)
 ```
 
-### 2. 테스트 패키지 구조
+### 2. Test Package Structure
 
 ```
 jinx-core/src/test/java/org/jinx/migration/dialect/postgresql/
@@ -86,9 +86,9 @@ jinx-core/src/test/java/org/jinx/migration/dialect/postgresql/
 └── PostgreSqlMigrationVisitorTest.java
 ```
 
-## SPI 인터페이스 구현
+## SPI Interface Implementation
 
-### 1. IdentifierPolicy 구현
+### 1. IdentifierPolicy Implementation
 
 ```java
 package org.jinx.migration.dialect.postgresql;
@@ -98,11 +98,11 @@ import java.util.Set;
 
 public class PostgreSqlIdentifierPolicy implements IdentifierPolicy {
 
-    // PostgreSQL 예약어 목록
+    // PostgreSQL reserved words
     private static final Set<String> KEYWORDS = Set.of(
         "select", "from", "where", "insert", "update", "delete",
         "create", "drop", "alter", "table", "column", "index",
-        // ... PostgreSQL 예약어들
+        // ... PostgreSQL keywords
     );
 
     @Override
@@ -115,14 +115,14 @@ public class PostgreSqlIdentifierPolicy implements IdentifierPolicy {
         if (raw == null || raw.isEmpty()) {
             return raw;
         }
-        // PostgreSQL은 큰따옴표 사용
+        // PostgreSQL uses double quotes
         return "\"" + raw + "\"";
     }
 
     @Override
     public String normalizeCase(String raw) {
         if (raw == null) return null;
-        // PostgreSQL은 소문자로 정규화 (대소문자 구분하지 않음)
+        // PostgreSQL normalizes to lowercase (case insensitive)
         return raw.toLowerCase();
     }
 
@@ -133,7 +133,7 @@ public class PostgreSqlIdentifierPolicy implements IdentifierPolicy {
 }
 ```
 
-### 2. JavaTypeMapper 구현
+### 2. JavaTypeMapper Implementation
 
 ```java
 package org.jinx.migration.dialect.postgresql;
@@ -154,12 +154,12 @@ public class PostgreSqlJavaTypeMapper implements JavaTypeMapper {
             case "java.time.LocalDateTime" -> new PostgreSqlTimestampType();
             case "java.util.UUID" -> new PostgreSqlUuidType();
             case "byte[]" -> new PostgreSqlByteArrayType();
-            // ... 기타 타입들
-            default -> new PostgreSqlStringType(); // 기본값
+            // ... other types
+            default -> new PostgreSqlStringType(); // fallback
         };
     }
 
-    // 내부 타입 클래스들
+    // Inner type classes
     private static class PostgreSqlStringType implements JavaType {
         @Override
         public String getSqlType(int length, int precision, int scale) {
@@ -171,32 +171,6 @@ public class PostgreSqlJavaTypeMapper implements JavaTypeMapper {
 
         @Override
         public String getDefaultValue() { return null; }
-    }
-
-    private static class PostgreSqlIntegerType implements JavaType {
-        @Override
-        public String getSqlType(int length, int precision, int scale) {
-            return "INTEGER";
-        }
-
-        @Override
-        public boolean needsQuotes() { return false; }
-
-        @Override
-        public String getDefaultValue() { return "0"; }
-    }
-
-    private static class PostgreSqlBigIntType implements JavaType {
-        @Override
-        public String getSqlType(int length, int precision, int scale) {
-            return "BIGINT";
-        }
-
-        @Override
-        public boolean needsQuotes() { return false; }
-
-        @Override
-        public String getDefaultValue() { return "0"; }
     }
 
     private static class PostgreSqlUuidType implements JavaType {
@@ -212,11 +186,11 @@ public class PostgreSqlJavaTypeMapper implements JavaTypeMapper {
         public String getDefaultValue() { return null; }
     }
 
-    // ... 기타 타입 클래스들
+    // ... other type classes
 }
 ```
 
-### 3. ValueTransformer 구현
+### 3. ValueTransformer Implementation
 
 ```java
 package org.jinx.migration.dialect.postgresql;
@@ -233,17 +207,17 @@ public class PostgreSqlValueTransformer implements ValueTransformer {
         }
 
         if (type.needsQuotes()) {
-            // 문자열 타입: 작은따옴표로 감싸고 이스케이프
+            // String types: wrap with single quotes and escape
             return "'" + value.replace("'", "''") + "'";
         } else {
-            // 숫자, 불린 등: 그대로 반환
+            // Numbers, booleans etc.: return as-is
             return value;
         }
     }
 }
 ```
 
-### 4. 메인 Dialect 클래스 구현
+### 4. Main Dialect Class Implementation
 
 ```java
 package org.jinx.migration.dialect.postgresql;
@@ -271,13 +245,13 @@ public class PostgreSqlDialect extends AbstractDialect
         return new PostgreSqlValueTransformer();
     }
 
-    // BaseDialect 구현
+    // BaseDialect implementation
     @Override
     public String quoteIdentifier(String raw) {
         return "\"" + raw + "\"";
     }
 
-    // DdlDialect 구현
+    // DdlDialect implementation
     @Override
     public String openCreateTable(String tableName) {
         return "CREATE TABLE " + quoteIdentifier(tableName) + " (\n";
@@ -286,12 +260,6 @@ public class PostgreSqlDialect extends AbstractDialect
     @Override
     public String closeCreateTable() {
         return "\n);";
-    }
-
-    @Override
-    public String getCreateTableSql(EntityModel entity) {
-        // CREATE TABLE 로직 구현
-        // MySQL 예시를 참고하여 PostgreSQL 문법에 맞게 구현
     }
 
     @Override
@@ -315,9 +283,9 @@ public class PostgreSqlDialect extends AbstractDialect
             sb.append(" NOT NULL");
         }
 
-        // PostgreSQL은 SERIAL 타입 지원
+        // PostgreSQL supports SERIAL type
         if (shouldUseSerial(column.getGenerationStrategy())) {
-            // SERIAL 타입은 이미 sqlType에 포함됨
+            // SERIAL type is already included in sqlType
         }
 
         if (column.getDefaultValue() != null) {
@@ -327,7 +295,7 @@ public class PostgreSqlDialect extends AbstractDialect
         return sb.toString();
     }
 
-    // SequenceDialect 구현 (PostgreSQL은 시퀀스 지원)
+    // SequenceDialect implementation (PostgreSQL supports sequences)
     @Override
     public String getCreateSequenceSql(SequenceModel sequence) {
         StringBuilder sb = new StringBuilder();
@@ -345,18 +313,7 @@ public class PostgreSqlDialect extends AbstractDialect
         return sb.toString();
     }
 
-    @Override
-    public String getDropSequenceSql(SequenceModel sequence) {
-        return "DROP SEQUENCE IF EXISTS " + quoteIdentifier(sequence.getSequenceName()) + ";\n";
-    }
-
-    @Override
-    public String getAlterSequenceSql(SequenceModel newSeq, SequenceModel oldSeq) {
-        // PostgreSQL 시퀀스 변경 로직
-        return "";
-    }
-
-    // PostgreSQL 특화 메서드들
+    // PostgreSQL-specific methods
     private boolean shouldUseSerial(GenerationStrategy strategy) {
         return strategy == GenerationStrategy.IDENTITY || strategy == GenerationStrategy.AUTO;
     }
@@ -366,40 +323,40 @@ public class PostgreSqlDialect extends AbstractDialect
         return 63; // PostgreSQL limit
     }
 
-    // ... 기타 DdlDialect 메서드들 구현
+    // ... other DdlDialect method implementations
 }
 ```
 
-## 방언 번들 구성
+## Dialect Bundle Configuration
 
-### DatabaseType 열거형에 추가
+### Add to DatabaseType Enum
 
 ```java
 // jinx-core/src/main/java/org/jinx/migration/DatabaseType.java
 public enum DatabaseType {
     MYSQL,
-    POSTGRESQL,  // 새로 추가
-    // ... 기타 DB들
+    POSTGRESQL,  // newly added
+    // ... other databases
 }
 ```
 
-### DialectBundle 생성 헬퍼
+### DialectBundle Creation Helper
 
 ```java
-// PostgreSQL 방언 번들 생성 예시
+// Example PostgreSQL dialect bundle creation
 public static DialectBundle createPostgreSqlBundle() {
     PostgreSqlDialect dialect = new PostgreSqlDialect();
 
     return DialectBundle.builder(dialect, DatabaseType.POSTGRESQL)
-            .sequence(dialect)      // PostgreSQL은 시퀀스 지원
-            .liquibase(dialect)     // Liquibase 지원
+            .sequence(dialect)      // PostgreSQL supports sequences
+            .liquibase(dialect)     // Liquibase support
             .build();
 }
 ```
 
-## VisitorFactory 등록
+## VisitorFactory Registration
 
-`VisitorFactory.java`에 새로운 방언 케이스를 추가합니다:
+Add new dialect case to `VisitorFactory.java`:
 
 ```java
 // jinx-core/src/main/java/org/jinx/migration/VisitorFactory.java
@@ -410,21 +367,21 @@ public final class VisitorFactory {
 
         switch (db) {
             case MYSQL -> {
-                // 기존 MySQL 코드
+                // existing MySQL code
             }
-            case POSTGRESQL -> {  // 새로 추가
+            case POSTGRESQL -> {  // newly added
                 Supplier<TableVisitor> tableV =
                         () -> new PostgreSqlMigrationVisitor(null, ddl);
 
                 Function<DiffResult.ModifiedEntity, TableContentVisitor> contentV =
                         me -> new PostgreSqlMigrationVisitor(me, ddl);
 
-                // PostgreSQL은 시퀀스 지원
+                // PostgreSQL supports sequences
                 Optional<Supplier<SequenceVisitor>> seqV = bundle.sequence().map(seqDialect ->
                         (Supplier<SequenceVisitor>) () -> new PostgreSqlSequenceVisitor(seqDialect)
                 );
 
-                // TableGenerator는 옵션 (PostgreSQL은 시퀀스를 선호)
+                // TableGenerator is optional (PostgreSQL prefers sequences)
                 var tgOpt = bundle.tableGenerator().map(tgDialect ->
                         (Supplier<TableGeneratorVisitor>) () -> new PostgreSqlTableGeneratorVisitor(tgDialect)
                 );
@@ -437,9 +394,9 @@ public final class VisitorFactory {
 }
 ```
 
-## CLI 통합
+## CLI Integration
 
-`MigrateCommand.java`의 `resolveDialects` 메서드에 추가합니다:
+Add to `resolveDialects` method in `MigrateCommand.java`:
 
 ```java
 // jinx-cli/src/main/java/org/jinx/cli/MigrateCommand.java
@@ -452,11 +409,11 @@ private DialectBundle resolveDialects(String name) {
                     .tableGenerator(mysql)
                     .build();
         }
-        case "postgresql", "postgres" -> {  // 새로 추가
+        case "postgresql", "postgres" -> {  // newly added
             PostgreSqlDialect postgres = new PostgreSqlDialect();
             yield DialectBundle.builder(postgres, DatabaseType.POSTGRESQL)
-                    .sequence(postgres)      // 시퀀스 지원
-                    .liquibase(postgres)     // Liquibase 지원
+                    .sequence(postgres)      // sequence support
+                    .liquibase(postgres)     // Liquibase support
                     .build();
         }
         default -> throw new IllegalArgumentException("Unsupported dialect: " + name);
@@ -464,16 +421,16 @@ private DialectBundle resolveDialects(String name) {
 }
 ```
 
-## 테스트 작성
+## Writing Tests
 
-### 1. 단위 테스트
+### 1. Unit Tests
 
-각 컴포넌트별로 단위 테스트를 작성합니다:
+Write unit tests for each component:
 
 ```java
 // PostgreSqlDialectTest.java
 @Test
-@DisplayName("PostgreSQL 컬럼 정의 SQL 생성")
+@DisplayName("PostgreSQL column definition SQL generation")
 void testColumnDefinitionSql() {
     PostgreSqlDialect dialect = new PostgreSqlDialect();
 
@@ -489,7 +446,7 @@ void testColumnDefinitionSql() {
 }
 
 @Test
-@DisplayName("PostgreSQL 시퀀스 생성 SQL")
+@DisplayName("PostgreSQL sequence creation SQL")
 void testCreateSequenceSql() {
     PostgreSqlDialect dialect = new PostgreSqlDialect();
 
@@ -504,134 +461,134 @@ void testCreateSequenceSql() {
 }
 ```
 
-### 2. 통합 테스트
+### 2. Integration Tests
 
 ```java
 // PostgreSqlIntegrationTest.java
 @Test
-@DisplayName("PostgreSQL 전체 마이그레이션 생성 테스트")
+@DisplayName("PostgreSQL full migration generation test")
 void testFullMigrationGeneration() {
-    // 엔티티 모델 생성
+    // Create entity model
     EntityModel entity = createTestEntity();
 
-    // 방언 번들 생성
+    // Create dialect bundle
     DialectBundle bundle = createPostgreSqlBundle();
 
-    // 마이그레이션 생성
+    // Generate migration
     MigrationGenerator generator = new MigrationGenerator(bundle);
     DiffResult diff = createTestDiff(entity);
 
     String sql = generator.generateSql(diff);
 
-    // 생성된 SQL 검증
+    // Verify generated SQL
     assertThat(sql).contains("CREATE TABLE");
     assertThat(sql).contains("VARCHAR");
-    assertThat(sql).doesNotContain("AUTO_INCREMENT"); // PostgreSQL은 SERIAL 사용
+    assertThat(sql).doesNotContain("AUTO_INCREMENT"); // PostgreSQL uses SERIAL
 }
 ```
 
-### 3. 필수 테스트 커버리지
+### 3. Required Test Coverage
 
-**반드시 다음 영역들을 테스트해야 합니다:**
+**You MUST test the following areas:**
 
-1. **식별자 정책 테스트**
-   - 최대 길이 제한
-   - 인용 문법
-   - 대소문자 정규화
-   - 예약어 검증
+1. **Identifier Policy Tests**
+   - Maximum length limits
+   - Quoting syntax
+   - Case normalization
+   - Reserved word validation
 
-2. **타입 매핑 테스트**
-   - 모든 Java 타입의 SQL 타입 매핑
-   - 길이, 정밀도, 스케일 처리
-   - 기본값 처리
+2. **Type Mapping Tests**
+   - SQL type mapping for all Java types
+   - Length, precision, scale handling
+   - Default value handling
 
-3. **DDL 생성 테스트**
+3. **DDL Generation Tests**
    - CREATE TABLE
    - ALTER TABLE (ADD/DROP/MODIFY COLUMN)
-   - 제약조건 (PK, FK, UNIQUE, CHECK)
-   - 인덱스
+   - Constraints (PK, FK, UNIQUE, CHECK)
+   - Indexes
 
-4. **특화 기능 테스트**
-   - 시퀀스 (지원하는 경우)
-   - Identity/Serial 컬럼
-   - TableGenerator (필요한 경우)
+4. **Specialized Feature Tests**
+   - Sequences (if supported)
+   - Identity/Serial columns
+   - TableGenerator (if needed)
 
-## 실제 예시: PostgreSQL 방언 추가
+## Real Example: Adding PostgreSQL Dialect
 
-다음은 PostgreSQL 방언을 추가하는 실제 단계별 체크리스트입니다:
+Here's an actual step-by-step checklist for adding PostgreSQL dialect:
 
-### 단계 1: 기본 구조 생성
+### Step 1: Create Basic Structure
 
 ```bash
-# 1. 패키지 디렉토리 생성
+# 1. Create package directories
 mkdir -p jinx-core/src/main/java/org/jinx/migration/dialect/postgresql
 mkdir -p jinx-core/src/test/java/org/jinx/migration/dialect/postgresql
 
-# 2. 기본 클래스 파일들 생성
+# 2. Create basic class files
 touch jinx-core/src/main/java/org/jinx/migration/dialect/postgresql/PostgreSqlDialect.java
 touch jinx-core/src/main/java/org/jinx/migration/dialect/postgresql/PostgreSqlJavaTypeMapper.java
 touch jinx-core/src/main/java/org/jinx/migration/dialect/postgresql/PostgreSqlValueTransformer.java
 touch jinx-core/src/main/java/org/jinx/migration/dialect/postgresql/PostgreSqlMigrationVisitor.java
 ```
 
-### 단계 2: 인터페이스 구현
+### Step 2: Implement Interfaces
 
-1. `PostgreSqlJavaTypeMapper` 구현
-2. `PostgreSqlValueTransformer` 구현
-3. `PostgreSqlDialect` 메인 클래스 구현
-4. `PostgreSqlMigrationVisitor` 구현
+1. Implement `PostgreSqlJavaTypeMapper`
+2. Implement `PostgreSqlValueTransformer`
+3. Implement `PostgreSqlDialect` main class
+4. Implement `PostgreSqlMigrationVisitor`
 
-### 단계 3: 시스템 통합
+### Step 3: System Integration
 
-1. `DatabaseType.POSTGRESQL` 추가
-2. `VisitorFactory`에 PostgreSQL 케이스 추가
-3. `MigrateCommand.resolveDialects()`에 추가
+1. Add `DatabaseType.POSTGRESQL`
+2. Add PostgreSQL case to `VisitorFactory`
+3. Add to `MigrateCommand.resolveDialects()`
 
-### 단계 4: 테스트 작성
+### Step 4: Write Tests
 
-1. 각 클래스별 단위 테스트 작성
-2. 통합 테스트 작성
-3. 실제 PostgreSQL DDL 검증
+1. Write unit tests for each class
+2. Write integration tests
+3. Verify actual PostgreSQL DDL
 
-### 단계 5: 문서화
+### Step 5: Documentation
 
-1. 지원 DB 목록에 PostgreSQL 추가
-2. 사용법 문서 업데이트
-3. 이 기여 가이드 업데이트
+1. Add PostgreSQL to supported DB list
+2. Update usage documentation
+3. Update this contribution guide
 
-## 주의사항
+## Important Considerations
 
-### 필수 고려사항
+### Must-Have Considerations
 
-1. **예약어 처리**: 각 DB의 예약어 목록을 정확히 파악
-2. **식별자 길이**: DB별 최대 식별자 길이 제한 준수
-3. **타입 매핑**: Java 타입과 SQL 타입의 정확한 매핑
-4. **문법 차이**: CREATE TABLE, ALTER TABLE 등의 문법 차이
-5. **제약조건**: PK, FK, UNIQUE, CHECK 제약조건 문법
-6. **특화 기능**: 시퀀스, 자동 증가 컬럼 등의 지원 여부
+1. **Reserved Word Handling**: Accurately identify reserved words for each DB
+2. **Identifier Length**: Respect DB-specific maximum identifier length limits
+3. **Type Mapping**: Accurate mapping between Java types and SQL types
+4. **Syntax Differences**: CREATE TABLE, ALTER TABLE syntax differences
+5. **Constraints**: PK, FK, UNIQUE, CHECK constraint syntax
+6. **Specialized Features**: Support for sequences, auto-increment columns etc.
 
-### 테스트 필수사항
+### Testing Requirements
 
-1. **DDL 문법 검증**: 생성된 SQL이 실제 DB에서 실행 가능한지 확인
-2. **마이그레이션 테스트**: 실제 스키마 변경 시나리오 테스트
-3. **역호환성**: 기존 코드에 영향을 주지 않는지 확인
-4. **에러 케이스**: 잘못된 설정이나 지원하지 않는 기능에 대한 에러 처리
+1. **DDL Syntax Validation**: Verify generated SQL is executable on actual DB
+2. **Migration Testing**: Test real schema change scenarios
+3. **Backward Compatibility**: Ensure no impact on existing code
+4. **Error Cases**: Error handling for invalid configurations or unsupported features
 
-### 성능 고려사항
+### Performance Considerations
 
-1. **지연 초기화**: 무거운 리소스는 필요할 때만 초기화
-2. **캐싱**: 자주 사용되는 정보는 캐싱
-3. **메모리 효율성**: 불필요한 객체 생성 최소화
+1. **Lazy Initialization**: Initialize heavy resources only when needed
+2. **Caching**: Cache frequently used information
+3. **Memory Efficiency**: Minimize unnecessary object creation
 
 ---
 
-새로운 데이터베이스 방언을 추가하는 것은 복잡하지만, Jinx의 SPI 아키텍처 덕분에 체계적으로 접근할 수 있습니다. 이 가이드의 단계를 따라하면서 기존 MySQL 구현체를 참고하면 성공적으로 새로운 방언을 추가할 수 있습니다.
+Adding a new database dialect is complex, but Jinx's well-designed SPI architecture makes it possible to approach it systematically. By following the steps in this guide and referencing the existing MySQL implementation, you can successfully add new dialect support.
 
-**기여 시 반드시 기억할 점:**
-- 모든 변경사항에 대한 **포괄적인 테스트 작성**
-- 실제 데이터베이스에서 **DDL 검증**
-- **문서화 업데이트**
-- **코드 리뷰** 요청
-- CI 단계에서 모든 테스트가 통과되지 않는다면 머지는 거절됩니다
+**Essential points to remember when contributing:**
+- Write **comprehensive tests** for all changes
+- **Validate DDL** on actual databases
+- **Update documentation**
+- Request **code review**
+- All tests must pass in CI pipeline before merge approval
 
-여러분의 기여가 Jinx를 더욱 강력한 도구로 만들어 줄 것입니다!
+Your contributions will make Jinx an even more powerful tool!

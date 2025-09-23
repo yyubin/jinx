@@ -1,27 +1,27 @@
 # Jinx — JPA → DDL / Liquibase Migration Generator
 
-> 📖 **Read in English**: [README_EN.md](./README_EN.md)
+> 📖 **한국어로 읽기**: [README.md](./README.md)
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.yyubin/jinx-core.svg)](https://central.sonatype.com/artifact/io.github.yyubin/jinx-core)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Jinx는 JPA 애노테이션을 스캔해 **스키마 스냅샷(JSON)** 을 만들고, 이전 스냅샷과 비교하여 **DB 마이그레이션 SQL**과 **Liquibase YAML**을 자동 생성하는 도구입니다.
+Jinx is a tool that scans JPA annotations to create **schema snapshots (JSON)** and automatically generates **DB migration SQL** and **Liquibase YAML** by comparing with previous snapshots.
 
-**현재 MySQL 우선 지원** | **JDK 21+ 필요** | **최신 릴리즈: 0.0.7**
+**MySQL priority support** | **JDK 21+ required** | **Latest release: 0.0.7**
 
-## 왜 Jinx인가?
+## Why Jinx?
 
-- **JPA 애노테이션 → 스냅샷 → diff 기반 자동 생성**: 수동 DDL 작성 불필요
-- **DDL + Liquibase YAML 동시 출력**: 기존 마이그레이션 도구와 호환
-- **Phase 기반 점진적 변경**: rename/backfill 등 안전한 마이그레이션 지원 (로드맵)
+- **JPA annotations → snapshots → diff-based auto generation**: No manual DDL writing required
+- **DDL + Liquibase YAML simultaneous output**: Compatible with existing migration tools
+- **Phase-based incremental changes**: Support for safe migrations like rename/backfill (roadmap)
 
-샘플 엔티티/JSON/SQL은 [jinx-test 저장소](https://github.com/yyubin/jinx-test)에서 확인할 수 있습니다.
+Sample entities/JSON/SQL can be found in the [jinx-test repository](https://github.com/yyubin/jinx-test).
 
 ---
 
-## 빠른 시작
+## Quick Start
 
-### 1. 의존성 추가
+### 1. Add Dependencies
 
 ```gradle
 dependencies {
@@ -32,7 +32,7 @@ dependencies {
 
 ---
 
-### 2. 엔티티 작성
+### 2. Write Entities
 
 ```java
 @Entity
@@ -47,15 +47,15 @@ public class Bird {
 
 ---
 
-### 3. 스냅샷 생성
+### 3. Generate Snapshots
 
-빌드하면 `build/classes/java/main/jinx/` 경로에 스키마 스냅샷이 생성됩니다.
+When you build, schema snapshots are generated in the `build/classes/java/main/jinx/` path.
 
-**파일명 규칙**: `schema-<yyyyMMddHHmmss>.json` (KST 기준, 충돌 방지)
+**Filename convention**: `schema-<yyyyMMddHHmmss>.json` (KST timezone, collision prevention)
 
-**인덱스 자동 유추**: `Long zooId` → `zoo_id` 컬럼 → `ix_<table>__<column>` 인덱스 생성
+**Automatic index inference**: `Long zooId` → `zoo_id` column → `ix_<table>__<column>` index creation
 
-예시: `schema-20250922010911.json`
+Example: `schema-20250922010911.json`
 
 ```json
 {
@@ -77,9 +77,9 @@ public class Bird {
 
 ---
 
-### 4. 마이그레이션 실행
+### 4. Run Migration
 
-최신 2개의 스냅샷을 비교해 SQL과 Liquibase YAML을 생성합니다.
+Compares the latest 2 snapshots to generate SQL and Liquibase YAML.
 
 ```bash
 jinx migrate \
@@ -90,7 +90,7 @@ jinx migrate \
   --liquibase
 ```
 
-생성된 SQL 예시:
+Generated SQL example:
 
 ```sql
 CREATE TABLE `Bird` (
@@ -104,7 +104,7 @@ CREATE INDEX `ix_bird__zoo_id` ON `Bird` (`zoo_id`);
 
 ```
 
-Liquibase YAML도 함께 출력됩니다:
+Liquibase YAML is also generated:
 
 ```yaml
 databaseChangeLog:
@@ -132,32 +132,32 @@ databaseChangeLog:
 
 ---
 
-## 예시 프로젝트
+## Example Project
 
-더 많은 엔티티, 스냅샷, 마이그레이션 SQL 샘플은 [jinx-test](https://github.com/yyubin/jinx-test) 저장소에서 확인하세요.
+Check the [jinx-test](https://github.com/yyubin/jinx-test) repository for more entity, snapshot, and migration SQL samples.
 
 ---
 
-## CLI 옵션
+## CLI Options
 
-| 옵션 | 설명 | 기본값 |
+| Option | Description | Default |
 | --- | --- | --- |
-| `-p, --path` | 스키마 JSON 디렉토리 | `build/classes/java/main/jinx` |
-| `-d, --dialect` | DB 방언 (예: `mysql`) | - |
-| `--out` | 결과 저장 경로 | `build/jinx` |
-| `--rollback` | 롤백 SQL 생성 | 비활성 |
-| `--liquibase` | Liquibase YAML 생성 | 비활성 |
-| `--force` | 위험 변경 강제 허용 | 비활성 |
+| `-p, --path` | Schema JSON directory | `build/classes/java/main/jinx` |
+| `-d, --dialect` | DB dialect (e.g., `mysql`) | - |
+| `--out` | Output path | `build/jinx` |
+| `--rollback` | Generate rollback SQL | Disabled |
+| `--liquibase` | Generate Liquibase YAML | Disabled |
+| `--force` | Force allow dangerous changes | Disabled |
 
 ---
 
 ---
 
-## Advanced: Gradle 통합
+## Advanced: Gradle Integration
 
-**전용 configuration + JavaExec 태스크**를 추가하면, 빌드 산출물(스키마 스냅샷) 생성 → CLI 실행까지 한 번에 돌릴 수 있습니다.
+By adding a **dedicated configuration + JavaExec task**, you can run everything from build artifact (schema snapshot) generation → CLI execution in one go.
 
-**`build.gradle` 예시 (Gradle 8+, JDK 21)**
+**`build.gradle` example (Gradle 8+, JDK 21)**
 
 ```
 plugins {
@@ -201,11 +201,11 @@ dependencies {
     implementation       "io.github.yyubin:jinx-core:0.0.7"
     annotationProcessor  "io.github.yyubin:jinx-processor:0.0.7"
 
-    // CLI (transitive 포함)
+    // CLI (includes transitives)
     jinxCli              "io.github.yyubin:jinx-cli:0.0.7"
 }
 
-// gradle -P 속성으로 오버라이드 가능한 기본값
+// Default values that can be overridden with gradle -P properties
 ext.defaultJinxPath      = "build/classes/java/main/jinx"
 ext.defaultJinxDialect   = "mysql"
 ext.defaultJinxOut       = "build/jinx"
@@ -216,17 +216,17 @@ tasks.register('jinxMigrate', JavaExec) {
     classpath = configurations.jinxCli
     mainClass = 'org.jinx.cli.JinxCli'
 
-    // 프로젝트 속성으로 덮어쓰기 가능
+    // Can be overridden with project properties
     def p  = (String) (project.findProperty("jinxPath")    ?: defaultJinxPath)
     def d  = (String) (project.findProperty("jinxDialect") ?: defaultJinxDialect)
     def out= (String) (project.findProperty("jinxOut")     ?: defaultJinxOut)
 
-    // 플래그성 옵션: 존재 여부만 체크
+    // Flag options: check for existence only
     def withLb  = project.hasProperty("jinxLiquibase")
     def withRb  = project.hasProperty("jinxRollback")
     def force   = project.hasProperty("jinxForce")
 
-    // CLI 서브커맨드: migrate
+    // CLI subcommand: migrate
     args 'migrate',
          '-p', p,
          '-d', d,
@@ -236,7 +236,7 @@ tasks.register('jinxMigrate', JavaExec) {
     if (withRb) args '--rollback'
     if (force)  args '--force'
 
-    // 스냅샷이 먼저 생성되도록
+    // Ensure snapshots are generated first
     dependsOn 'classes'
 }
 
@@ -246,16 +246,16 @@ tasks.named('test') {
 
 ```
 
-### 실행 예시
+### Execution Examples
 
-기본값(경로/방언/출력경로)으로 실행
+Run with default values (path/dialect/output path)
 
 ```bash
 ./gradlew jinxMigrate
 
 ```
 
-파라미터를 바꿔 실행(프로젝트 속성으로 오버라이드)
+Run with changed parameters (override with project properties)
 
 ```bash
 ./gradlew jinxMigrate \
@@ -274,42 +274,42 @@ Windows PowerShell:
 
 ```
 
-> 참고: Gradle의 --args는 기본 run 태스크용 옵션입니다. 위처럼 프로젝트 속성(-P) 으로 받는 게 커스텀 JavaExec 태스크에선 가장 깔끔하고 이식성도 좋습니다.
+> Note: Gradle's --args is an option for the default run task. Using project properties (-P) as shown above is the cleanest and most portable approach for custom JavaExec tasks.
 >
 
-### 체크리스트(자주 나오는 이슈)
+### Checklist (Common Issues)
 
-- **스냅샷이 하나뿐**이면 “최신 2개 비교”가 불가합니다. 새 빌드를 한 번 더 돌려 스냅샷을 2개 이상 확보하세요.
-- IDE에서 **Annotation Processing 활성화**가 꺼져 있으면 스냅샷이 안 생깁니다.
-- 방언(`d`)은 현재 `mysql` 우선 지원입니다. 다른 DB는 SPI 인터페이스(`org.jinx.dialect.Dialect`) 구현으로 확장 가능합니다.
+- **If there's only one snapshot**, "compare latest 2" is not possible. Run a new build once more to secure 2 or more snapshots.
+- If **Annotation Processing is disabled** in your IDE, snapshots won't be generated.
+- Dialect (`d`) currently prioritizes `mysql` support. Other DBs can be extended by implementing the SPI interface (`org.jinx.dialect.Dialect`).
 
-### 더 많은 예시
+### More Examples
 
-실제 엔티티/스냅샷/SQL 산출물은 여기에서 확인하세요:
+Check actual entities/snapshots/SQL outputs here:
 
 **jinx-test** → https://github.com/yyubin/jinx-test
 
 ---
 
-## 현재 지원 기능
+## Currently Supported Features
 
-- 테이블/컬럼/PK/인덱스/제약/리네임 등 주요 DDL
-- ID 전략: `IDENTITY`, `SEQUENCE`, `TABLE`
-- Liquibase YAML 출력
-- MySQL Dialect 기본 제공 (다른 DB는 SPI 인터페이스 확장으로 추가 가능)
+- Major DDL including tables/columns/PK/indexes/constraints/rename
+- ID strategies: `IDENTITY`, `SEQUENCE`, `TABLE`
+- Liquibase YAML output
+- MySQL Dialect provided by default (other DBs can be added via SPI interface extension)
 
 ---
 
-## 라이센스
+## License
 Jinx is licensed under the [Apache License 2.0](LICENSE).
 
 ---
 
-## 기여
+## Contributing
 
-- 새로운 DB 방언 추가
-- DDL ↔ Liquibase 매핑 검증
-- 테스트 케이스 확충
-- 문서 보강
+- Add new DB dialects
+- Validate DDL ↔ Liquibase mappings
+- Expand test cases
+- Improve documentation
 
-PR과 이슈 환영합니다.
+PRs and issues are welcome.
