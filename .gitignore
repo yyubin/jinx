@@ -45,3 +45,5 @@ gpg-key.conf
 private.asc
 public.asc
 public_key.asc
+
+private-docs
