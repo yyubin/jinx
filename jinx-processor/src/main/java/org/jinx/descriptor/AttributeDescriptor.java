@@ -17,8 +17,8 @@ public interface AttributeDescriptor {
     boolean hasAnnotation(Class<? extends Annotation> ann);
 
     Element elementForDiagnostics();        // 에러 표시 위치
-    AccessKind accessKind();                // FIELD or PROPERTY
-    enum AccessKind { FIELD, PROPERTY }
+    AccessKind accessKind();                // FIELD, PROPERTY, or RECORD_COMPONENT
+    enum AccessKind { FIELD, PROPERTY, RECORD_COMPONENT }
 
     // Optional helpers for mirror-based lookup (no Class loading)
     default Optional<AnnotationMirror> findAnnotationMirror(String fqcn) {

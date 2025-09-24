@@ -111,7 +111,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
             }
         }
         for (Element element : roundEnv.getElementsAnnotatedWith(Embeddable.class)) {
-            if (element.getKind() == ElementKind.CLASS) {
+            if (element.getKind() == ElementKind.CLASS || element.getKind() == ElementKind.RECORD) {
                 TypeElement typeElement = (TypeElement) element;
                 String qualifiedName = typeElement.getQualifiedName().toString();
 

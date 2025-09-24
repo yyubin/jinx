@@ -8,6 +8,11 @@ plugins {
 group = 'io.github.yyubin'
 version = '0.0.7'
 
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
 
 allprojects {
     repositories { mavenCentral() }
