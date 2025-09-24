@@ -2,6 +2,7 @@ plugins {
     id 'java'
     id 'signing'
     id("io.github.sgtsilvio.gradle.maven-central-publishing") version "0.4.1"
+    id("com.github.spotbugs") version "6.4.2"
 }
 
 group = 'io.github.yyubin'

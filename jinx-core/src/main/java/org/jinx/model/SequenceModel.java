@@ -12,8 +12,13 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PUBLIC)
 public class SequenceModel {
     private String name;
-    @Builder.Default private String schema = null;
-    @Builder.Default private String catalog = null;
+
+    @Builder.Default
+    private String schema = null;
+
+    @Builder.Default
+    private String catalog = null;
+
     private long initialValue;
     private int allocationSize;
     private int cache;

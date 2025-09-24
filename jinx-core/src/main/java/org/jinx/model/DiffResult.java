@@ -15,13 +15,26 @@ import java.util.List;
 @Builder
 @Getter
 public class DiffResult {
-    @Builder.Default private List<EntityModel> addedTables = new ArrayList<>();
-    @Builder.Default private List<EntityModel> droppedTables = new ArrayList<>();
-    @Builder.Default private List<ModifiedEntity> modifiedTables = new ArrayList<>();
-    @Builder.Default private List<RenamedTable> renamedTables = new ArrayList<>();
-    @Builder.Default private List<SequenceDiff> sequenceDiffs = new ArrayList<>();
-    @Builder.Default private List<TableGeneratorDiff> tableGeneratorDiffs = new ArrayList<>();
-    @Builder.Default private List<String> warnings = new ArrayList<>();
+    @Builder.Default
+    private List<EntityModel> addedTables = new ArrayList<>();
+
+    @Builder.Default
+    private List<EntityModel> droppedTables = new ArrayList<>();
+
+    @Builder.Default
+    private List<ModifiedEntity> modifiedTables = new ArrayList<>();
+
+    @Builder.Default
+    private List<RenamedTable> renamedTables = new ArrayList<>();
+
+    @Builder.Default
+    private List<SequenceDiff> sequenceDiffs = new ArrayList<>();
+
+    @Builder.Default
+    private List<TableGeneratorDiff> tableGeneratorDiffs = new ArrayList<>();
+
+    @Builder.Default
+    private List<String> warnings = new ArrayList<>();
 
     public List<String> getAllWarnings() {
         return warnings;

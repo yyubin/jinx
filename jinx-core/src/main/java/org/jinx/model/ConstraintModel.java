@@ -13,14 +13,25 @@ import java.util.Optional;
 @AllArgsConstructor
 public class ConstraintModel {
     private String name;
+
     private String schema;
+
     private String tableName;
+
     private ConstraintType type;
-    @Builder.Default private List<String> columns = new ArrayList<>();
+
+    @Builder.Default
+    private List<String> columns = new ArrayList<>();
+
     private String referencedTable;
-    @Builder.Default private List<String> referencedColumns = new ArrayList<>();
+
+    @Builder.Default
+    private List<String> referencedColumns = new ArrayList<>();
+
     private OnDeleteAction onDelete;
+
     private OnUpdateAction onUpdate;
+
     private String checkClause;
     private String where;
     private String options;
