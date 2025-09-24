@@ -11,6 +11,7 @@ version = '0.0.7'
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
+        // Remove vendor restriction for better compatibility
     }
 }
 
@@ -19,6 +20,16 @@ allprojects {
 
     group = rootProject.group
     version = rootProject.version
+
+    // Force Java 21 toolchain for all subprojects
+    plugins.withType(JavaPlugin) {
+        java {
+            toolchain {
+                languageVersion = JavaLanguageVersion.of(21)
+                // Remove vendor restriction for better compatibility
+            }
+        }
+    }
 
     tasks.withType(Javadoc) {
         options.addStringOption('Xdoclint:none', '-quiet')
