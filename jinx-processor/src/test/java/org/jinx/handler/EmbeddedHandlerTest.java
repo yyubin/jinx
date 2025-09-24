@@ -366,4 +366,99 @@ class EmbeddedHandlerTest {
         assertEquals(1, owner.getColumns().size()); // Only the original PK
         assertTrue(owner.getRelationships().isEmpty());
     }
+
+    // =================================================================
+    // ## Record @Embeddable Tests
+    // =================================================================
+
+    @Test
+    void processEmbedded_RecordEmbeddable_AddsPrefixedColumns() {
+        // Arrange
+        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.Employee", "employees");
+
+        // Mock record components for Address record
+        AttributeDescriptor streetAttr = mockAttribute("street", "java.lang.String");
+        AttributeDescriptor cityAttr = mockAttribute("city", "java.lang.String");
+        AttributeDescriptor zipCodeAttr = mockAttribute("zipCode", "java.lang.String");
+        DeclaredType addressRecordType = mockEmbeddableType("entities.Address", List.of(streetAttr, cityAttr, zipCodeAttr));
+
+        AttributeDescriptor embedAttr = mock(AttributeDescriptor.class);
+        when(embedAttr.type()).thenReturn(addressRecordType);
+        when(embedAttr.name()).thenReturn("address");
+
+        // Act
+        handler.processEmbedded(embedAttr, owner, new HashSet<>());
+
+        // Assert
+        assertEquals(4, owner.getColumns().size()); // id + street + city + zipCode
+        ColumnAssertions.assertNonPkWithType(owner, "employees", "address_street", "java.lang.String");
+        ColumnAssertions.assertNonPkWithType(owner, "employees", "address_city", "java.lang.String");
+        ColumnAssertions.assertNonPkWithType(owner, "employees", "address_zipCode", "java.lang.String");
+    }
+
+    @Test
+    void processEmbedded_RecordWithAttributeOverrides_AppliesOverrides() {
+        // Arrange
+        EntityModel owner = EntityModelMother.javaEntityWithPkIdLong("com.ex.Employee", "employees");
+
+        AttributeDescriptor streetAttr = mockAttribute("street", "java.lang.String");
+        AttributeDescriptor cityAttr = mockAttribute("city", "java.lang.String");
+        DeclaredType addressRecordType = mockEmbeddableType("entities.Address", List.of(streetAttr, cityAttr));
+
+        // Create AttributeOverride for street field
+        AttributeOverrides overrides = AnnotationProxies.of(AttributeOverrides.class, Map.of(
+                "value", new AttributeOverride[]{
+                        AnnotationProxies.of(AttributeOverride.class, Map.of(
+                                "name", "street",
+                                "column", AnnotationProxies.of(Column.class, Map.of("name", "home_street"))
+                        )),
+                        AnnotationProxies.of(AttributeOverride.class, Map.of(
+                                "name", "city",
+                                "column", AnnotationProxies.of(Column.class, Map.of("name", "home_city"))
+                        ))
+                }
+        ));
+
+        AttributeDescriptor embedAttr = mock(AttributeDescriptor.class);
+        when(embedAttr.getAnnotation(AttributeOverrides.class)).thenReturn(overrides);
+        when(embedAttr.getAnnotation(AttributeOverride.class)).thenReturn(null);
+        when(embedAttr.getAnnotation(AssociationOverride.class)).thenReturn(null);
+        when(embedAttr.getAnnotation(AssociationOverrides.class)).thenReturn(null);
+        when(embedAttr.type()).thenReturn(addressRecordType);
+        when(embedAttr.name()).thenReturn("homeAddress");
+
+        // Act
+        handler.processEmbedded(embedAttr, owner, new HashSet<>());
+
+        // Assert
+        assertEquals(3, owner.getColumns().size()); // id + street + city
+        ColumnAssertions.assertNonPkWithType(owner, "employees", "home_street", "java.lang.String");
+        ColumnAssertions.assertNonPkWithType(owner, "employees", "home_city", "java.lang.String");
+    }
+
+    @Test
+    void processEmbeddedId_RecordEmbeddable_CreatesPkColumns() {
+        // Arrange
+        EntityModel owner = EntityModelMother.javaEntity("com.ex.OrderRecord", "order_records");
+
+        AttributeDescriptor customerIdAttr = mockAttribute("customerId", "long");
+        AttributeDescriptor orderNumberAttr = mockAttribute("orderNumber", "java.lang.String");
+        DeclaredType orderIdRecordType = mockEmbeddableType("entities.OrderIdRecord", List.of(customerIdAttr, orderNumberAttr));
+
+        AttributeDescriptor idAttr = mock(AttributeDescriptor.class);
+        when(idAttr.type()).thenReturn(orderIdRecordType);
+        when(idAttr.name()).thenReturn("id");
+
+        // Act
+        handler.processEmbeddedId(idAttr, owner, new HashSet<>());
+
+        // Assert - Columns are primary keys and not nullable
+        assertEquals(2, owner.getColumns().size());
+        ColumnAssertions.assertPkNonNull(owner, "order_records", "id_customerId", "long");
+        ColumnAssertions.assertPkNonNull(owner, "order_records", "id_orderNumber", "java.lang.String");
+
+        // Assert - Context registration for @MapsId
+        verify(context).registerPkAttributeColumns("com.ex.OrderRecord", "id.customerId", List.of("id_customerId"));
+        verify(context).registerPkAttributeColumns("com.ex.OrderRecord", "id.orderNumber", List.of("id_orderNumber"));
+    }
 }

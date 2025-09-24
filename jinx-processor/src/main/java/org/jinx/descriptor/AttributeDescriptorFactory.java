@@ -75,6 +75,13 @@ public class AttributeDescriptorFactory {
     private Optional<AttributeDescriptor> selectAttributeDescriptor(AttributeCandidate candidate, AccessType defaultAccessType) {
         VariableElement field = candidate.getField();
         ExecutableElement getter = candidate.getGetter();
+        VariableElement recordComponent = candidate.getRecordComponent();
+
+        // Record components have highest priority - they are the primary access mechanism for records
+        if (recordComponent != null) {
+            return Optional.of(new RecordAttributeDescriptor(recordComponent, typeUtils, elements));
+        }
+
         Access fieldAccess = (field != null) ? field.getAnnotation(Access.class) : null;
         Access getterAccess = (getter != null) ? getter.getAnnotation(Access.class) : null;
 
@@ -255,6 +262,11 @@ public class AttributeDescriptorFactory {
                     String attributeName = extractAttributeName(getter.getSimpleName().toString());
                     candidates.computeIfAbsent(attributeName, AttributeCandidate::new)
                             .setGetter(getter);
+                } else if (element.getKind() == ElementKind.RECORD_COMPONENT) {
+                    VariableElement recordComponent = (VariableElement) element;
+                    String attributeName = recordComponent.getSimpleName().toString();
+                    candidates.computeIfAbsent(attributeName, AttributeCandidate::new)
+                            .setRecordComponent(recordComponent);
                 }
             }
         }
@@ -279,12 +291,15 @@ public class AttributeDescriptorFactory {
         private final String name;
         private VariableElement field;
         private ExecutableElement getter;
-        
+        private VariableElement recordComponent;
+
         public AttributeCandidate(String name) { this.name = name; }
         public String getName() { return name; }
         public VariableElement getField() { return field; }
         public ExecutableElement getGetter() { return getter; }
+        public VariableElement getRecordComponent() { return recordComponent; }
         public void setField(VariableElement field) { this.field = field; }
         public void setGetter(ExecutableElement getter) { this.getter = getter; }
+        public void setRecordComponent(VariableElement recordComponent) { this.recordComponent = recordComponent; }
     }
 }
