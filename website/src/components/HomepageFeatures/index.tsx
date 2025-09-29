@@ -5,14 +5,14 @@ import styles from './styles.module.css';
 
 type FeatureItem = {
   title: string;
-  Svg: React.ComponentType<React.ComponentProps<'svg'>>;
+  icon: string;
   description: ReactNode;
 };
 
 const FeatureList: FeatureItem[] = [
   {
     title: 'JPA 기반 자동 생성',
-    Svg: require('@site/static/img/undraw_docusaurus_mountain.svg').default,
+    icon: '🔧',
     description: (
       <>
         JPA 애노테이션을 스캔해 스키마 스냅샷을 만들고,
@@ -22,7 +22,7 @@ const FeatureList: FeatureItem[] = [
   },
   {
     title: 'DDL + Liquibase 동시 출력',
-    Svg: require('@site/static/img/undraw_docusaurus_tree.svg').default,
+    icon: '📦',
     description: (
       <>
         SQL DDL과 Liquibase YAML을 동시에 생성하여
@@ -32,7 +32,7 @@ const FeatureList: FeatureItem[] = [
   },
   {
     title: 'MySQL 우선 지원',
-    Svg: require('@site/static/img/undraw_docusaurus_react.svg').default,
+    icon: '🗄️',
     description: (
       <>
         현재 MySQL을 우선 지원하며, JDK 21+ 환경에서
@@ -42,11 +42,11 @@ const FeatureList: FeatureItem[] = [
   },
 ];
 
-function Feature({title, Svg, description}: FeatureItem) {
+function Feature({title, icon, description}: FeatureItem) {
   return (
     <div className={clsx('col col--4')}>
       <div className="text--center">
-        <Svg className={styles.featureSvg} role="img" />
+        <div className={styles.featureIcon} role="img">{icon}</div>
       </div>
       <div className="text--center padding-horiz--md">
         <Heading as="h3">{title}</Heading>
