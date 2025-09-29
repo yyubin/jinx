@@ -87,7 +87,6 @@ const config: Config = {
           position: 'left',
           label: 'Docs',
         },
-        {to: '/blog', label: 'Blog', position: 'left'},
         {
           type: 'localeDropdown',
           position: 'right',
@@ -111,7 +110,7 @@ const config: Config = {
             },
             {
               label: 'Contribute',
-              to: '/docs/contribute/adding-new-database-dialect',
+              to: '/docs/contribute/새로운-데이터베이스-방언-추가하기',
             },
             {
               label: 'Theory',

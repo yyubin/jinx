@@ -9,14 +9,14 @@ import styles from '@site/src/pages/index.module.css';
 
 type FeatureItem = {
   title: string;
-  Svg: React.ComponentType<React.ComponentProps<'svg'>>;
+  icon: string;
   description: ReactNode;
 };
 
 const FeatureList: FeatureItem[] = [
   {
     title: 'JPA-based Auto Generation',
-    Svg: require('@site/static/img/undraw_docusaurus_mountain.svg').default,
+    icon: '🔧',
     description: (
       <>
         Scans JPA annotations to create schema snapshots and
@@ -26,7 +26,7 @@ const FeatureList: FeatureItem[] = [
   },
   {
     title: 'DDL + Liquibase Output',
-    Svg: require('@site/static/img/undraw_docusaurus_tree.svg').default,
+    icon: '📦',
     description: (
       <>
         Generates both SQL DDL and Liquibase YAML simultaneously,
@@ -36,7 +36,7 @@ const FeatureList: FeatureItem[] = [
   },
   {
     title: 'MySQL Priority Support',
-    Svg: require('@site/static/img/undraw_docusaurus_react.svg').default,
+    icon: '🗄️',
     description: (
       <>
         Currently prioritizes MySQL support and provides
@@ -46,11 +46,11 @@ const FeatureList: FeatureItem[] = [
   },
 ];
 
-function Feature({title, Svg, description}: FeatureItem) {
+function Feature({title, icon, description}: FeatureItem) {
   return (
     <div className={clsx('col col--4')}>
       <div className="text--center">
-        <Svg className={styles.featureSvg} role="img" />
+        <div className={styles.featureIcon} role="img">{icon}</div>
       </div>
       <div className="text--center padding-horiz--md">
         <Heading as="h3">{title}</Heading>
