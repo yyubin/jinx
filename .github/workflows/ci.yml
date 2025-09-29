@@ -7,6 +7,7 @@ on:
       - '**/build.gradle*'
       - 'website/**'
       - 'docs/**'
+      - '.github/workflows/**'
     branches: [ main ]
   push:
     paths:
@@ -14,6 +15,7 @@ on:
       - '**/build.gradle*'
       - 'website/**'
       - 'docs/**'
+      - '.github/workflows/**'
     branches: [ main ]
 
 permissions:
