@@ -5,13 +5,15 @@ on:
     paths:
       - '**/*.java'
       - '**/build.gradle*'
-      - '!**/*.md'
+      - 'website/**'
+      - 'docs/**'
     branches: [ main ]
   push:
     paths:
       - '**/*.java'
       - '**/build.gradle*'
-      - '!**/*.md'
+      - 'website/**'
+      - 'docs/**'
     branches: [ main ]
 
 permissions:
