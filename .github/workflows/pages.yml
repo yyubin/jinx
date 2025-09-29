@@ -6,8 +6,6 @@ on:
     types:
       - completed
     branches: [ main ]
-  # Manual trigger
-  workflow_dispatch:
 
 permissions:
   contents: read

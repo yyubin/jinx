@@ -1,3 +1,7 @@
+---
+sidebar_position: 1
+---
+
 # Jinx JPA 처리 메커니즘
 
 Jinx는 컴파일 타임에 Annotation Processing Tool(APT)을 사용하여 JPA 어노테이션을 분석하고 DDL 마이그레이션을 지원하는 도구입니다. 이 문서는 jinx-processor 모듈에서 JPA 어노테이션을 어떻게 처리하는지에 대한 상세한 내용을 다룹니다.

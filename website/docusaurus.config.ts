@@ -103,41 +103,49 @@ const config: Config = {
       style: 'dark',
       links: [
         {
-          title: 'Docs',
+          title: 'Documentation',
           items: [
             {
-              label: 'Tutorial',
+              label: 'Getting Started',
               to: '/docs/intro',
             },
-          ],
-        },
-        {
-          title: 'Community',
-          items: [
             {
-              label: 'Stack Overflow',
-              href: 'https://stackoverflow.com/questions/tagged/docusaurus',
+              label: 'Contribute',
+              to: '/docs/contribute/adding-new-database-dialect',
             },
             {
-              label: 'Discord',
-              href: 'https://discordapp.com/invite/docusaurus',
-            },
-            {
-              label: 'X',
-              href: 'https://x.com/docusaurus',
+              label: 'Theory',
+              to: '/docs/theory/jpa-처리-메커니즘',
             },
           ],
         },
         {
-          title: 'More',
+          title: 'Project',
           items: [
-            {
-              label: 'Blog',
-              to: '/blog',
-            },
             {
               label: 'GitHub',
               href: 'https://github.com/yyubin/jinx',
+            },
+            {
+              label: 'Issues',
+              href: 'https://github.com/yyubin/jinx/issues',
+            },
+            {
+              label: 'Releases',
+              href: 'https://github.com/yyubin/jinx/releases',
+            },
+          ],
+        },
+        {
+          title: 'JPA & Database',
+          items: [
+            {
+              label: 'Jakarta Persistence',
+              href: 'https://jakarta.ee/specifications/persistence/',
+            },
+            {
+              label: 'Liquibase',
+              href: 'https://www.liquibase.org/',
             },
           ],
         },

@@ -1,19 +1,29 @@
-facebook:
-  label: Facebook
-  permalink: /facebook
-  description: Facebook tag description
+jinx:
+  label: Jinx
+  permalink: /jinx
+  description: Jinx JPA migration generator
 
-hello:
-  label: Hello
-  permalink: /hello
-  description: Hello tag description
+jpa:
+  label: JPA
+  permalink: /jpa
+  description: Jakarta Persistence API
 
-docusaurus:
-  label: Docusaurus
-  permalink: /docusaurus
-  description: Docusaurus tag description
+ddl:
+  label: DDL
+  permalink: /ddl
+  description: Data Definition Language
 
-hola:
-  label: Hola
-  permalink: /hola
-  description: Hola tag description
+liquibase:
+  label: Liquibase
+  permalink: /liquibase
+  description: Database migration tool
+
+database:
+  label: Database
+  permalink: /database
+  description: Database related topics
+
+migration:
+  label: Migration
+  permalink: /migration
+  description: Database migration and schema changes
