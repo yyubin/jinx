@@ -50,3 +50,12 @@ public.asc
 public_key.asc
 
 private-docs
+
+### Docusaurus ###
+website/node_modules/
+website/.docusaurus/
+website/.cache-loader/
+website/build/
+website/npm-debug.log*
+website/yarn-debug.log*
+website/yarn-error.log*
