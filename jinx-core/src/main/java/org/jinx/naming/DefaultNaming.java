@@ -2,6 +2,9 @@ package org.jinx.naming;
 
 import jakarta.persistence.CheckConstraint;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -119,12 +122,29 @@ public class DefaultNaming implements Naming {
         return x;
     }
 
-    // 길이 제한 초과 시: [prefix] + '_' + [hex(hashCode)] 형태로 절단
+    // 길이 제한 초과 시: [prefix] + '_' + [hex(hash)] 형태로 절단
+    // SHA-256 기반 해시를 사용하여 충돌 가능성을 최소화
     private String clampWithHash(String name) {
         if (name.length() <= maxLength) return name;
-        String hash = Integer.toHexString(name.hashCode());
+        String hash = computeStableHash(name);
         int keep = Math.max(1, maxLength - (hash.length() + 1)); // '_' 포함
         return name.substring(0, keep) + "_" + hash;
+    }
+
+    /**
+     * SHA-256 기반 안정적인 해시를 생성합니다.
+     * String.hashCode()보다 충돌 가능성이 낮습니다.
+     */
+    private String computeStableHash(String input) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            // 앞 4바이트(8자리 hex)만 사용
+            return String.format("%02x%02x%02x%02x", hash[0], hash[1], hash[2], hash[3]);
+        } catch (NoSuchAlgorithmException e) {
+            // Fallback: String.hashCode() 사용
+            return Integer.toHexString(input.hashCode());
+        }
     }
 
     private String safeConstraint(CheckConstraint cc) {

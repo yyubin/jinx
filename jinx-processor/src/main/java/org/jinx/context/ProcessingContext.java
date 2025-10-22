@@ -1,5 +1,6 @@
 package org.jinx.context;
 
+import jakarta.persistence.Table;
 import lombok.Getter;
 import org.jinx.descriptor.AttributeDescriptor;
 import org.jinx.descriptor.AttributeDescriptorFactory;
@@ -28,7 +29,6 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.Map;
-
 @Getter
 public class ProcessingContext {
     private final ProcessingEnvironment processingEnv;

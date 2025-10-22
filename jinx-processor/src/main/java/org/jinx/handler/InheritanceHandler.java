@@ -223,7 +223,7 @@ public class InheritanceHandler {
         List<ColumnModel> pendingAdds = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         String childTable = childEntity.getTableName();
-        
+
         for (JoinPair jp : joinPairs) {
             ColumnModel parentPk = jp.parent();
             String childCol = jp.childName();
@@ -232,11 +232,11 @@ public class InheritanceHandler {
             if (existing != null) {
                 String wantType = parentPk.getJavaType();
                 String haveType = existing.getJavaType();
-                
+
                 boolean typeMismatch = !normalizeType(haveType).equals(normalizeType(wantType));
                 boolean pkMismatch = !existing.isPrimaryKey();
                 boolean nullMismatch = existing.isNullable();
-                
+
                 if (typeMismatch || pkMismatch || nullMismatch) {
                     errors.add(
                         "JOINED column mismatch: child='" + childEntity.getEntityName() + "', column='" + childCol +
@@ -246,7 +246,7 @@ public class InheritanceHandler {
                 }
                 continue;
             }
-            
+
             ColumnModel add = ColumnModel.builder()
                     .columnName(childCol)
                     .tableName(childTable)
@@ -259,18 +259,38 @@ public class InheritanceHandler {
                     .isPrimaryKey(true)
                     .isNullable(false)
                     .build();
-            
+
             pendingAdds.add(add);
         }
-        
+
         // 2) 커밋 단계: 오류가 없을 때만 실제 childEntity에 put
         if (!errors.isEmpty()) {
             errors.forEach(msg -> context.getMessager().printMessage(Diagnostic.Kind.ERROR, msg, childType));
             childEntity.setValid(false);
             return;
         }
-        
+
         pendingAdds.forEach(childEntity::putColumn);
+
+        // @ForeignKey 어노테이션 처리
+        ForeignKeyInfo fkInfo = extractForeignKeyInfo(childType);
+
+        // FK 제약조건 이름 결정
+        String constraintName;
+        if (fkInfo.explicitName != null && !fkInfo.explicitName.isEmpty()) {
+            // 명시적으로 지정된 이름 사용
+            constraintName = fkInfo.explicitName;
+        } else {
+            // 자동 생성 (JOINED 상속 전용 네이밍으로 충돌 방지)
+            constraintName = context.getNaming().fkName(
+                    childEntity.getTableName(),
+                    joinPairs.stream().map(JoinPair::childName).toList(),
+                    parentEntity.getTableName(),
+                    joinPairs.stream().map(j -> j.parent().getColumnName()).toList());
+
+            // 중복 방지: 기존 제약조건명과 충돌 시 suffix 추가
+            constraintName = ensureUniqueConstraintName(childEntity, constraintName);
+        }
 
         RelationshipModel relationship = RelationshipModel.builder()
                 .type(RelationshipType.JOINED_INHERITANCE)
@@ -278,11 +298,8 @@ public class InheritanceHandler {
                 .columns(joinPairs.stream().map(JoinPair::childName).toList())
                 .referencedTable(parentEntity.getTableName())
                 .referencedColumns(joinPairs.stream().map(j -> j.parent().getColumnName()).toList())
-                .constraintName(context.getNaming().fkName(
-                        childEntity.getTableName(),
-                        joinPairs.stream().map(JoinPair::childName).toList(),
-                        parentEntity.getTableName(),
-                        joinPairs.stream().map(j -> j.parent().getColumnName()).toList()))
+                .constraintName(constraintName)
+                .noConstraint(fkInfo.noConstraint)
                 .build();
 
         String fkName = relationship.getConstraintName();
@@ -308,12 +325,101 @@ public class InheritanceHandler {
         childEntity.setInheritance(InheritanceType.JOINED);
     }
 
+    /**
+     * 중복되지 않는 제약조건 이름을 보장합니다.
+     * 충돌 시 _1, _2 등의 suffix를 추가합니다.
+     */
+    private String ensureUniqueConstraintName(EntityModel entity, String baseName) {
+        String candidate = baseName;
+        int suffix = 1;
+
+        while (isConstraintNameUsed(entity, candidate)) {
+            candidate = baseName + "_" + suffix;
+            suffix++;
+            if (suffix > 100) {
+                // 무한루프 방지
+                context.getMessager().printMessage(Diagnostic.Kind.WARNING,
+                    "Too many constraint name collisions for base name: " + baseName);
+                break;
+            }
+        }
+
+        return candidate;
+    }
+
+    /**
+     * 제약조건 이름이 이미 사용 중인지 확인합니다.
+     */
+    private boolean isConstraintNameUsed(EntityModel entity, String name) {
+        String normalized = name.trim().toLowerCase(Locale.ROOT);
+        return entity.getRelationships().keySet().stream()
+            .map(s -> s == null ? "" : s.trim().toLowerCase(Locale.ROOT))
+            .anyMatch(normalized::equals);
+    }
+
+    /**
+     * @PrimaryKeyJoinColumn의 @ForeignKey 정보를 추출합니다.
+     */
+    private ForeignKeyInfo extractForeignKeyInfo(TypeElement childType) {
+        ForeignKeyInfo info = new ForeignKeyInfo();
+
+        // @PrimaryKeyJoinColumns 확인
+        PrimaryKeyJoinColumns multiAnno = childType.getAnnotation(PrimaryKeyJoinColumns.class);
+        if (multiAnno != null && multiAnno.value().length > 0) {
+            for (PrimaryKeyJoinColumn pkjc : multiAnno.value()) {
+                processPrimaryKeyJoinColumnForeignKey(pkjc, info, childType);
+            }
+            return info;
+        }
+
+        // @PrimaryKeyJoinColumn 확인
+        PrimaryKeyJoinColumn singleAnno = childType.getAnnotation(PrimaryKeyJoinColumn.class);
+        if (singleAnno != null) {
+            processPrimaryKeyJoinColumnForeignKey(singleAnno, info, childType);
+        }
+
+        return info;
+    }
+
+    /**
+     * @PrimaryKeyJoinColumn의 foreignKey 속성을 처리합니다.
+     */
+    private void processPrimaryKeyJoinColumnForeignKey(PrimaryKeyJoinColumn pkjc, ForeignKeyInfo info, TypeElement childType) {
+        ForeignKey fk = pkjc.foreignKey();
+        if (fk == null) return;
+
+        // ConstraintMode.NO_CONSTRAINT 확인
+        if (fk.value() == ConstraintMode.NO_CONSTRAINT) {
+            info.noConstraint = true;
+        }
+
+        // 명시적 이름 확인
+        String name = fk.name();
+        if (name != null && !name.isEmpty()) {
+            if (info.explicitName == null) {
+                info.explicitName = name;
+            } else if (!info.explicitName.equals(name)) {
+                context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "All @PrimaryKeyJoinColumn.foreignKey names must be identical. Found: '" +
+                    info.explicitName + "' and '" + name + "'.", childType);
+            }
+        }
+    }
+
+    /**
+     * @ForeignKey 정보를 담는 내부 클래스
+     */
+    private static class ForeignKeyInfo {
+        boolean noConstraint = false;
+        String explicitName = null;
+    }
+
     private List<JoinPair> resolvePrimaryKeyJoinPairs(TypeElement childType, List<ColumnModel> parentPkCols) {
         List<PrimaryKeyJoinColumn> annotations = collectPrimaryKeyJoinColumns(childType);
         if (annotations.isEmpty()) {
             context.getMessager().printMessage(Diagnostic.Kind.WARNING,
                     String.format("Jinx is creating a default foreign key for the JOINED inheritance of entity '%s'. " +
-                        "To disable this constraint, you must explicitly use @PrimaryKeyJoinColumn along with @JoinColumn and @ForeignKey(ConstraintMode.NO_CONSTRAINT).",
+                        "To disable this constraint, use @PrimaryKeyJoinColumn(foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT)).",
                         childType.getQualifiedName()),
                     childType);
             return parentPkCols.stream()
