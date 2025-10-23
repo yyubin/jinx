@@ -196,6 +196,9 @@ public class MySqlDialect extends AbstractDialect
                 case TIMESTAMP -> sqlType = "DATETIME";
                 default -> sqlType = javaTypeMapped.getSqlType(c.getLength(), c.getPrecision(), c.getScale());
             }
+        } else if (c.getEnumValues() != null && c.getEnumValues().length > 0) {
+            // Handle Enum types (same logic as getLiquibaseTypeName)
+            sqlType = c.isEnumStringMapping() ? "VARCHAR(" + c.getLength() + ")" : "INT";
         } else {
             sqlType = javaTypeMapped.getSqlType(c.getLength(), c.getPrecision(), c.getScale());
         }
