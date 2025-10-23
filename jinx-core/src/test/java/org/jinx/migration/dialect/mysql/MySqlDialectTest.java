@@ -299,6 +299,62 @@ class MySqlDialectTest {
         assertEquals("DROP TABLE IF EXISTS `seq_table`;\n", d.getDropTableGeneratorSql(tg));
     }
 
+    @Test
+    @DisplayName("Enum 타입 처리: EnumType.STRING → VARCHAR(length)")
+    void enumStringMapping() {
+        MySqlDialect d = newDialect();
+
+        ColumnModel enumCol = mock(ColumnModel.class);
+        when(enumCol.getColumnName()).thenReturn("status");
+        when(enumCol.getJavaType()).thenReturn("com.example.Status");
+        when(enumCol.getEnumValues()).thenReturn(new String[]{"ACTIVE", "INACTIVE", "PENDING"});
+        when(enumCol.isEnumStringMapping()).thenReturn(true);
+        when(enumCol.getLength()).thenReturn(20);
+        when(enumCol.getPrecision()).thenReturn(0);
+        when(enumCol.getScale()).thenReturn(0);
+        when(enumCol.isNullable()).thenReturn(false);
+        when(enumCol.getDefaultValue()).thenReturn(null);
+        when(enumCol.getGenerationStrategy()).thenReturn(GenerationStrategy.NONE);
+        when(enumCol.isManualPrimaryKey()).thenReturn(false);
+        when(enumCol.isLob()).thenReturn(false);
+        when(enumCol.getConversionClass()).thenReturn(null);
+        when(enumCol.getSqlTypeOverride()).thenReturn(null);
+        when(enumCol.isVersion()).thenReturn(false);
+        when(enumCol.getTemporalType()).thenReturn(null);
+
+        String def = d.getColumnDefinitionSql(enumCol);
+        assertTrue(def.contains("VARCHAR(20)"), "Expected VARCHAR(20) but got: " + def);
+        assertTrue(def.contains("NOT NULL"), "Expected NOT NULL but got: " + def);
+    }
+
+    @Test
+    @DisplayName("Enum 타입 처리: EnumType.ORDINAL → INT")
+    void enumOrdinalMapping() {
+        MySqlDialect d = newDialect();
+
+        ColumnModel enumCol = mock(ColumnModel.class);
+        when(enumCol.getColumnName()).thenReturn("priority");
+        when(enumCol.getJavaType()).thenReturn("com.example.Priority");
+        when(enumCol.getEnumValues()).thenReturn(new String[]{"LOW", "MEDIUM", "HIGH"});
+        when(enumCol.isEnumStringMapping()).thenReturn(false);  // ORDINAL
+        when(enumCol.getLength()).thenReturn(255);
+        when(enumCol.getPrecision()).thenReturn(0);
+        when(enumCol.getScale()).thenReturn(0);
+        when(enumCol.isNullable()).thenReturn(false);
+        when(enumCol.getDefaultValue()).thenReturn(null);
+        when(enumCol.getGenerationStrategy()).thenReturn(GenerationStrategy.NONE);
+        when(enumCol.isManualPrimaryKey()).thenReturn(false);
+        when(enumCol.isLob()).thenReturn(false);
+        when(enumCol.getConversionClass()).thenReturn(null);
+        when(enumCol.getSqlTypeOverride()).thenReturn(null);
+        when(enumCol.isVersion()).thenReturn(false);
+        when(enumCol.getTemporalType()).thenReturn(null);
+
+        String def = d.getColumnDefinitionSql(enumCol);
+        assertTrue(def.contains("INT"), "Expected INT but got: " + def);
+        assertTrue(def.contains("NOT NULL"), "Expected NOT NULL but got: " + def);
+    }
+
     // --- helpers ---
     private ColumnModel col(String name, String javaType) {
         ColumnModel c = mock(ColumnModel.class);

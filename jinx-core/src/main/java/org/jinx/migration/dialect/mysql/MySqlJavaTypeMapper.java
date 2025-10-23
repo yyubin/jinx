@@ -59,6 +59,7 @@ public class MySqlJavaTypeMapper implements JavaTypeMapper {
     );
 
     private static final Map<String, MysqlJavaType> TYPE_MAP = Map.ofEntries(
+            // Boxed types
             entry("java.lang.Integer", new MysqlJavaType("java.lang.Integer", new SqlType("INT", false, false), false, null)),
             entry("java.lang.Long", new MysqlJavaType("java.lang.Long", new SqlType("BIGINT", false, false), false, null)),
             entry("java.lang.String", new MysqlJavaType("java.lang.String", new SqlType("VARCHAR(%d)", true, false), true, null)),
@@ -68,7 +69,16 @@ public class MySqlJavaTypeMapper implements JavaTypeMapper {
             entry("java.lang.Boolean", new MysqlJavaType("java.lang.Boolean", new SqlType("TINYINT(1)", false, false), false, "0")),
             entry("java.time.LocalDate", new MysqlJavaType("java.time.LocalDate", new SqlType("DATE", false, false), true, null)),
             entry("java.time.LocalDateTime", new MysqlJavaType("java.time.LocalDateTime", new SqlType("TIMESTAMP(6)", false, false), true, null)),
-            entry("java.math.BigInteger", new MysqlJavaType("java.math.BigInteger", new SqlType("BIGINT", false, false), false, null))
+            entry("java.math.BigInteger", new MysqlJavaType("java.math.BigInteger", new SqlType("BIGINT", false, false), false, null)),
+            // Primitive types
+            entry("int", new MysqlJavaType("int", new SqlType("INT", false, false), false, null)),
+            entry("long", new MysqlJavaType("long", new SqlType("BIGINT", false, false), false, null)),
+            entry("double", new MysqlJavaType("double", new SqlType("DOUBLE", false, false), false, null)),
+            entry("float", new MysqlJavaType("float", new SqlType("FLOAT", false, false), false, null)),
+            entry("boolean", new MysqlJavaType("boolean", new SqlType("TINYINT(1)", false, false), false, "0")),
+            entry("byte", new MysqlJavaType("byte", new SqlType("TINYINT", false, false), false, null)),
+            entry("short", new MysqlJavaType("short", new SqlType("SMALLINT", false, false), false, null)),
+            entry("char", new MysqlJavaType("char", new SqlType("CHAR(1)", false, false), true, null))
     );
 
     @Override

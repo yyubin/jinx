@@ -39,6 +39,70 @@ class MySqlJavaTypeMapperTest {
     }
 
     @Nested
+    @DisplayName("Primitive 타입 매핑 확인")
+    class PrimitiveMapping {
+
+        @Test
+        @DisplayName("int → INT")
+        void primitiveIntMapsToInt() {
+            JavaTypeMapper.JavaType t = mapper.map("int");
+            Assertions.assertThat(t.getSqlType(0, 0, 0)).isEqualTo("INT");
+            Assertions.assertThat(t.needsQuotes()).isFalse();
+        }
+
+        @Test
+        @DisplayName("long → BIGINT")
+        void primitiveLongMapsToBigInt() {
+            JavaTypeMapper.JavaType t = mapper.map("long");
+            Assertions.assertThat(t.getSqlType(0, 0, 0)).isEqualTo("BIGINT");
+        }
+
+        @Test
+        @DisplayName("double → DOUBLE")
+        void primitiveDoubleMapsToDouble() {
+            JavaTypeMapper.JavaType t = mapper.map("double");
+            Assertions.assertThat(t.getSqlType(0, 0, 0)).isEqualTo("DOUBLE");
+        }
+
+        @Test
+        @DisplayName("float → FLOAT")
+        void primitiveFloatMapsToFloat() {
+            JavaTypeMapper.JavaType t = mapper.map("float");
+            Assertions.assertThat(t.getSqlType(0, 0, 0)).isEqualTo("FLOAT");
+        }
+
+        @Test
+        @DisplayName("boolean → TINYINT(1) ; default 0")
+        void primitiveBooleanMapsToTinyint() {
+            JavaTypeMapper.JavaType t = mapper.map("boolean");
+            Assertions.assertThat(t.getSqlType(0, 0, 0)).isEqualTo("TINYINT(1)");
+            Assertions.assertThat(t.getDefaultValue()).isEqualTo("0");
+        }
+
+        @Test
+        @DisplayName("byte → TINYINT")
+        void primitiveByteMapsToTinyint() {
+            JavaTypeMapper.JavaType t = mapper.map("byte");
+            Assertions.assertThat(t.getSqlType(0, 0, 0)).isEqualTo("TINYINT");
+        }
+
+        @Test
+        @DisplayName("short → SMALLINT")
+        void primitiveShortMapsToSmallint() {
+            JavaTypeMapper.JavaType t = mapper.map("short");
+            Assertions.assertThat(t.getSqlType(0, 0, 0)).isEqualTo("SMALLINT");
+        }
+
+        @Test
+        @DisplayName("char → CHAR(1)")
+        void primitiveCharMapsToChar1() {
+            JavaTypeMapper.JavaType t = mapper.map("char");
+            Assertions.assertThat(t.getSqlType(0, 0, 0)).isEqualTo("CHAR(1)");
+            Assertions.assertThat(t.needsQuotes()).isTrue();
+        }
+    }
+
+    @Nested
     @DisplayName("가변 길이 & Precision/Scale 형식")
     class VariableTypes {
 
