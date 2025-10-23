@@ -1,4 +1,4 @@
-package org.jinx.config;
+package org.jinx.config.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;

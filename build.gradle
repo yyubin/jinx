@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'io.github.yyubin'
-version = '0.0.8'
+version = '0.0.9'
 
 java {
     toolchain {
@@ -78,6 +78,16 @@ subprojects {
     jacocoTestReport {
         reports {
             xml.required = true
+            html.required = true
+        }
+        afterEvaluate {
+            classDirectories.setFrom(
+                    files(classDirectories.files.collect {
+                        fileTree(dir: it, exclude: [
+                                '**/model/**'
+                        ])
+                    })
+            )
         }
     }
 }

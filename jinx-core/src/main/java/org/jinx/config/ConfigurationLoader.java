@@ -2,9 +2,9 @@ package org.jinx.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import org.jinx.config.model.JinxConfiguration;
 import org.jinx.options.JinxOptions;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
