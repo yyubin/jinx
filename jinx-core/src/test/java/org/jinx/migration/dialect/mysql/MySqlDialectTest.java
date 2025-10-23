@@ -323,7 +323,7 @@ class MySqlDialectTest {
         when(enumCol.getTemporalType()).thenReturn(null);
 
         String def = d.getColumnDefinitionSql(enumCol);
-        assertTrue(def.contains("VARCHAR(20)"), "Expected VARCHAR(20) but got: " + def);
+        assertTrue(def.contains("ENUM('ACTIVE','INACTIVE','PENDING')"));
         assertTrue(def.contains("NOT NULL"), "Expected NOT NULL but got: " + def);
     }
 

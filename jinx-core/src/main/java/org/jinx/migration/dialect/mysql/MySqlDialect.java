@@ -1,6 +1,7 @@
 package org.jinx.migration.dialect.mysql;
 
 import jakarta.persistence.TemporalType;
+import java.util.Arrays;
 import org.jinx.migration.*;
 import org.jinx.migration.contributor.create.ColumnContributor;
 import org.jinx.migration.contributor.create.ConstraintContributor;
@@ -197,9 +198,16 @@ public class MySqlDialect extends AbstractDialect
                 default -> sqlType = javaTypeMapped.getSqlType(c.getLength(), c.getPrecision(), c.getScale());
             }
         } else if (c.getEnumValues() != null && c.getEnumValues().length > 0) {
-            // Handle Enum types (same logic as getLiquibaseTypeName)
-            sqlType = c.isEnumStringMapping() ? "VARCHAR(" + c.getLength() + ")" : "INT";
-        } else {
+            if (c.isEnumStringMapping()) {
+                String enumList = Arrays.stream(c.getEnumValues())
+                        .map(v -> "'" + v + "'")
+                        .collect(Collectors.joining(","));
+                sqlType = "ENUM(" + enumList + ")";
+            } else {
+                sqlType = "INT";
+            }
+        }
+        else {
             sqlType = javaTypeMapped.getSqlType(c.getLength(), c.getPrecision(), c.getScale());
         }
 
