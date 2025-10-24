@@ -1,18 +1,29 @@
 # 🧾 CHANGELOG
 
-## [0.0.11] - 2025-01-24
+## [0.0.12] - 2025-10-24
 ### 🔧 Fixed
 - **ToOne 관계 FK 누락 문제 수정** - `@ManyToOne` / `@OneToOne` 관계에서 참조 대상 엔티티가 알파벳순으로 나중에 처리되는 경우 외래키(FK) 컬럼이 DDL에서 누락되던 문제 해결
-    - **Deferred Processing 메커니즘 추가**: 엔티티 처리 순서와 무관하게 모든 FK 생성 보장
+    - **Processor 단계**: Deferred Processing 메커니즘 추가하여 엔티티 처리 순서와 무관하게 모든 FK 컬럼 생성 보장
+    - **SQL 생성 단계**: `CreateTableBuilder.defaultsFrom()`에서 FK 제약 조건 SQL 생성 누락 문제 수정
     - 순환 의존성(circular dependencies) 지원
     - Referenced entity 누락 시 조용히 실패하던 문제 해결 → NOTE 메시지로 디버깅 용이성 향상
+- **OneToOne 관계 UNIQUE 제약 조건 누락 문제 수정** - `@OneToOne` 관계에서 `@JoinColumn.unique` 값과 무관하게 항상 UNIQUE 제약 조건 생성 (Hibernate 동작과 일치)
+- **Inverse 관계 검증 경고 제거** - `@OneToMany(mappedBy=...)` 검증 시 target entity가 아직 처리되지 않은 경우 불필요한 WARNING 출력 제거
 
 ### 🧩 Changed
-- `ToOneRelationshipProcessor.process()` 로직 개선:
-    - Referenced entity가 아직 처리되지 않은 경우 자동으로 deferred queue에 추가
-    - 중복 처리 방지 로직 추가 (재시도 시 이미 생성된 관계는 스킵)
-- `EntityHandler.runDeferredPostProcessing()`에 관계 재처리 로직 추가:
-    - JOINED 상속 및 @MapsId와 함께 ToOne 관계도 재처리
+- **Processor 모듈**:
+    - `ToOneRelationshipProcessor.process()` 로직 개선:
+        - Referenced entity가 아직 처리되지 않은 경우 자동으로 deferred queue에 추가
+        - 중복 처리 방지 로직 추가 (재시도 시 이미 생성된 관계는 스킵하되 UNIQUE 제약 조건은 확인)
+        - `@OneToOne` 관계는 `@JoinColumn.unique` 값과 무관하게 항상 UNIQUE 제약 조건 추가
+    - `EntityHandler.runDeferredPostProcessing()`에 관계 재처리 로직 추가:
+        - JOINED 상속 및 @MapsId와 함께 ToOne 관계도 재처리
+    - `InverseRelationshipProcessor` 검증 로직 개선:
+        - Target entity가 아직 처리되지 않은 경우 조용히 스킵 (불필요한 WARNING 제거)
+- **Core 모듈**:
+    - `CreateTableBuilder.defaultsFrom()` 메서드 개선:
+        - `entity.getRelationships()`를 순회하여 `RelationshipAddContributor` 추가
+        - FK 제약 조건이 CREATE TABLE 이후 ALTER TABLE로 정상 생성됨
 
 ### 🧪 Tests
 - `ToOneRelationshipProcessorTest`에 Deferred Processing 단위 테스트 4개 추가:

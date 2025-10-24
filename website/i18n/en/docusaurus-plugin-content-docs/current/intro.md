@@ -6,7 +6,7 @@ sidebar_position: 1
 
 **Jinx** is a tool that scans JPA annotations to create schema snapshots (JSON) and automatically generates **DB migration SQL** and **Liquibase YAML** by comparing with previous snapshots.
 
-**Currently prioritizes MySQL support** | **Requires JDK 21+** | **Latest release: 0.0.11**
+**Currently prioritizes MySQL support** | **Requires JDK 21+** | **Latest release: 0.0.12**
 
 ## Quick Start
 
@@ -14,8 +14,8 @@ sidebar_position: 1
 
 ```gradle
 dependencies {
-    annotationProcessor "io.github.yyubin:jinx-processor:0.0.11"
-    implementation "io.github.yyubin:jinx-core:0.0.11"
+    annotationProcessor "io.github.yyubin:jinx-processor:0.0.12"
+    implementation "io.github.yyubin:jinx-core:0.0.12"
 }
 ```
 
