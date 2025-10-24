@@ -52,16 +52,31 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
     public void process(AttributeDescriptor descriptor, EntityModel ownerEntity) {
         ManyToOne manyToOne = descriptor.getAnnotation(ManyToOne.class);
         OneToOne oneToOne = descriptor.getAnnotation(OneToOne.class);
-        
+
         // supports()에서 이미 owning side만 필터링하므로 inverse side 체크 불필요
-        
+
         Optional<TypeElement> referencedTypeElementOpt = support.resolveTargetEntity(descriptor, manyToOne, oneToOne, null, null);
         if (referencedTypeElementOpt.isEmpty()) return;
         TypeElement referencedTypeElement = referencedTypeElementOpt.get();
 
         EntityModel referencedEntity = context.getSchemaModel().getEntities()
                 .get(referencedTypeElement.getQualifiedName().toString());
-        if (referencedEntity == null) return;
+        if (referencedEntity == null) {
+            // 참조된 엔티티가 아직 처리되지 않은 경우 처리를 지연
+            // 이는 엔티티들이 의존성 순서와 무관하게 처리되는 상황 대비
+            context.getMessager().printMessage(Diagnostic.Kind.NOTE,
+                    "Deferring FK generation for @" + (manyToOne != null ? "ManyToOne" : "OneToOne") +
+                    " relationship to '" + referencedTypeElement.getQualifiedName() +
+                    "' (referenced entity not yet processed). Will retry in deferred pass.",
+                    descriptor.elementForDiagnostics());
+
+            String ownerEntityName = ownerEntity.getEntityName();
+            if (!context.getDeferredNames().contains(ownerEntityName)) {
+                context.getDeferredEntities().offer(ownerEntity);
+                context.getDeferredNames().add(ownerEntityName);
+            }
+            return;
+        }
 
         List<ColumnModel> refPkList = context.findAllPrimaryKeyColumns(referencedEntity);
         if (refPkList.isEmpty()) {
@@ -97,11 +112,41 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
             return;
         }
 
+        // Check if this relationship has already been processed (deferred retry scenario)
+        RelationshipModel existingRelationship = ownerEntity.getRelationships().values().stream()
+                .filter(rel -> descriptor.name().equals(rel.getSourceAttributeName()))
+                .findFirst()
+                .orElse(null);
+
         Map<String, ColumnModel> toAdd = new LinkedHashMap<>();
         List<String> fkColumnNames = new ArrayList<>();
         List<String> referencedPkNames = new ArrayList<>();
         MapsId mapsId = descriptor.getAnnotation(MapsId.class);
         String mapsIdAttr = (mapsId != null && !mapsId.value().isEmpty()) ? mapsId.value() : null;
+
+        // If relationship already exists, skip FK creation but still check for UNIQUE constraint (OneToOne)
+        if (existingRelationship != null) {
+            // Extract FK column names from existing relationship for UNIQUE constraint check
+            fkColumnNames = new ArrayList<>(existingRelationship.getColumns());
+            String fkBaseTable = existingRelationship.getTableName();
+
+            // Jump to UNIQUE constraint check for OneToOne
+            // OneToOne 관계는 논리적으로 항상 UNIQUE해야 하므로 @JoinColumn.unique 값과 무관하게 추가
+            if (oneToOne != null && mapsId == null && fkColumnNames.size() == 1) {
+                if (!support.coveredByPkOrUnique(ownerEntity, fkBaseTable, fkColumnNames)) {
+                    String uqName = context.getNaming().uqName(fkBaseTable, fkColumnNames);
+                    if (!ownerEntity.getConstraints().containsKey(uqName)) {
+                        ownerEntity.getConstraints().put(uqName, ConstraintModel.builder()
+                            .name(uqName).type(ConstraintType.UNIQUE)
+                            .tableName(fkBaseTable).columns(new ArrayList<>(fkColumnNames)).build());
+                    }
+                }
+            }
+
+            // FK index check (may have been skipped in previous pass)
+            support.addForeignKeyIndex(ownerEntity, fkColumnNames, fkBaseTable);
+            return; // Already processed, skip FK and relationship creation
+        }
 
         // Validate that all JoinColumns use the same table for composite keys
         if (joinColumns.size() > 1) {
@@ -269,10 +314,10 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
 
         ownerEntity.getRelationships().put(relationship.getConstraintName(), relationship);
         
-        // 1:1(단일 FK)이며 @MapsId가 아니고, @JoinColumn 생략이거나(unique=true 지정)인 경우 UNIQUE 제약 추가
+        // 1:1(단일 FK)이며 @MapsId가 아닌 경우 UNIQUE 제약 추가
+        // OneToOne 관계는 논리적으로 항상 UNIQUE해야 하므로 @JoinColumn.unique 값과 무관하게 추가
         boolean isSingleFk = fkColumnNames.size() == 1;
-        boolean shouldAddUnique = (oneToOne != null) && (mapsId == null) && isSingleFk
-                && (joinColumns.isEmpty() || joinColumns.get(0).unique());
+        boolean shouldAddUnique = (oneToOne != null) && (mapsId == null) && isSingleFk;
         if (shouldAddUnique && !support.coveredByPkOrUnique(ownerEntity, fkBaseTable, fkColumnNames)) {
             String uqName = context.getNaming().uqName(fkBaseTable, fkColumnNames);
             if (!ownerEntity.getConstraints().containsKey(uqName)) {

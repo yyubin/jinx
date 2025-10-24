@@ -133,6 +133,10 @@ public class EntityHandler {
             // Process JOINED inheritance
             processInheritanceJoin(te, child);
 
+            // Re-process relationships for entities that were deferred due to missing referenced entities
+            // This handles @ManyToOne/@OneToOne relationships where the target entity wasn't processed yet
+            relationshipHandler.resolveRelationships(te, child);
+
             // Process @MapsId attributes if any
             if (hasMapsIdAttributes(te, child)) {
                 boolean needsRetry = hasUnresolvedMapsIdDeps(te, child);
@@ -152,7 +156,7 @@ public class EntityHandler {
                 }
             } else {
                 // If it was in the queue but not for @MapsId, it must be for another reason
-                // (like JOINED) which should have been handled already. We can remove it.
+                // (like JOINED or ToOne relationship) which should have been handled already. We can remove it.
                 context.getDeferredNames().remove(childName);
             }
 

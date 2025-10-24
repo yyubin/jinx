@@ -431,4 +431,155 @@ class ToOneRelationshipProcessorTest {
         RelationshipModel rel = owner.getRelationships().values().iterator().next();
         assertThat(rel.isNoConstraint()).isTrue();
     }
+
+    // ---------- Deferred Processing: Referenced Entity Not Yet Processed ----------
+
+    @Test
+    void process_defers_when_referenced_entity_not_found() {
+        // Setup: Remove referenced entity from schema (simulating it hasn't been processed yet)
+        entities.clear();
+
+        // Setup deferred tracking
+        Queue<EntityModel> deferredQueue = new LinkedList<>();
+        Set<String> deferredNames = new HashSet<>();
+        when(context.getDeferredEntities()).thenReturn(deferredQueue);
+        when(context.getDeferredNames()).thenReturn(deferredNames);
+
+        ManyToOne m2o = mock(ManyToOne.class);
+        when(m2o.optional()).thenReturn(true);
+        when(m2o.cascade()).thenReturn(new CascadeType[0]);
+        when(m2o.fetch()).thenReturn(FetchType.EAGER);
+        when(attr.getAnnotation(ManyToOne.class)).thenReturn(m2o);
+
+        when(attr.getAnnotation(JoinColumns.class)).thenReturn(null);
+        when(attr.getAnnotation(JoinColumn.class)).thenReturn(null);
+
+        processor.process(attr, owner);
+
+        // Verify: Entity was deferred
+        assertThat(deferredQueue).contains(owner);
+        assertThat(deferredNames).contains(owner.getEntityName());
+
+        // Verify: NOTE message was printed
+        verify(messager).printMessage(eq(Diagnostic.Kind.NOTE),
+                contains("Deferring FK generation"), eq(diagEl));
+        verify(messager).printMessage(eq(Diagnostic.Kind.NOTE),
+                contains("referenced entity not yet processed"), eq(diagEl));
+
+        // Verify: No relationship or FK column was created
+        assertThat(owner.getRelationships()).isEmpty();
+        assertThat(owner.findColumn("owner_tbl", "partner_id")).isNull();
+    }
+
+    @Test
+    void process_defers_only_once_when_referenced_entity_not_found() {
+        // Setup: Remove referenced entity from schema
+        entities.clear();
+
+        // Setup deferred tracking with existing deferred name
+        Queue<EntityModel> deferredQueue = new LinkedList<>();
+        Set<String> deferredNames = new HashSet<>();
+        deferredNames.add(owner.getEntityName()); // Already deferred
+        when(context.getDeferredEntities()).thenReturn(deferredQueue);
+        when(context.getDeferredNames()).thenReturn(deferredNames);
+
+        ManyToOne m2o = mock(ManyToOne.class);
+        when(m2o.optional()).thenReturn(true);
+        when(m2o.cascade()).thenReturn(new CascadeType[0]);
+        when(m2o.fetch()).thenReturn(FetchType.EAGER);
+        when(attr.getAnnotation(ManyToOne.class)).thenReturn(m2o);
+
+        when(attr.getAnnotation(JoinColumns.class)).thenReturn(null);
+        when(attr.getAnnotation(JoinColumn.class)).thenReturn(null);
+
+        processor.process(attr, owner);
+
+        // Verify: Entity was NOT added again to the queue
+        assertThat(deferredQueue).isEmpty();
+
+        // Verify: Still in deferredNames
+        assertThat(deferredNames).contains(owner.getEntityName());
+    }
+
+    // ---------- Deferred Processing: Skip Already Processed Relationships ----------
+
+    @Test
+    void process_skips_when_relationship_already_processed() {
+        // Setup: Add a relationship that has already been processed
+        RelationshipModel existingRel = RelationshipModel.builder()
+                .type(RelationshipType.MANY_TO_ONE)
+                .tableName("owner_tbl")
+                .columns(List.of("partner_id"))
+                .referencedTable("partner_tbl")
+                .referencedColumns(List.of("id"))
+                .sourceAttributeName("partner") // Same attribute name
+                .constraintName("fk_owner_tbl__partner_id__partner_tbl__id")
+                .build();
+        owner.getRelationships().put(existingRel.getConstraintName(), existingRel);
+
+        ManyToOne m2o = mock(ManyToOne.class);
+        when(m2o.optional()).thenReturn(true);
+        when(m2o.cascade()).thenReturn(new CascadeType[0]);
+        when(m2o.fetch()).thenReturn(FetchType.EAGER);
+        when(attr.getAnnotation(ManyToOne.class)).thenReturn(m2o);
+
+        when(attr.getAnnotation(JoinColumns.class)).thenReturn(null);
+        when(attr.getAnnotation(JoinColumn.class)).thenReturn(null);
+
+        int initialRelationshipCount = owner.getRelationships().size();
+
+        processor.process(attr, owner);
+
+        // Verify: No new relationship was added (still just 1)
+        assertThat(owner.getRelationships()).hasSize(initialRelationshipCount);
+
+        // Verify: No error or warning messages (silent skip)
+        verify(messager, never()).printMessage(eq(Diagnostic.Kind.ERROR), anyString(), any());
+        verify(messager, never()).printMessage(eq(Diagnostic.Kind.WARNING), anyString(), any());
+
+        // Note: FK index may be checked/added for existing relationships (safe operation)
+    }
+
+    @Test
+    void process_succeeds_after_referenced_entity_becomes_available() {
+        // Scenario: First call - referenced entity missing (deferred)
+        // Second call - referenced entity available (successful processing)
+
+        // Setup deferred tracking
+        Queue<EntityModel> deferredQueue = new LinkedList<>();
+        Set<String> deferredNames = new HashSet<>();
+        when(context.getDeferredEntities()).thenReturn(deferredQueue);
+        when(context.getDeferredNames()).thenReturn(deferredNames);
+
+        ManyToOne m2o = mock(ManyToOne.class);
+        when(m2o.optional()).thenReturn(true);
+        when(m2o.cascade()).thenReturn(new CascadeType[0]);
+        when(m2o.fetch()).thenReturn(FetchType.EAGER);
+        when(attr.getAnnotation(ManyToOne.class)).thenReturn(m2o);
+
+        when(attr.getAnnotation(JoinColumns.class)).thenReturn(null);
+        when(attr.getAnnotation(JoinColumn.class)).thenReturn(null);
+
+        // FIRST CALL: Referenced entity not available
+        entities.clear();
+        processor.process(attr, owner);
+
+        assertThat(deferredQueue).contains(owner);
+        assertThat(owner.getRelationships()).isEmpty();
+
+        // SECOND CALL: Referenced entity now available
+        entities.put("com.example.Partner", referenced);
+        processor.process(attr, owner);
+
+        // Verify: Relationship was successfully created
+        assertThat(owner.getRelationships()).hasSize(1);
+        RelationshipModel rel = owner.getRelationships().values().iterator().next();
+        assertThat(rel.getType()).isEqualTo(RelationshipType.MANY_TO_ONE);
+        assertThat(rel.getReferencedTable()).isEqualTo("partner_tbl");
+
+        // Verify: FK column was created
+        ColumnModel fk = owner.findColumn("owner_tbl", "partner_id");
+        assertThat(fk).isNotNull();
+        assertThat(fk.getJavaType()).isEqualTo("Long");
+    }
 }
