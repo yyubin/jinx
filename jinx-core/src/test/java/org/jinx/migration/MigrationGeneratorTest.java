@@ -6,6 +6,7 @@ import org.jinx.migration.spi.visitor.TableContentVisitor;
 import org.jinx.migration.spi.visitor.TableGeneratorVisitor;
 import org.jinx.migration.spi.visitor.TableVisitor;
 import org.jinx.model.*;
+import org.jinx.testing.visitor.RecordingEntityTableContentVisitor;
 import org.jinx.testing.visitor.RecordingTableContentVisitor;
 import org.jinx.testing.visitor.RecordingTableVisitor;
 import org.junit.jupiter.api.DisplayName;
@@ -112,10 +113,12 @@ class MigrationGeneratorTest {
         // --- given: VisitorProviders (녹화형 비지터) 주입을 위한 VisitorFactory static mocking ---
         Supplier<TableVisitor> tvSupplier = RecordingTableVisitor::new;
         Function<DiffResult.ModifiedEntity, TableContentVisitor> tcvFactory = me2 -> new RecordingTableContentVisitor();
+        Function<EntityModel, TableContentVisitor> tcevFactory = me2 -> new RecordingEntityTableContentVisitor();
 
         var providers = new VisitorProviders(
                 tvSupplier,
                 tcvFactory,
+                tcevFactory,
                 Optional.of(() -> new SequenceVisitor() {
                     @Override
                     public void visitAddedSequence(SequenceModel sequence) {
@@ -213,6 +216,7 @@ class MigrationGeneratorTest {
         var providers = new VisitorProviders(
                 RecordingTableVisitor::new,
                 me -> new RecordingTableContentVisitor(),
+                me -> new RecordingEntityTableContentVisitor(),
                 Optional.empty(),
                 Optional.empty()
         );

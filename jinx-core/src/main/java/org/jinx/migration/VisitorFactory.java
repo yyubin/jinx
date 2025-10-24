@@ -8,6 +8,8 @@ import org.jinx.migration.spi.visitor.TableGeneratorVisitor;
 import org.jinx.migration.spi.visitor.TableVisitor;
 import org.jinx.model.DialectBundle;
 import org.jinx.model.DiffResult;
+import org.jinx.model.DiffResult.ModifiedEntity;
+import org.jinx.model.EntityModel;
 import org.jinx.model.VisitorProviders;
 
 import java.util.Optional;
@@ -22,9 +24,12 @@ public final class VisitorFactory {
         switch (db) {
             case MYSQL -> {
                 Supplier<TableVisitor> tableV =
-                        () -> new MySqlMigrationVisitor(null, ddl);
+                        () -> new MySqlMigrationVisitor((ModifiedEntity) null, ddl);
 
                 Function<DiffResult.ModifiedEntity, TableContentVisitor> contentV =
+                        me -> new MySqlMigrationVisitor(me, ddl);
+
+                Function<EntityModel, TableContentVisitor> entityContentV =
                         me -> new MySqlMigrationVisitor(me, ddl);
 
                 // 시퀀스: MySQL 미지원
@@ -34,7 +39,7 @@ public final class VisitorFactory {
                         (Supplier<TableGeneratorVisitor>) () -> new MySqlTableGeneratorVisitor(tgDialect)
                 );
 
-                return new VisitorProviders(tableV, contentV, seqV, tgOpt);
+                return new VisitorProviders(tableV, contentV, entityContentV, seqV, tgOpt);
             }
             default -> throw new IllegalArgumentException("Unsupported database type: " + db);
         }

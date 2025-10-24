@@ -12,6 +12,7 @@ import java.util.function.Supplier;
 public record VisitorProviders(
         Supplier<TableVisitor> tableVisitor,
         Function<DiffResult.ModifiedEntity, TableContentVisitor> tableContentVisitor,
+        Function<EntityModel, TableContentVisitor> entityTableContentVisitor,
         Optional<Supplier<SequenceVisitor>> sequenceVisitor,
         Optional<Supplier<TableGeneratorVisitor>> tableGeneratorVisitor
 ) {}

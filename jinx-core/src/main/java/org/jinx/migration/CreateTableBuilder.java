@@ -76,9 +76,6 @@ public class CreateTableBuilder {
         // 3) 인덱스 (보통 CREATE TABLE 이후 생성)
         this.add(new IndexContributor(entity.getTableName(),
                 entity.getIndexes().values().stream().toList()));
-        // 4) 외래키 (FK) - CREATE TABLE 이후 별도 ALTER TABLE로 추가
-        entity.getRelationships().values().forEach(rel ->
-                this.add(new RelationshipAddContributor(entity.getTableName(), rel)));
 
         return this;
     }

@@ -27,6 +27,16 @@ public abstract class AbstractMigrationVisitor implements SqlGeneratingVisitor {
         }
     }
 
+    protected AbstractMigrationVisitor(DdlDialect ddlDialect, EntityModel entity) {
+        this.ddlDialect = ddlDialect;
+        this.sql = new StringJoiner("\n");
+        if (entity != null) {
+            this.alterBuilder = new AlterTableBuilder(entity.getTableName(), ddlDialect);
+        } else {
+            this.alterBuilder = null;
+        }
+    }
+
     public void visitAddedTable(EntityModel table) {
         CreateTableBuilder builder = new CreateTableBuilder(table.getTableName(), ddlDialect).defaultsFrom(table);
         sql.add(builder.build());

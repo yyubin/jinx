@@ -71,6 +71,12 @@ public class MigrationGenerator {
             out.append(v.getGeneratedSql()).append('\n');
         }
 
+        for (var a : diff.getAddedTables()) {
+            var v = providers.entityTableContentVisitor().apply(a);
+            a.getRelationships().values().forEach(v::visitAddedRelationship);
+            out.append(v.getGeneratedSql()).append('\n');
+        }
+
         // 4) Post-Objects: Sequence/TG 드롭
         providers.sequenceVisitor().ifPresent(sup -> diff.sequenceAccept(sup.get(),
                 DiffResult.SequenceDiff.Type.DROPPED));

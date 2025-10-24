@@ -34,6 +34,22 @@ public class MySqlMigrationVisitor extends AbstractMigrationVisitor implements
         }
     }
 
+    public MySqlMigrationVisitor(EntityModel entity, DdlDialect ddlDialect) {
+        super(ddlDialect, entity);
+
+        if (entity != null) {
+            this.currentColumns = entity.getColumns().values();
+            List<String> pkColumns = this.currentColumns.stream()
+                .filter(ColumnModel::isPrimaryKey)
+                .map(ColumnModel::getColumnName)
+                .toList();
+            this.reOrderedPkColumns = MySqlUtil.reorderForIdentity(pkColumns, this.currentColumns.stream().toList());
+        } else {
+            this.currentColumns = List.of();
+            this.reOrderedPkColumns = List.of();
+        }
+    }
+
     @Override
     public void visitRenamedTable(DiffResult.RenamedTable renamed) {
         alterBuilder.add(new TableRenameContributor(

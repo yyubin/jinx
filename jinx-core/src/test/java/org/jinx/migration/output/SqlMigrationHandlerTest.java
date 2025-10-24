@@ -5,6 +5,7 @@ import org.jinx.migration.spi.visitor.TableContentVisitor;
 import org.jinx.migration.spi.visitor.TableVisitor;
 import org.jinx.model.DialectBundle;
 import org.jinx.model.DiffResult;
+import org.jinx.model.EntityModel;
 import org.jinx.model.SchemaModel;
 import org.jinx.model.VisitorProviders;
 import org.junit.jupiter.api.DisplayName;
@@ -57,8 +58,9 @@ class SqlMigrationHandlerTest {
         // VisitorProviders: tableVisitor만 사용 (두 번 호출되므로 동일 SQL 두 줄 예상)
         Supplier<TableVisitor> tvSupplier = () -> new FixedSqlTableVisitor("TBL");
         Function<DiffResult.ModifiedEntity, TableContentVisitor> tcvFactory = me -> null; // 사용 안 함
+        Function<EntityModel, TableContentVisitor>  tcevFactory = m -> null;
         VisitorProviders providers = new VisitorProviders(
-                tvSupplier, tcvFactory, Optional.empty(), Optional.empty()
+                tvSupplier, tcvFactory, tcevFactory,Optional.empty(), Optional.empty()
         );
 
         // VisitorFactory.forBundle(...) 을 providers 반환하도록 static mocking

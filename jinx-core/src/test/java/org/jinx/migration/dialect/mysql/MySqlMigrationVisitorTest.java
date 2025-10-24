@@ -12,6 +12,7 @@ import org.jinx.migration.spi.ValueTransformer;
 import org.jinx.migration.spi.dialect.DdlDialect;
 import org.jinx.migration.dialect.mysql.MySqlMigrationVisitor;
 import org.jinx.model.*;
+import org.jinx.model.DiffResult.ModifiedEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -282,7 +283,7 @@ class MySqlMigrationVisitorTest {
     @Test
     void getGeneratedSql_diffNull_returnsEmptyAndNoNpe() {
         DdlDialect dialect = mock(DdlDialect.class);
-        MySqlMigrationVisitor visitor = new MySqlMigrationVisitor(null, dialect);
+        MySqlMigrationVisitor visitor = new MySqlMigrationVisitor((ModifiedEntity) null, dialect);
         assertDoesNotThrow(() -> {
             String sql = visitor.getGeneratedSql();
             assertEquals("", sql);

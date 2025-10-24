@@ -1,6 +1,7 @@
 package org.jinx.testing.visitor;
 
 import org.jinx.model.DiffResult;
+import org.jinx.model.EntityModel;
 import org.jinx.model.VisitorProviders;
 import org.jinx.migration.spi.visitor.TableContentVisitor;
 import org.jinx.migration.spi.visitor.TableVisitor;
@@ -15,6 +16,7 @@ public class RecordingVisitors {
 
     public final List<RecordingTableVisitor> tableVisitors = new ArrayList<>();
     public final List<RecordingTableContentVisitor> contentVisitors = new ArrayList<>();
+    public final List<RecordingEntityTableContentVisitor> entityContentVisitors = new ArrayList<>();
 
     public VisitorProviders providers(boolean includeSequence, boolean includeTableGenerator) {
         Supplier<TableVisitor> tvSup = () -> {
@@ -27,6 +29,11 @@ public class RecordingVisitors {
             contentVisitors.add(v);
             return v;
         };
+        Function<EntityModel, TableContentVisitor> tcevFun = me -> {
+            RecordingEntityTableContentVisitor v = new RecordingEntityTableContentVisitor();
+            entityContentVisitors.add(v);
+            return v;
+        };
 
         Optional<Supplier<org.jinx.migration.spi.visitor.SequenceVisitor>> seq =
                 includeSequence ? Optional.of(RecordingSequenceVisitor::new) : Optional.empty();
@@ -34,6 +41,6 @@ public class RecordingVisitors {
         Optional<Supplier<org.jinx.migration.spi.visitor.TableGeneratorVisitor>> tg =
                 includeTableGenerator ? Optional.of(RecordingTableGeneratorVisitor::new) : Optional.empty();
 
-        return new VisitorProviders(tvSup, tcvFun, seq, tg);
+        return new VisitorProviders(tvSup, tcvFun, tcevFun, seq, tg);
     }
 }

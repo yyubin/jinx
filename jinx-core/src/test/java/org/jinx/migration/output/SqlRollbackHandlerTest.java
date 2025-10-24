@@ -7,6 +7,7 @@ import org.jinx.migration.spi.visitor.TableContentVisitor;
 import org.jinx.migration.spi.visitor.TableVisitor;
 import org.jinx.model.DialectBundle;
 import org.jinx.model.DiffResult;
+import org.jinx.model.EntityModel;
 import org.jinx.model.SchemaModel;
 import org.jinx.model.VisitorProviders;
 import org.junit.jupiter.api.DisplayName;
@@ -62,7 +63,8 @@ class SqlRollbackHandlerTest {
         // VisitorProviders: tableVisitor가 고정 SQL("RB") 반환
         Supplier<TableVisitor> tv = () -> new FixedTableVisitor("RB");
         Function<DiffResult.ModifiedEntity, TableContentVisitor> tcv = me -> null; // 사용 안 함
-        VisitorProviders providers = new VisitorProviders(tv, tcv, Optional.empty(), Optional.empty());
+        Function<EntityModel, TableContentVisitor> tcev = m -> null;
+        VisitorProviders providers = new VisitorProviders(tv, tcv, tcev, Optional.empty(), Optional.empty());
 
         SqlRollbackHandler handler = new SqlRollbackHandler();
 
