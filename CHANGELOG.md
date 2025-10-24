@@ -1,6 +1,6 @@
 # 🧾 CHANGELOG
 
-## [0.0.12] - 2025-10-24
+## [0.0.13] - 2025-10-24
 ### 🔧 Fixed
 - **ToOne 관계 FK 누락 문제 수정** - `@ManyToOne` / `@OneToOne` 관계에서 참조 대상 엔티티가 알파벳순으로 나중에 처리되는 경우 외래키(FK) 컬럼이 DDL에서 누락되던 문제 해결
     - **Processor 단계**: Deferred Processing 메커니즘 추가하여 엔티티 처리 순서와 무관하게 모든 FK 컬럼 생성 보장
