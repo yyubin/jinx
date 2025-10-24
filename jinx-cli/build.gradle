@@ -24,6 +24,10 @@ dependencies {
     implementation "com.fasterxml.jackson.core:jackson-databind:${versions.jackson}"
     implementation "com.fasterxml.jackson.core:jackson-core:${versions.jackson}"
     implementation "com.fasterxml.jackson.core:jackson-annotations:${versions.jackson}"
+
+    testImplementation "org.assertj:assertj-core:${versions.assertj}"
+    testImplementation "org.mockito:mockito-core:${versions.mockito}"
+    testImplementation "org.mockito:mockito-junit-jupiter:${versions.mockito}"
 }
 
 application {

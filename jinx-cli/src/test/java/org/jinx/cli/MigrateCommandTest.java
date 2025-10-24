@@ -6,103 +6,124 @@ import picocli.CommandLine;
 
 import java.io.*;
 import java.nio.file.*;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * MigrateCommand 기본 테스트
+ */
 class MigrateCommandTest {
 
-    private static final class Streams implements AutoCloseable {
-        private final PrintStream origOut = System.out;
-        private final PrintStream origErr = System.err;
-        private final ByteArrayOutputStream outBuf = new ByteArrayOutputStream();
-        private final ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
-
-        Streams() {
-            System.setOut(new PrintStream(outBuf));
-            System.setErr(new PrintStream(errBuf));
-        }
-
-        String out() {
-            return outBuf.toString();
-        }
-
-        String err() {
-            return errBuf.toString();
-        }
-
-        @Override
-        public void close() {
-            System.setOut(origOut);
-            System.setErr(origErr);
-        }
-    }
-
-    private static Path writeSchema(Path dir, LocalDateTime ts, String extraJson) throws IOException {
-        String stamp = ts.format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-        Path p = dir.resolve("schema-" + stamp + ".json");
-        Files.writeString(p, """
-                {
-                  "version":"%s",
-                  "entities": %s
-                }
-                """.formatted(stamp, extraJson));
-        return p;
-    }
-
-
     @TempDir
-    Path tmp;
+    Path tempDir;
+
+    private Path schemaDir;
+    private Path outputDir;
+    private ByteArrayOutputStream outContent;
+    private ByteArrayOutputStream errContent;
+    private PrintStream originalOut;
+    private PrintStream originalErr;
+
+    @BeforeEach
+    void setUp() {
+        schemaDir = tempDir.resolve("schemas");
+        outputDir = tempDir.resolve("output");
+
+        outContent = new ByteArrayOutputStream();
+        errContent = new ByteArrayOutputStream();
+        originalOut = System.out;
+        originalErr = System.err;
+        System.setOut(new PrintStream(outContent));
+        System.setErr(new PrintStream(errContent));
+    }
+
+    void tearDown() {
+        System.setOut(originalOut);
+        System.setErr(originalErr);
+    }
+
+    private void createSchemaFile(String timestamp, String content) throws IOException {
+        Files.createDirectories(schemaDir);
+        Path schemaFile = schemaDir.resolve("schema-" + timestamp + ".json");
+        Files.writeString(schemaFile, content);
+    }
 
     @Test
-    @Disabled("TODO: Update test for new baseline workflow")
-    @DisplayName("디렉터리 미존재 - exit 1 & 오류 메시지")
-    void schemaDirNotFound() {
-        Path bad = tmp.resolve("nope");
-        try (Streams s = new Streams()) {
-            int code = new CommandLine(new MigrateCommand())
-                    .execute("-p", bad.toString());
+    @DisplayName("스키마 파일이 없으면 'No HEAD schema found' 메시지 출력")
+    void testNoSchemaFile() {
+        try {
+            int exitCode = new CommandLine(new MigrateCommand())
+                    .execute("-p", schemaDir.toString(),
+                            "--out", outputDir.toString());
 
-            assertThat(code).isOne();
-            assertThat(s.err()).contains("Schema directory not found");
+            assertThat(exitCode).isZero();
+            assertThat(outContent.toString()).contains("No HEAD schema found");
+        } finally {
+            tearDown();
         }
     }
 
     @Test
-    @Disabled("TODO: Update test for new baseline workflow")
-    @DisplayName("변경 없음 - \"No changes detected.\"")
-    void noChangesDetected() throws Exception {
-        LocalDateTime now = LocalDateTime.now();
-        writeSchema(tmp, now.minusSeconds(1), "{}");
-        writeSchema(tmp, now, "{}");
+    @DisplayName("help 옵션 테스트")
+    void testMigrateHelp() {
+        try {
+            ByteArrayOutputStream helpOut = new ByteArrayOutputStream();
+            ByteArrayOutputStream helpErr = new ByteArrayOutputStream();
+            PrintWriter pwOut = new PrintWriter(helpOut);
+            PrintWriter pwErr = new PrintWriter(helpErr);
 
-        try (Streams s = new Streams()) {
-            int code = new CommandLine(new MigrateCommand())
-                    .execute("-p", tmp.toString());
+            int exitCode = new CommandLine(new MigrateCommand())
+                    .setOut(pwOut)
+                    .setErr(pwErr)
+                    .execute("--help");
+            pwOut.flush();
+            pwErr.flush();
 
-            assertThat(code).isZero();
-            assertThat(s.out()).contains("No changes detected.");
+            assertThat(exitCode).isZero();
+            String output = helpOut.toString() + helpErr.toString();
+            assertThat(output).contains("마이그레이션");
+        } finally {
+            tearDown();
         }
     }
 
     @Test
-    @Disabled("TODO: Update test for new baseline workflow")
-    @DisplayName("미지원 dialect 지정 - exit 1 & Unsupported 메시지")
-    void unsupportedDialect() throws Exception {
-        LocalDateTime now = LocalDateTime.now();
-        writeSchema(tmp, now.minusSeconds(1), "{}");
-        // 두 번째 스키마에 dummy entity 넣어 diff 발생
-        writeSchema(tmp, now, "{ \"dummy\":{} }");
+    @DisplayName("지원하지 않는 dialect 사용 시 에러")
+    void testUnsupportedDialect() throws IOException {
+        // given
+        createSchemaFile("20240101000000", """
+                {
+                  "version":"20240101000000",
+                  "entities":{
+                    "Test":{
+                      "tableName":"test_table",
+                      "columns":{
+                        "id":{"columnName":"id","sqlType":"BIGINT","nullable":false}
+                      },
+                      "primaryKey":{"columns":["id"]},
+                      "indexes":{},
+                      "uniqueConstraints":{}
+                    }
+                  }
+                }
+                """);
 
-        try (Streams s = new Streams()) {
-            int code = new CommandLine(new MigrateCommand())
-                    .execute("-p", tmp.toString(), "--dialect", "oracle");
+        Files.createDirectories(outputDir);
 
-            assertThat(code).isOne();
-            assertThat(s.err()).contains("Unsupported dialect");
+        try {
+            // when
+            int exitCode = new CommandLine(new MigrateCommand())
+                    .execute("-p", schemaDir.toString(),
+                            "--out", outputDir.toString(),
+                            "--dialect", "oracle");
+
+            // then - 실패해야 함
+            assertThat(exitCode).isEqualTo(1);
+            // "Unsupported dialect" 또는 "Migration failed" 메시지가 있어야 함
+            String errorOutput = errContent.toString();
+            assertThat(errorOutput).containsAnyOf("Unsupported dialect", "Migration failed", "oracle");
+        } finally {
+            tearDown();
         }
     }
 }
-

@@ -98,7 +98,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         }
         // Process @MappedSuperclass and @Embeddable first
         for (Element element : roundEnv.getElementsAnnotatedWith(MappedSuperclass.class)) {
-            if (element.getKind() == ElementKind.CLASS) {
+            if (element.getKind() == ElementKind.CLASS || element.getKind() == ElementKind.RECORD) {
                 TypeElement typeElement = (TypeElement) element;
                 String qualifiedName = typeElement.getQualifiedName().toString();
 
@@ -129,7 +129,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
 
         // Process @Entity
         for (Element element : roundEnv.getElementsAnnotatedWith(Entity.class)) {
-            if (element.getKind() == ElementKind.CLASS) {
+            if (element.getKind() == ElementKind.CLASS || element.getKind() == ElementKind.RECORD) {
                 entityHandler.handle((TypeElement) element);
             }
         }
