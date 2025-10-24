@@ -81,9 +81,18 @@ public final class InverseRelationshipProcessor implements RelationshipProcessor
         TypeElement targetEntityElement = targetEntityElementOpt.get();
         String targetEntityName = targetEntityElement.getQualifiedName().toString();
 
-        // Verify the mappedBy attribute exists on the target entity
+        // 대상 엔티티에서 mappedBy 속성이 존재하는지 확인합니다.
+        // 참고: 대상 엔티티가 아직 처리되지 않은 경우(지연 처리 시나리오) 유효성 검사를 생략합니다.
+        EntityModel targetEntityModel = context.getSchemaModel().getEntities().get(targetEntityName);
+        if (targetEntityModel == null) {
+            // 대상 엔티티가 아직 처리되지 않음 - 지연 처리(deferred processing)에서는 정상적인 상황
+            // 유효성 검사는 조용히 건너뜁니다 (대상 엔티티가 준비된 이후 후속 단계에서 검증됨)
+            return;
+        }
+
         AttributeDescriptor mappedByAttr = findMappedByAttribute(ownerEntity.getEntityName(), targetEntityName, mappedBy);
         if (mappedByAttr == null) {
+            // 대상 엔티티는 존재하지만 mappedBy 속성을 찾을 수 없는 경우 - 설정 오류
             context.getMessager().printMessage(Diagnostic.Kind.WARNING,
                     "Cannot find mappedBy attribute '" + mappedBy + "' on target entity " + targetEntityName +
                             " for inverse @OneToMany. Relationship may be incomplete.", attr.elementForDiagnostics());
@@ -112,9 +121,18 @@ public final class InverseRelationshipProcessor implements RelationshipProcessor
         TypeElement targetEntityElement = targetEntityElementOpt.get();
         String targetEntityName = targetEntityElement.getQualifiedName().toString();
 
-        // Verify the mappedBy attribute exists on the target entity
+        // 대상 엔티티에서 mappedBy 속성이 존재하는지 확인합니다.
+        // 참고: 대상 엔티티가 아직 처리되지 않은 경우(지연 처리 시나리오) 유효성 검사를 생략합니다.
+        EntityModel targetEntityModel = context.getSchemaModel().getEntities().get(targetEntityName);
+        if (targetEntityModel == null) {
+            // 대상 엔티티가 아직 처리되지 않음 - 지연 처리(deferred processing)에서는 정상적인 상황입니다.
+            // 유효성 검사를 조용히 건너뜁니다 (대상 엔티티가 준비된 이후 후속 단계에서 검증됨)
+            return;
+        }
+
         AttributeDescriptor mappedByAttr = findMappedByAttribute(ownerEntity.getEntityName(), targetEntityName, mappedBy);
         if (mappedByAttr == null) {
+            // 대상 엔티티는 존재하지만 mappedBy 속성을 찾을 수 없는 경우 - 설정 오류
             context.getMessager().printMessage(Diagnostic.Kind.WARNING,
                     "Cannot find mappedBy attribute '" + mappedBy + "' on target entity " + targetEntityName +
                             " for inverse @ManyToMany. Relationship may be incomplete.", attr.elementForDiagnostics());
@@ -144,8 +162,17 @@ public final class InverseRelationshipProcessor implements RelationshipProcessor
         String targetEntityName = targetEntityElement.getQualifiedName().toString();
 
         // Verify the mappedBy attribute exists on the target entity
+        // Note: Skip validation if target entity hasn't been processed yet (deferred processing scenario)
+        EntityModel targetEntityModel = context.getSchemaModel().getEntities().get(targetEntityName);
+        if (targetEntityModel == null) {
+            // Target entity not processed yet - this is normal in deferred processing
+            // Skip validation silently (will be validated in a later pass when target is ready)
+            return;
+        }
+
         AttributeDescriptor mappedByAttr = findMappedByAttribute(ownerEntity.getEntityName(), targetEntityName, mappedBy);
         if (mappedByAttr == null) {
+            // Target entity exists but mappedBy attribute not found - this is a configuration error
             context.getMessager().printMessage(Diagnostic.Kind.WARNING,
                     "Cannot find mappedBy attribute '" + mappedBy + "' on target entity " + targetEntityName +
                             " for inverse @OneToOne. Relationship may be incomplete.", attr.elementForDiagnostics());
@@ -159,8 +186,9 @@ public final class InverseRelationshipProcessor implements RelationshipProcessor
     }
 
     /**
-     * Find the corresponding attribute descriptor in the target entity using the same naming convention
-     * as AttributeDescriptorFactory.extractAttributeName() with caching and cycle detection.
+     * AttributeDescriptorFactory.extractAttributeName()과 동일한 네이밍 규칙을 사용하여
+     * 대상 엔티티에서 대응되는 속성 디스크립터를 찾습니다.
+     * 캐싱(caching)과 순환 감지(cycle detection)을 지원합니다.
      */
     private AttributeDescriptor findMappedByAttribute(String ownerEntityName, String targetEntityName, String mappedByAttributeName) {
         // Check for infinite recursion

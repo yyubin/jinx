@@ -176,6 +176,10 @@ class InverseRelationshipProcessorTest {
             when(targetEl.getQualifiedName()).thenReturn(qn);
             when(support.resolveTargetEntity(attr, null, null, ann, null)).thenReturn(Optional.of(targetEl));
 
+            // Add target entity to schema (entity is processed, but mappedBy attribute is missing)
+            EntityModel targetEntityModel = mock(EntityModel.class);
+            entities.put("com.example.Target", targetEntityModel);
+
             when(context.isMappedByVisited("com.example.Target", "owner")).thenReturn(false);
             doNothing().when(context).markMappedByVisited("com.example.Target", "owner");
             doNothing().when(context).unmarkMappedByVisited("com.example.Target", "owner");
@@ -201,6 +205,10 @@ class InverseRelationshipProcessorTest {
             when(qn.toString()).thenReturn("com.example.Target");
             when(targetEl.getQualifiedName()).thenReturn(qn);
             when(support.resolveTargetEntity(attr, null, null, ann, null)).thenReturn(Optional.of(targetEl));
+
+            // Add target entity to schema (entity is processed)
+            EntityModel targetEntityModel = mock(EntityModel.class);
+            entities.put("com.example.Target", targetEntityModel);
 
             when(context.isMappedByVisited("com.example.Target", "owner")).thenReturn(true);
             Element anyElem = mock(Element.class);

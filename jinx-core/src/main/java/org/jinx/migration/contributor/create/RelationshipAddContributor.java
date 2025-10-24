@@ -1,4 +1,3 @@
-// package org.jinx.migration.internal.create.RelationshipAddContributor;
 package org.jinx.migration.contributor.create;
 
 import org.jinx.migration.contributor.DdlContributor;
