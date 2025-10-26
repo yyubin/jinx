@@ -1,5 +1,6 @@
 package org.jinx.migration;
 
+import java.util.Objects;
 import org.jinx.migration.dialect.mysql.MySqlVisitorProvider;
 import org.jinx.migration.spi.VisitorProvider;
 import org.jinx.model.DialectBundle;
@@ -13,6 +14,8 @@ public final class VisitorFactory {
     );
 
     public static VisitorProviders forBundle(DialectBundle bundle) {
+        Objects.requireNonNull(bundle, "bundle must not be null");
+
         return PROVIDERS.stream()
                 .filter(provider -> provider.supports(bundle))
                 .findFirst()
