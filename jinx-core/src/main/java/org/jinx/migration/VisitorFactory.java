@@ -1,49 +1,24 @@
 package org.jinx.migration;
 
-import org.jinx.migration.dialect.mysql.MySqlMigrationVisitor;
-import org.jinx.migration.dialect.mysql.MySqlTableGeneratorVisitor;
-import org.jinx.migration.spi.visitor.SequenceVisitor;
-import org.jinx.migration.spi.visitor.TableContentVisitor;
-import org.jinx.migration.spi.visitor.TableGeneratorVisitor;
-import org.jinx.migration.spi.visitor.TableVisitor;
+import org.jinx.migration.dialect.mysql.MySqlVisitorProvider;
+import org.jinx.migration.spi.VisitorProvider;
 import org.jinx.model.DialectBundle;
-import org.jinx.model.DiffResult;
-import org.jinx.model.DiffResult.ModifiedEntity;
-import org.jinx.model.EntityModel;
 import org.jinx.model.VisitorProviders;
 
-import java.util.Optional;
-import java.util.function.Function;
-import java.util.function.Supplier;
+import java.util.List;
 
 public final class VisitorFactory {
+    private static final List<VisitorProvider> PROVIDERS = List.of(
+            new MySqlVisitorProvider()
+    );
+
     public static VisitorProviders forBundle(DialectBundle bundle) {
-        var db = bundle.databaseType();
-        var ddl = bundle.ddl();
-
-        switch (db) {
-            case MYSQL -> {
-                Supplier<TableVisitor> tableV =
-                        () -> new MySqlMigrationVisitor((ModifiedEntity) null, ddl);
-
-                Function<DiffResult.ModifiedEntity, TableContentVisitor> contentV =
-                        me -> new MySqlMigrationVisitor(me, ddl);
-
-                Function<EntityModel, TableContentVisitor> entityContentV =
-                        me -> new MySqlMigrationVisitor(me, ddl);
-
-                // 시퀀스: MySQL 미지원
-                Optional<Supplier<SequenceVisitor>> seqV = Optional.empty();
-
-                var tgOpt = bundle.tableGenerator().map(tgDialect ->
-                        (Supplier<TableGeneratorVisitor>) () -> new MySqlTableGeneratorVisitor(tgDialect)
-                );
-
-                return new VisitorProviders(tableV, contentV, entityContentV, seqV, tgOpt);
-            }
-            default -> throw new IllegalArgumentException("Unsupported database type: " + db);
-        }
+        return PROVIDERS.stream()
+                .filter(provider -> provider.supports(bundle))
+                .findFirst()
+                .map(provider -> provider.create(bundle))
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Unsupported database type: " + bundle.databaseType()
+                ));
     }
-
-
 }
