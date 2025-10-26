@@ -23,6 +23,13 @@ import static org.mockito.Mockito.*;
 class VisitorFactoryTest {
 
     @Test
+    @DisplayName("DialectBundle이 null이면 예외 발생")
+    void visitorFactory_with_null_dialectBundle() {
+        String message = assertThrows(NullPointerException.class, () -> VisitorFactory.forBundle(null)).getMessage();
+        assertEquals("bundle must not be null", message);
+    }
+
+    @Test
     @DisplayName("MYSQL 번들: tableVisitor / contentVisitor는 MySqlMigrationVisitor, sequence는 empty, tableGenerator는 Optional")
     void providers_mysql_with_and_without_table_generator() {
         // given
