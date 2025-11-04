@@ -46,7 +46,7 @@ class JinxCliTest {
 
     @Test
     @Disabled("TODO: Update test for new baseline workflow")
-    @DisplayName("스키마 디렉터리 미존재 -> exit‑1 + 오류메시지")
+    @DisplayName("Directory not found returns exit code 1 with error message")
     void dirNotFound() {
         Path notExist = tmp.resolve("no_such_dir");
         try (StreamCaptor sc = new StreamCaptor()) {
@@ -60,7 +60,7 @@ class JinxCliTest {
 
     @Test
     @Disabled("TODO: Update test for new baseline workflow")
-    @DisplayName("두 스키마가 동일 -> No changes detected, exit‑0")
+    @DisplayName("Identical schemas return exit code 0 with no changes detected")
     void noChangesDetected() throws Exception {
         // 동일한 내용이지만 timestamp 가 다른 두 스키마
         writeSchema(LocalDateTime.of(2024,1,1,0,0,0));
@@ -77,7 +77,7 @@ class JinxCliTest {
 
     @Test
     @Disabled("TODO: Update test for new baseline workflow")
-    @DisplayName("지원하지 않는 dialect 지정 -> exit‑1 + IllegalArgumentException 메시지")
+    @DisplayName("Unsupported dialect returns exit code 1 with IllegalArgumentException")
     void unsupportedDialect() throws Exception {
 
         writeSchema(LocalDateTime.of(2024,1,1,0,0,0));

@@ -8,6 +8,10 @@ import picocli.CommandLine;
 import java.nio.file.Path;
 import java.util.concurrent.Callable;
 
+/**
+ * Command for promoting the current HEAD schema to baseline.
+ * Requires successful verification unless --force option is used.
+ */
 @CommandLine.Command(
         name = "promote-baseline",
         mixinStandardHelpOptions = true,
@@ -39,11 +43,10 @@ public class PromoteBaselineCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         try {
-            // Initialize services
             SchemaIoService schemaIo = new SchemaIoService(schemaDir, outputDir);
             VerificationService verification = new VerificationService(dbUrl, dbUser, dbPassword, migrationTool);
 
-            // 1. 검증 먼저 실행 (force가 아닌 경우)
+            // Verify schema before promotion (unless force flag is set)
             if (!force) {
                 SchemaModel latestSchema = schemaIo.loadLatestSchema();
                 if (latestSchema == null) {
@@ -61,18 +64,18 @@ public class PromoteBaselineCommand implements Callable<Integer> {
                 }
             }
 
-            // 2. 최신 스키마 로드 (force인 경우에도 필요)
+            // Load latest schema (required even with force flag)
             SchemaModel latestSchema = schemaIo.loadLatestSchema();
             if (latestSchema == null) {
                 System.err.println("No HEAD schema found. Run compilation first.");
                 return 1;
             }
 
-            // 3. Baseline 승격
+            // Promote to baseline
             String schemaHash = schemaIo.generateSchemaHash(latestSchema);
             schemaIo.promoteToBaseline(latestSchema, schemaHash);
 
-            // 4. Record application in database if using jinx migration tool
+            // Record application in database if using jinx migration tool
             verification.recordSchemaApplication(schemaHash, latestSchema.getVersion());
 
             System.out.println("Baseline promoted successfully");

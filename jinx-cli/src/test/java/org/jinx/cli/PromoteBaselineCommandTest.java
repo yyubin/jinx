@@ -15,7 +15,7 @@ import java.nio.file.Path;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * PromoteBaselineCommand 테스트
+ * Tests for PromoteBaselineCommand.
  */
 class PromoteBaselineCommandTest {
 
@@ -54,7 +54,7 @@ class PromoteBaselineCommandTest {
     }
 
     @Test
-    @DisplayName("스키마가 없으면 에러 반환")
+    @DisplayName("Returns error when no schema exists")
     void testPromoteBaseline_NoSchema() {
         try {
             int exitCode = new CommandLine(new PromoteBaselineCommand())
@@ -70,7 +70,7 @@ class PromoteBaselineCommandTest {
     }
 
     @Test
-    @DisplayName("force 옵션으로 baseline 승격")
+    @DisplayName("Promotes baseline with force option")
     void testPromoteBaseline_Force() throws IOException {
         createSchemaFile("20240101000000", """
                 {"version":"20240101000000","entities":{}}
@@ -88,7 +88,7 @@ class PromoteBaselineCommandTest {
             assertThat(outContent.toString()).contains("Baseline promoted successfully");
             assertThat(outContent.toString()).contains("Version: 20240101000000");
 
-            // baseline 파일이 생성되었는지 확인
+            // Verify baseline file is created
             Path baselineFile = outputDir.resolve("schema-baseline.json");
             assertThat(baselineFile).exists();
         } finally {
@@ -97,28 +97,28 @@ class PromoteBaselineCommandTest {
     }
 
     @Test
-    @DisplayName("force 없이 검증 성공 시 baseline 승격")
+    @DisplayName("Promotes baseline after successful verification without force")
     void testPromoteBaseline_WithVerification() throws IOException {
-        // 초기 스키마 생성 및 baseline 설정
+        // Create initial schema and set baseline
         createSchemaFile("20240101000000", """
                 {"version":"20240101000000","entities":{}}
                 """);
 
         Files.createDirectories(outputDir);
 
-        // 첫 번째 promote (force)
+        // First promote (force)
         new CommandLine(new PromoteBaselineCommand())
                 .execute("-p", schemaDir.toString(),
                         "--out", outputDir.toString(),
                         "--force");
 
         try {
-            // 같은 스키마에 대해 force 없이 promote (검증 성공해야 함)
+            // Promote without force for same schema (should succeed verification)
             int exitCode = new CommandLine(new PromoteBaselineCommand())
                     .execute("-p", schemaDir.toString(),
                             "--out", outputDir.toString());
 
-            // DB 연결이 없으므로 baseline과 비교하여 동일하면 성공
+            // No DB connection, succeeds if identical to baseline
             assertThat(exitCode).isZero();
             assertThat(outContent.toString()).contains("Baseline promoted successfully");
         } finally {
@@ -127,9 +127,9 @@ class PromoteBaselineCommandTest {
     }
 
     @Test
-    @DisplayName("스키마가 변경되었는데 force 없으면 실패")
+    @DisplayName("Fails without force when schema changes")
     void testPromoteBaseline_FailWithoutForce() throws IOException {
-        // 초기 스키마 생성 및 baseline 설정
+        // Create initial schema and set baseline
         createSchemaFile("20240101000000", """
                 {"version":"20240101000000","entities":{}}
                 """);
@@ -141,13 +141,13 @@ class PromoteBaselineCommandTest {
                         "--out", outputDir.toString(),
                         "--force");
 
-        // 새로운 스키마 생성 (변경됨)
+        // Create new schema (changed)
         createSchemaFile("20240102000000", """
                 {"version":"20240102000000","entities":{"User":{}}}
                 """);
 
         try {
-            // force 없이 promote 시도 (검증 실패해야 함)
+            // Attempt promote without force (should fail verification)
             int exitCode = new CommandLine(new PromoteBaselineCommand())
                     .execute("-p", schemaDir.toString(),
                             "--out", outputDir.toString());
@@ -161,7 +161,7 @@ class PromoteBaselineCommandTest {
     }
 
     @Test
-    @DisplayName("help 옵션 테스트")
+    @DisplayName("Help option displays promote baseline description")
     void testPromoteBaseline_Help() {
         try {
             int exitCode = new CommandLine(new PromoteBaselineCommand())
@@ -175,7 +175,7 @@ class PromoteBaselineCommandTest {
     }
 
     @Test
-    @DisplayName("baseline 파일 내용 검증")
+    @DisplayName("Verifies baseline file content")
     void testPromoteBaseline_BaselineFileContent() throws IOException {
         createSchemaFile("20240101000000", """
                 {"version":"20240101000000","entities":{}}
@@ -189,7 +189,7 @@ class PromoteBaselineCommandTest {
                             "--out", outputDir.toString(),
                             "--force");
 
-            // baseline 파일 내용 확인
+            // Verify baseline file content
             Path baselineFile = outputDir.resolve("schema-baseline.json");
             assertThat(baselineFile).exists();
 
@@ -197,7 +197,7 @@ class PromoteBaselineCommandTest {
             assertThat(baselineContent).contains("\"version\":\"20240101000000\"");
             assertThat(baselineContent).contains("\"entities\"");
 
-            // metadata 파일도 확인
+            // Also verify metadata file
             Path metadataFile = outputDir.resolve("baseline-metadata.json");
             if (Files.exists(metadataFile)) {
                 String metadataContent = Files.readString(metadataFile);

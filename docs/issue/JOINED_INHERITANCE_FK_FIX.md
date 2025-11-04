@@ -174,6 +174,6 @@ public class StatCondition extends Condition {
 
 ## 다음 단계
 
-- [ ] 0.0.8 릴리즈 노트에 포함
+- [ ] 0.0.9 릴리즈 노트에 포함
 - [ ] README 업데이트 (JOINED 상속 사용 예시 추가)
 - [ ] 통합 테스트 케이스 추가 (복잡한 상속 구조)

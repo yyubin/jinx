@@ -12,7 +12,7 @@ import java.io.PrintWriter;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * DbCommand 테스트
+ * Tests for DbCommand.
  */
 class DbCommandTest {
 
@@ -37,7 +37,7 @@ class DbCommandTest {
     }
 
     @Test
-    @DisplayName("db 명령어 help 출력")
+    @DisplayName("Displays help for db command")
     void testDbCommand_Help() {
         try {
             ByteArrayOutputStream helpOut = new ByteArrayOutputStream();
@@ -51,7 +51,7 @@ class DbCommandTest {
             pwOut.flush();
             pwErr.flush();
 
-            // Picocli는 help 표시 시 exit code 0 또는 2를 반환할 수 있음
+            // Picocli may return exit code 0 or 2 when displaying help
             assertThat(exitCode).isIn(0, 2);
             String output = helpOut.toString() + helpErr.toString();
             assertThat(output).contains("데이터베이스");
@@ -61,14 +61,14 @@ class DbCommandTest {
     }
 
     @Test
-    @DisplayName("db 하위 명령어 없이 실행하면 help 또는 에러 출력")
+    @DisplayName("Displays help or error when executed without subcommand")
     void testDbCommand_NoSubcommand() {
         try {
             int exitCode = new CommandLine(new JinxCli())
                     .execute("db");
 
-            // 하위 명령어가 필요하다는 메시지 또는 help가 출력되어야 함
-            // 출력이 없을 수도 있으므로 exit code만 확인
+            // Should display message about required subcommand or help
+            // May have no output, so only verify exit code
             assertThat(exitCode).isNotZero();
         } finally {
             tearDown();
@@ -76,7 +76,7 @@ class DbCommandTest {
     }
 
     @Test
-    @DisplayName("db verify 하위 명령어 존재 확인")
+    @DisplayName("Verifies db verify subcommand exists")
     void testDbCommand_VerifySubcommand() {
         try {
             ByteArrayOutputStream helpOut = new ByteArrayOutputStream();
@@ -99,7 +99,7 @@ class DbCommandTest {
     }
 
     @Test
-    @DisplayName("db migrate 하위 명령어 존재 확인")
+    @DisplayName("Verifies db migrate subcommand exists")
     void testDbCommand_MigrateSubcommand() {
         try {
             ByteArrayOutputStream helpOut = new ByteArrayOutputStream();
@@ -114,7 +114,7 @@ class DbCommandTest {
             pwErr.flush();
 
             assertThat(exitCode).isZero();
-            // migrate 명령어의 help가 출력되어야 함
+            // Should display help for migrate command
             String output = helpOut.toString() + helpErr.toString();
             assertThat(output).isNotEmpty();
         } finally {
@@ -123,7 +123,7 @@ class DbCommandTest {
     }
 
     @Test
-    @DisplayName("db promote-baseline 하위 명령어 존재 확인")
+    @DisplayName("Verifies db promote-baseline subcommand exists")
     void testDbCommand_PromoteBaselineSubcommand() {
         try {
             ByteArrayOutputStream helpOut = new ByteArrayOutputStream();
@@ -146,13 +146,13 @@ class DbCommandTest {
     }
 
     @Test
-    @DisplayName("존재하지 않는 하위 명령어")
+    @DisplayName("Returns error for non-existent subcommand")
     void testDbCommand_InvalidSubcommand() {
         try {
             int exitCode = new CommandLine(new JinxCli())
                     .execute("db", "invalid-command");
 
-            // 잘못된 명령어에 대한 에러가 발생해야 함
+            // Should return error for invalid command
             assertThat(exitCode).isNotZero();
         } finally {
             tearDown();

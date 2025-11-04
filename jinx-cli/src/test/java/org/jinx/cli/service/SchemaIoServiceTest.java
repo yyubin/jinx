@@ -16,7 +16,7 @@ import java.time.format.DateTimeFormatter;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SchemaIoService 테스트
+ * Tests for SchemaIoService.
  */
 class SchemaIoServiceTest {
 
@@ -43,14 +43,14 @@ class SchemaIoServiceTest {
     }
 
     @Test
-    @DisplayName("스키마 디렉토리가 없으면 null 반환")
+    @DisplayName("Returns null when schema directory does not exist")
     void testLoadLatestSchema_DirectoryNotExists() throws IOException {
         SchemaModel schema = service.loadLatestSchema();
         assertThat(schema).isNull();
     }
 
     @Test
-    @DisplayName("스키마 파일이 없으면 null 반환")
+    @DisplayName("Returns null when no schema files exist")
     void testLoadLatestSchema_NoSchemaFiles() throws IOException {
         Files.createDirectories(schemaDir);
         SchemaModel schema = service.loadLatestSchema();
@@ -58,9 +58,9 @@ class SchemaIoServiceTest {
     }
 
     @Test
-    @DisplayName("가장 최신 스키마 파일 로드")
+    @DisplayName("Loads the most recent schema file")
     void testLoadLatestSchema_LoadsLatest() throws IOException {
-        // 여러 스키마 파일 생성
+        // Create multiple schema files
         createSchemaFile("20240101000000", """
                 {"version":"20240101000000","entities":{}}
                 """);
@@ -80,16 +80,16 @@ class SchemaIoServiceTest {
     }
 
     @Test
-    @DisplayName("잘못된 형식의 파일은 무시")
+    @DisplayName("Ignores files with invalid format")
     void testLoadLatestSchema_IgnoresInvalidFormat() throws IOException {
         Files.createDirectories(schemaDir);
 
-        // 잘못된 형식의 파일들
+        // Invalid format files
         Files.writeString(schemaDir.resolve("schema.json"), "{}");
         Files.writeString(schemaDir.resolve("schema-abc.json"), "{}");
         Files.writeString(schemaDir.resolve("other.json"), "{}");
 
-        // 올바른 형식의 파일
+        // Valid format file
         createSchemaFile("20240101000000", """
                 {"version":"20240101000000","entities":{}}
                 """);
@@ -101,7 +101,7 @@ class SchemaIoServiceTest {
     }
 
     @Test
-    @DisplayName("스키마 해시 생성")
+    @DisplayName("Generates schema hash")
     void testGenerateSchemaHash() {
         SchemaModel schema = SchemaModel.builder()
                 .version("20240101000000")
@@ -114,7 +114,7 @@ class SchemaIoServiceTest {
     }
 
     @Test
-    @DisplayName("동일한 스키마는 동일한 해시 생성")
+    @DisplayName("Generates same hash for identical schemas")
     void testGenerateSchemaHash_SameSchemasSameHash() {
         SchemaModel schema1 = SchemaModel.builder()
                 .version("20240101000000")
@@ -131,14 +131,14 @@ class SchemaIoServiceTest {
     }
 
     @Test
-    @DisplayName("baseline이 없으면 'initial' 반환")
+    @DisplayName("Returns 'initial' when no baseline exists")
     void testGetBaselineHash_NoBaseline() {
         String hash = service.getBaselineHash();
         assertThat(hash).isEqualTo("initial");
     }
 
     @Test
-    @DisplayName("baseline 승격")
+    @DisplayName("Promotes schema to baseline")
     void testPromoteToBaseline() throws IOException {
         Files.createDirectories(outputDir);
 
@@ -149,17 +149,17 @@ class SchemaIoServiceTest {
         String hash = service.generateSchemaHash(schema);
         service.promoteToBaseline(schema, hash);
 
-        // baseline 파일이 생성되었는지 확인
+        // Verify baseline file is created
         Path baselineFile = outputDir.resolve("schema-baseline.json");
         assertThat(baselineFile).exists();
 
-        // baseline hash가 올바른지 확인
+        // Verify baseline hash is correct
         String baselineHash = service.getBaselineHash();
         assertThat(baselineHash).isEqualTo(hash);
     }
 
     @Test
-    @DisplayName("현재 시간 기준으로 스키마 파일명 패턴 테스트")
+    @DisplayName("Tests schema filename pattern with current timestamp")
     void testSchemaFilePattern() throws IOException {
         LocalDateTime now = LocalDateTime.now();
         String timestamp = now.format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
