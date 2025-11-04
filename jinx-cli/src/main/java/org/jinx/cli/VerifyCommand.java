@@ -8,6 +8,10 @@ import picocli.CommandLine;
 import java.nio.file.Path;
 import java.util.concurrent.Callable;
 
+/**
+ * Command for verifying that the applied database schema matches the expected schema.
+ * Compares the current schema state with what has been applied to the database.
+ */
 @CommandLine.Command(
         name = "verify",
         mixinStandardHelpOptions = true,
@@ -36,22 +40,21 @@ public class VerifyCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         try {
-            // Initialize services
             SchemaIoService schemaIo = new SchemaIoService(schemaDir, outputDir);
             VerificationService verification = new VerificationService(dbUrl, dbUser, dbPassword, migrationTool);
 
-            // 1. 최신 스키마 로드
+            // Load latest schema
             SchemaModel latestSchema = schemaIo.loadLatestSchema();
             if (latestSchema == null) {
                 System.err.println("No HEAD schema found. Run compilation first.");
                 return 1;
             }
 
-            // 2. 예상 해시 계산
+            // Calculate expected hash
             String expectedHash = schemaIo.generateSchemaHash(latestSchema);
             String baselineHash = schemaIo.getBaselineHash();
 
-            // 3. 데이터베이스 적용 상태 확인 및 검증
+            // Verify database application status
             if (verification.isSchemaUpToDate(expectedHash, baselineHash)) {
                 System.out.println("Schema is up to date");
                 System.out.println("   Hash: " + expectedHash);

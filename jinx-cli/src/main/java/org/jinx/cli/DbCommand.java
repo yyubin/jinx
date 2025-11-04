@@ -2,6 +2,10 @@ package org.jinx.cli;
 
 import picocli.CommandLine;
 
+/**
+ * Database-related subcommands container.
+ * Groups migration, verification, and baseline promotion commands.
+ */
 @CommandLine.Command(
         name = "db",
         description = "데이터베이스 관련 명령어",

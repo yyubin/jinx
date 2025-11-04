@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * VerificationService 테스트
+ * Tests for VerificationService.
  */
 class VerificationServiceTest {
 
@@ -15,12 +15,12 @@ class VerificationServiceTest {
 
     @BeforeEach
     void setUp() {
-        // DB 연결 없이 테스트 (null로 설정)
+        // Test without DB connection (set to null)
         service = new VerificationService(null, null, null, "jinx");
     }
 
     @Test
-    @DisplayName("DB 연결 정보가 없으면 baseline hash 반환")
+    @DisplayName("Returns baseline hash when no DB connection info")
     void testGetAppliedSchemaHash_NoDbConnection() {
         String expectedHash = "hash123";
         String baselineHash = "baseline456";
@@ -31,7 +31,7 @@ class VerificationServiceTest {
     }
 
     @Test
-    @DisplayName("expected hash와 applied hash가 같으면 up-to-date")
+    @DisplayName("Returns true when expected hash matches applied hash")
     void testIsSchemaUpToDate_WhenHashesMatch() {
         String hash = "hash123";
 
@@ -41,7 +41,7 @@ class VerificationServiceTest {
     }
 
     @Test
-    @DisplayName("expected hash와 applied hash가 다르면 not up-to-date")
+    @DisplayName("Returns false when expected hash differs from applied hash")
     void testIsSchemaUpToDate_WhenHashesDifferent() {
         String expectedHash = "hash123";
         String baselineHash = "baseline456";
@@ -52,7 +52,7 @@ class VerificationServiceTest {
     }
 
     @Test
-    @DisplayName("migration tool이 null이면 jinx로 기본 설정")
+    @DisplayName("Defaults to jinx when migration tool is null")
     void testMigrationToolDefaultValue() {
         VerificationService serviceWithNullTool = new VerificationService(
                 "jdbc:h2:mem:test",
@@ -61,14 +61,14 @@ class VerificationServiceTest {
                 null
         );
 
-        // 기본값이 "jinx"인지 확인하기 위해 recordSchemaApplication 호출 시 예외가 발생하지 않는지 확인
-        // (실제 DB가 없으므로 경고 메시지만 출력됨)
+        // Verify default is "jinx" by checking no exception when calling recordSchemaApplication
+        // (Only warning message will be printed as there's no actual DB)
         serviceWithNullTool.recordSchemaApplication("hash123", "20240101000000");
-        // 예외가 발생하지 않으면 성공
+        // Success if no exception thrown
     }
 
     @Test
-    @DisplayName("record schema application - jinx migration tool")
+    @DisplayName("Records schema application with jinx migration tool")
     void testRecordSchemaApplication_JinxTool() {
         VerificationService jinxService = new VerificationService(
                 "jdbc:h2:mem:test",
@@ -77,13 +77,13 @@ class VerificationServiceTest {
                 "jinx"
         );
 
-        // DB가 없어도 예외가 발생하지 않고 경고만 출력되는지 확인
+        // Verify no exception thrown, only warning printed when no DB
         jinxService.recordSchemaApplication("hash123", "20240101000000");
-        // 예외가 발생하지 않으면 성공
+        // Success if no exception thrown
     }
 
     @Test
-    @DisplayName("record schema application - liquibase는 기록하지 않음")
+    @DisplayName("Does not record schema application with liquibase tool")
     void testRecordSchemaApplication_LiquibaseTool() {
         VerificationService liquibaseService = new VerificationService(
                 "jdbc:h2:mem:test",
@@ -92,13 +92,13 @@ class VerificationServiceTest {
                 "liquibase"
         );
 
-        // liquibase 모드에서는 recordSchemaApplication이 아무것도 하지 않음
+        // In liquibase mode, recordSchemaApplication does nothing
         liquibaseService.recordSchemaApplication("hash123", "20240101000000");
-        // 예외가 발생하지 않으면 성공
+        // Success if no exception thrown
     }
 
     @Test
-    @DisplayName("record schema application - flyway는 기록하지 않음")
+    @DisplayName("Does not record schema application with flyway tool")
     void testRecordSchemaApplication_FlywayTool() {
         VerificationService flywayService = new VerificationService(
                 "jdbc:h2:mem:test",
@@ -107,26 +107,26 @@ class VerificationServiceTest {
                 "flyway"
         );
 
-        // flyway 모드에서는 recordSchemaApplication이 아무것도 하지 않음
+        // In flyway mode, recordSchemaApplication does nothing
         flywayService.recordSchemaApplication("hash123", "20240101000000");
-        // 예외가 발생하지 않으면 성공
+        // Success if no exception thrown
     }
 
     @Test
-    @DisplayName("migration tool 대소문자 무시")
+    @DisplayName("Migration tool name is case-insensitive")
     void testMigrationToolCaseInsensitive() {
         VerificationService service1 = new VerificationService(null, null, null, "JINX");
         VerificationService service2 = new VerificationService(null, null, null, "JiNx");
         VerificationService service3 = new VerificationService(null, null, null, "jinx");
 
-        // 모두 동일하게 처리되어야 함 (예외 발생하지 않음)
+        // All should be handled identically (no exception)
         service1.recordSchemaApplication("hash", "version");
         service2.recordSchemaApplication("hash", "version");
         service3.recordSchemaApplication("hash", "version");
     }
 
     @Test
-    @DisplayName("지원하지 않는 migration tool은 false 반환하여 baseline hash 사용")
+    @DisplayName("Returns baseline hash for unsupported migration tool")
     void testUnsupportedMigrationTool() {
         // given
         VerificationService unknownService = new VerificationService(
@@ -139,7 +139,7 @@ class VerificationServiceTest {
         String expectedHash = "sha256:expected";
         String baselineHash = "sha256:baseline";
 
-        // when - DB 연결 실패하므로 baseline hash 반환
+        // when - DB connection fails, returns baseline hash
         String appliedHash = unknownService.getAppliedSchemaHash(expectedHash, baselineHash);
 
         // then
@@ -147,7 +147,7 @@ class VerificationServiceTest {
     }
 
     @Test
-    @DisplayName("DB 연결 실패 시에도 예외 없이 baseline hash 반환")
+    @DisplayName("Returns baseline hash without exception on DB connection failure")
     void testDbConnectionFailureReturnsBaselineHash() {
         // given
         VerificationService service = new VerificationService(
@@ -163,19 +163,19 @@ class VerificationServiceTest {
         // when
         String appliedHash = service.getAppliedSchemaHash(expectedHash, baselineHash);
 
-        // then - 예외가 발생해도 baseline hash 반환
+        // then - Returns baseline hash even if exception occurs
         assertThat(appliedHash).isEqualTo(baselineHash);
     }
 
     @Test
-    @DisplayName("isSchemaUpToDate는 getAppliedSchemaHash 결과를 사용")
+    @DisplayName("isSchemaUpToDate uses getAppliedSchemaHash result")
     void testIsSchemaUpToDateUsesGetAppliedSchemaHash() {
-        // given - DB 연결 없음, baseline hash 반환
+        // given - No DB connection, returns baseline hash
         VerificationService service = new VerificationService(null, null, null, "jinx");
         String expectedHash = "sha256:expected";
         String baselineHash = "sha256:baseline";
 
-        // when - expectedHash와 baseline이 다르므로 false
+        // when - expectedHash differs from baseline, so false
         boolean upToDate = service.isSchemaUpToDate(expectedHash, baselineHash);
 
         // then
@@ -183,12 +183,12 @@ class VerificationServiceTest {
     }
 
     @Test
-    @DisplayName("recordSchemaApplication - DB 정보가 없으면 아무것도 하지 않음")
+    @DisplayName("recordSchemaApplication does nothing when no DB info")
     void testRecordSchemaApplication_NoDbInfo() {
         // given
         VerificationService service = new VerificationService(null, null, null, "jinx");
 
-        // when & then - 예외 발생하지 않음
+        // when & then - No exception thrown
         service.recordSchemaApplication("hash", "version");
     }
 }

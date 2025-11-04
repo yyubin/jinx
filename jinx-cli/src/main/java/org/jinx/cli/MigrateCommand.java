@@ -25,6 +25,10 @@ import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 import java.util.Map;
 
+/**
+ * Command for generating database migration SQL files.
+ * Detects entity changes and creates appropriate migration scripts.
+ */
 @CommandLine.Command(
         name = "migrate",
         mixinStandardHelpOptions = true,
@@ -55,10 +59,10 @@ public class MigrateCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         try {
-            // 1. 설정 로드 및 적용
+            // Load and apply configuration
             applyConfiguration();
 
-            // 2. Baseline vs HEAD 비교
+            // Compare baseline vs HEAD
             BaselineManager baselineManager = new BaselineManager(outputDir);
             SchemaModel baseline = baselineManager.loadBaseline();
             SchemaModel head = loadLatestSchema();
@@ -68,17 +72,17 @@ public class MigrateCommand implements Callable<Integer> {
                 return 0;
             }
 
-            // 3. 스키마 비교 및 변경점 확인
+            // Detect schema changes
             DiffResult diff = new SchemaDiffer().diff(baseline, head);
             if (!isChanged(diff)) {
                 System.out.println("No changes detected.");
                 return 0;
             }
 
-            // 3. 위험한 변경 감지 및 처리
+            // Handle potentially dangerous changes
             handleDangerousChanges(diff);
 
-            // 4. 마이그레이션 파일 생성 (with hash information)
+            // Generate migration files with hash information
             generateMigrationOutputs(diff, baseline, head, baselineManager);
 
             System.out.println("Migration files generated successfully in " + outputDir);
@@ -97,7 +101,10 @@ public class MigrateCommand implements Callable<Integer> {
     }
 
     /**
-     * Load the latest (HEAD) schema file
+     * Loads the latest (HEAD) schema file from the schema directory.
+     *
+     * @return the latest schema model, or null if no schema files exist
+     * @throws IOException if an I/O error occurs
      */
     private SchemaModel loadLatestSchema() throws IOException {
         if (!Files.exists(schemaDir)) {
@@ -107,7 +114,7 @@ public class MigrateCommand implements Callable<Integer> {
         List<Path> schemaPaths = Files.list(schemaDir)
                 .filter(p -> p.getFileName().toString().matches(SCHEMA_FILE_PATTERN))
                 .sorted((a, b) -> b.getFileName().toString().compareTo(a.getFileName().toString()))
-                .limit(1) // 최신 1개만
+                .limit(1)
                 .toList();
 
         if (schemaPaths.isEmpty()) {
@@ -117,8 +124,13 @@ public class MigrateCommand implements Callable<Integer> {
         return loadSchema(schemaPaths.get(0));
     }
 
-
-    // 데이터 손실 위험이 있는 변경 사항을 감지하고, --force 옵션이 없으면 예외
+    /**
+     * Detects potentially dangerous changes (e.g., enum type modifications).
+     * Throws an exception if dangerous changes are found and --force option is not set.
+     *
+     * @param diff the schema diff result
+     * @throws DangerousChangeException if dangerous changes are detected without force flag
+     */
     private void handleDangerousChanges(DiffResult diff) throws DangerousChangeException {
         List<String> dangerousChanges = diff.getModifiedTables().stream()
                 .flatMap(m -> m.getColumnDiffs().stream()
@@ -183,14 +195,14 @@ public class MigrateCommand implements Callable<Integer> {
     }
 
     /**
-     * 설정 파일과 프로파일을 로드하여 CLI 옵션에 적용합니다.
-     * CLI 옵션이 명시적으로 지정되지 않은 경우에만 설정 파일 값을 사용합니다.
+     * Loads configuration from file and applies to CLI options.
+     * Configuration values are only used when CLI options are not explicitly specified.
      */
     private void applyConfiguration() {
         ConfigurationLoader loader = new ConfigurationLoader();
         Map<String, String> config = loader.loadConfiguration(profile);
 
-        // CLI에서 maxLength가 기본값이면 설정 파일의 값을 사용
+        // Use config value if CLI maxLength is at default
         if (maxLength == JinxOptions.Naming.MAX_LENGTH_DEFAULT) {
             String configMaxLength = config.get(JinxOptions.Naming.MAX_LENGTH_KEY);
             if (configMaxLength != null) {

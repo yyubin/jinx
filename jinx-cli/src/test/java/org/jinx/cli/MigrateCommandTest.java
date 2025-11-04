@@ -10,7 +10,7 @@ import java.nio.file.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * MigrateCommand 기본 테스트
+ * Basic tests for MigrateCommand.
  */
 class MigrateCommandTest {
 
@@ -49,7 +49,7 @@ class MigrateCommandTest {
     }
 
     @Test
-    @DisplayName("스키마 파일이 없으면 'No HEAD schema found' 메시지 출력")
+    @DisplayName("Displays 'No HEAD schema found' message when no schema file")
     void testNoSchemaFile() {
         try {
             int exitCode = new CommandLine(new MigrateCommand())
@@ -64,7 +64,7 @@ class MigrateCommandTest {
     }
 
     @Test
-    @DisplayName("help 옵션 테스트")
+    @DisplayName("Help option displays migration description")
     void testMigrateHelp() {
         try {
             ByteArrayOutputStream helpOut = new ByteArrayOutputStream();
@@ -88,7 +88,7 @@ class MigrateCommandTest {
     }
 
     @Test
-    @DisplayName("지원하지 않는 dialect 사용 시 에러")
+    @DisplayName("Returns error for unsupported dialect")
     void testUnsupportedDialect() throws IOException {
         // given
         createSchemaFile("20240101000000", """
@@ -117,9 +117,9 @@ class MigrateCommandTest {
                             "--out", outputDir.toString(),
                             "--dialect", "oracle");
 
-            // then - 실패해야 함
+            // then - Should fail
             assertThat(exitCode).isEqualTo(1);
-            // "Unsupported dialect" 또는 "Migration failed" 메시지가 있어야 함
+            // Should contain "Unsupported dialect" or "Migration failed" message
             String errorOutput = errContent.toString();
             assertThat(errorOutput).containsAnyOf("Unsupported dialect", "Migration failed", "oracle");
         } finally {

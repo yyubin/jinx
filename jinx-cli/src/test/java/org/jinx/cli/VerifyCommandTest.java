@@ -15,7 +15,7 @@ import java.nio.file.Path;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * VerifyCommand 테스트
+ * Tests for VerifyCommand.
  */
 class VerifyCommandTest {
 
@@ -54,7 +54,7 @@ class VerifyCommandTest {
     }
 
     @Test
-    @DisplayName("스키마가 없으면 에러 반환")
+    @DisplayName("Returns error when no schema exists")
     void testVerify_NoSchema() {
         try {
             int exitCode = new CommandLine(new VerifyCommand())
@@ -68,7 +68,7 @@ class VerifyCommandTest {
     }
 
     @Test
-    @DisplayName("baseline이 없고 DB 연결 정보도 없으면 초기 상태로 간주")
+    @DisplayName("Considers as initial state when no baseline and no DB connection")
     void testVerify_NoBaselineNoDb() throws IOException {
         createSchemaFile("20240101000000", """
                 {"version":"20240101000000","entities":{}}
@@ -78,8 +78,8 @@ class VerifyCommandTest {
             int exitCode = new CommandLine(new VerifyCommand())
                     .execute("-p", schemaDir.toString(), "--out", outputDir.toString());
 
-            // DB 연결 정보가 없으므로 baseline (initial)과 비교
-            // 최신 스키마 해시 != "initial" 이므로 mismatch
+            // No DB connection, compare with baseline (initial)
+            // Latest schema hash != "initial", so mismatch
             assertThat(exitCode).isEqualTo(1);
             assertThat(outContent.toString()).contains("Schema mismatch detected");
         } finally {
@@ -88,16 +88,16 @@ class VerifyCommandTest {
     }
 
     @Test
-    @DisplayName("baseline과 최신 스키마가 동일하면 up-to-date")
+    @DisplayName("Returns up-to-date when baseline matches latest schema")
     void testVerify_UpToDate() throws IOException {
-        // 스키마 생성
+        // Create schema
         createSchemaFile("20240101000000", """
                 {"version":"20240101000000","entities":{}}
                 """);
 
         Files.createDirectories(outputDir);
 
-        // baseline 생성 (promote-baseline 시뮬레이션)
+        // Create baseline (simulate promote-baseline)
         int promoteCode = new CommandLine(new PromoteBaselineCommand())
                 .execute("-p", schemaDir.toString(),
                         "--out", outputDir.toString(),
@@ -106,7 +106,7 @@ class VerifyCommandTest {
         assertThat(promoteCode).isZero();
 
         try {
-            // verify 실행
+            // Execute verify
             int exitCode = new CommandLine(new VerifyCommand())
                     .execute("-p", schemaDir.toString(), "--out", outputDir.toString());
 
@@ -118,9 +118,9 @@ class VerifyCommandTest {
     }
 
     @Test
-    @DisplayName("스키마가 변경되면 mismatch 감지")
+    @DisplayName("Detects mismatch when schema changes")
     void testVerify_SchemaMismatch() throws IOException {
-        // 초기 스키마 생성 및 baseline 설정
+        // Create initial schema and set baseline
         createSchemaFile("20240101000000", """
                 {"version":"20240101000000","entities":{}}
                 """);
@@ -132,13 +132,13 @@ class VerifyCommandTest {
                         "--out", outputDir.toString(),
                         "--force");
 
-        // 새로운 스키마 생성 (변경됨)
+        // Create new schema (changed)
         createSchemaFile("20240102000000", """
                 {"version":"20240102000000","entities":{"User":{}}}
                 """);
 
         try {
-            // verify 실행
+            // Execute verify
             int exitCode = new CommandLine(new VerifyCommand())
                     .execute("-p", schemaDir.toString(), "--out", outputDir.toString());
 
@@ -151,7 +151,7 @@ class VerifyCommandTest {
     }
 
     @Test
-    @DisplayName("help 옵션 테스트")
+    @DisplayName("Help option displays verification description")
     void testVerify_Help() {
         try {
             int exitCode = new CommandLine(new VerifyCommand())
