@@ -29,7 +29,7 @@ public final class RelationshipJoinSupport {
         if (!jt.getRelationships().containsKey(ownerFkName)) {
             RelationshipModel rel = RelationshipModel.builder()
                     .type(RelationshipType.MANY_TO_ONE)
-                    .tableName(details.joinTableName()) // FK가 걸리는 테이블 (조인테이블)
+                    .tableName(details.joinTableName()) // Table where FK resides (join table)
                     .columns(ownerFks)
                     .referencedTable(details.ownerEntity().getTableName())
                     .referencedColumns(ownerPks)
@@ -38,7 +38,7 @@ public final class RelationshipJoinSupport {
                     .build();
             jt.getRelationships().put(ownerFkName, rel);
 
-            // Owner FK 컬럼에 인덱스 생성
+            // Create index on owner FK columns
             support.addForeignKeyIndex(jt, ownerFks, details.joinTableName());
         }
 
@@ -53,7 +53,7 @@ public final class RelationshipJoinSupport {
         if (!jt.getRelationships().containsKey(targetFkName)) {
             RelationshipModel rel = RelationshipModel.builder()
                     .type(RelationshipType.MANY_TO_ONE)
-                    .tableName(details.joinTableName()) // FK가 걸리는 테이블 (조인테이블)
+                    .tableName(details.joinTableName()) // Table where FK resides (join table)
                     .columns(targetFks)
                     .referencedTable(details.referencedEntity().getTableName())
                     .referencedColumns(targetPks)
@@ -62,7 +62,7 @@ public final class RelationshipJoinSupport {
                     .build();
             jt.getRelationships().put(targetFkName, rel);
 
-            // Target FK 컬럼에 인덱스 생성
+            // Create index on target FK columns
             support.addForeignKeyIndex(jt, targetFks, details.joinTableName());
         }
     }
@@ -70,7 +70,7 @@ public final class RelationshipJoinSupport {
     public void addOneToManyJoinTableUnique(EntityModel joinTableEntity,
                                              Map<String,String> targetFkToPkMap) {
         List<String> cols = new ArrayList<>(targetFkToPkMap.keySet());
-        // 컬럼 순서 유지 (성능 최적화를 위해)
+        // Maintain column order (for performance optimization)
         if (!cols.isEmpty()) {
             String ucName = context.getNaming().uqName(joinTableEntity.getTableName(), cols);
             ConstraintModel constraintModel = ConstraintModel.builder()
@@ -150,7 +150,7 @@ public final class RelationshipJoinSupport {
                 .build();
 
         // Process owner-side FK columns with error handling
-        // nullability 규칙: JoinTable의 FK는 항상 NOT NULL (관계 무결성 보장)
+        // Nullability rule: FKs in join table are always NOT NULL (ensures referential integrity)
         for (Map.Entry<String, String> entry : details.ownerFkToPkMap().entrySet()) {
             String fkName = entry.getKey();
             String pkName = entry.getValue();
@@ -204,7 +204,7 @@ public final class RelationshipJoinSupport {
 
         RelationshipModel ownerRel = RelationshipModel.builder()
                 .type(RelationshipType.MANY_TO_ONE)
-                .tableName(details.joinTableName()) // FK가 걸리는 테이블 (조인테이블)
+                .tableName(details.joinTableName()) // Table where FK resides (join table)
                 .columns(ownerFkColumns)
                 .referencedTable(details.ownerEntity().getTableName())
                 .referencedColumns(ownerPkColumns)
@@ -216,7 +216,7 @@ public final class RelationshipJoinSupport {
                 .build();
         joinTableEntity.getRelationships().put(ownerRel.getConstraintName(), ownerRel);
 
-        // Owner FK 컬럼에 인덱스 생성
+        // Create index on owner FK columns
         support.addForeignKeyIndex(joinTableEntity, ownerFkColumns, details.joinTableName());
 
         List<Map.Entry<String, String>> targetPairs = new ArrayList<>(details.inverseFkToPkMap().entrySet());
@@ -225,7 +225,7 @@ public final class RelationshipJoinSupport {
 
         RelationshipModel targetRel = RelationshipModel.builder()
                 .type(RelationshipType.MANY_TO_ONE)
-                .tableName(details.joinTableName()) // FK가 걸리는 테이블 (조인테이블)
+                .tableName(details.joinTableName()) // Table where FK resides (join table)
                 .columns(targetFkColumns)
                 .referencedTable(details.referencedEntity().getTableName())
                 .referencedColumns(targetPkColumns)
@@ -237,7 +237,7 @@ public final class RelationshipJoinSupport {
                 .build();
         joinTableEntity.getRelationships().put(targetRel.getConstraintName(), targetRel);
 
-        // Target FK 컬럼에 인덱스 생성
+        // Create index on target FK columns
         support.addForeignKeyIndex(joinTableEntity, targetFkColumns, details.joinTableName());
     }
 
@@ -332,18 +332,18 @@ public final class RelationshipJoinSupport {
     }
 
     /**
-     * JoinTable 이름이 owner/referenced 엔티티 테이블명과 충돌하는지 검증
+     * Validates that the join table name does not conflict with owner/referenced entity table names
      */
     public boolean validateJoinTableNameConflict(String joinTableName, EntityModel ownerEntity, EntityModel referencedEntity, AttributeDescriptor attr) {
-        // JoinTable 이름이 owner 테이블명과 동일한지 검증
+        // Check if join table name is identical to owner table name
         if (joinTableName.equals(ownerEntity.getTableName())) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "JoinTable name '" + joinTableName + "' conflicts with owner entity table name '" + ownerEntity.getTableName() + "'.", 
                     attr.elementForDiagnostics());
             return false;
         }
-        
-        // JoinTable 이름이 referenced 테이블명과 동일한지 검증
+
+        // Check if join table name is identical to referenced table name
         if (joinTableName.equals(referencedEntity.getTableName())) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "JoinTable name '" + joinTableName + "' conflicts with referenced entity table name '" + referencedEntity.getTableName() + "'.", 
@@ -354,10 +354,10 @@ public final class RelationshipJoinSupport {
     }
 
     /**
-     * 기존 JoinTable과 FK 컬럼셋이 일치하는지 검증 (스키마 일관성 보장)
+     * Validates that the FK column set matches the existing join table (ensures schema consistency)
      */
     public boolean validateJoinTableFkConsistency(EntityModel existingJoinTable, JoinTableDetails details, AttributeDescriptor attr) {
-        // 기존 JoinTable의 컬럼들과 새로 요구되는 FK 컬럼들이 정확히 일치하는지 검증
+        // Verify that existing join table columns exactly match newly required FK columns
         Set<String> existingColumns = existingJoinTable.getColumns().values().stream()
             .map(ColumnModel::getColumnName)
             .collect(java.util.stream.Collectors.toSet());

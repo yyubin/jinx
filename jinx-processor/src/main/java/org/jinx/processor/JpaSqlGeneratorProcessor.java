@@ -68,7 +68,7 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         if (!roundEnv.processingOver()) {
-            context.beginRound(); // 라운드 시작 시 컨텍스트 상태 초기화
+            context.beginRound(); // Initialize context state at start of round
         }
         
         processRetryTasks();
@@ -135,11 +135,11 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         }
 
         if (roundEnv.processingOver()) {
-            // 1. 상속 해석 (COLLECTION_TABLE은 제외)
+            // 1. Resolve inheritance (excluding COLLECTION_TABLE)
             for (EntityModel entityModel : context.getSchemaModel().getEntities().values()) {
                 if (!entityModel.isValid()) continue;
 
-                // COLLECTION_TABLE 타입은 실제 엔티티가 아니므로 상속 해석에서 제외
+                // COLLECTION_TABLE types are not real entities, exclude from inheritance resolution
                 if (entityModel.getTableType() == org.jinx.model.EntityModel.TableType.COLLECTION_TABLE) {
                     continue;
                 }
@@ -158,18 +158,18 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
             }
             // Relationships are now processed during entity handling via AttributeDescriptor
 
-            // 3. 최종 PK 검증 (2차 패스) - COLLECTION_TABLE은 제외
+            // 3. Final PK validation (2nd pass) - excluding COLLECTION_TABLE
             for (Map.Entry<String, EntityModel> e : context.getSchemaModel().getEntities().entrySet()) {
                 EntityModel em = e.getValue();
                 if (!em.isValid()) continue;
 
-                // COLLECTION_TABLE 타입은 실제 엔티티가 아니므로 PK 검증에서 제외
+                // COLLECTION_TABLE types are not real entities, exclude from PK validation
                 if (em.getTableType() == org.jinx.model.EntityModel.TableType.COLLECTION_TABLE) {
                     continue;
                 }
 
                 if (context.findAllPrimaryKeyColumns(em).isEmpty()) {
-                    // FQN을 사용하여 TypeElement 조회
+                    // Lookup TypeElement using FQN
                     TypeElement te = context.getElementUtils().getTypeElement(e.getKey());
                     if (te != null) {
                         context.getMessager().printMessage(
@@ -187,8 +187,8 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 }
             }
 
-            // 4. Deferred FK (JOINED 상속 관련) 처리
-            // 최대 5회 시도
+            // 4. Process deferred FK (JOINED inheritance related)
+            // Attempt up to 5 times
             int maxPass = 5;
             for (int pass = 0; pass < maxPass && !context.getDeferredEntities().isEmpty(); pass++) {
                 entityHandler.runDeferredPostProcessing();
@@ -197,13 +197,13 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                         "Unresolved JOINED inheritance: " + context.getDeferredEntities());
             }
-            
-            // 5. JOINED 상속 처리 완료 후 최종 PK 검증
+
+            // 5. Final PK validation after JOINED inheritance processing
             for (Map.Entry<String, EntityModel> e : context.getSchemaModel().getEntities().entrySet()) {
                 EntityModel em = e.getValue();
                 if (!em.isValid()) continue;
                 if (context.findAllPrimaryKeyColumns(em).isEmpty()) {
-                    // FQN을 사용하여 TypeElement 조회
+                    // Lookup TypeElement using FQN
                     TypeElement te = context.getElementUtils().getTypeElement(e.getKey());
                     if (te != null) {
                         context.getMessager().printMessage(

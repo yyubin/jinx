@@ -16,8 +16,23 @@ import javax.lang.model.util.Types;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * Handles processing of embedded types (@Embedded and @EmbeddedId) in JPA entities.
+ *
+ * <p>This handler is responsible for:
+ * <ul>
+ *   <li>Processing @Embedded attributes and flattening their columns into the owning entity</li>
+ *   <li>Processing @EmbeddedId (composite primary keys) with proper PK column promotion</li>
+ *   <li>Applying @AttributeOverride and @AssociationOverride configurations</li>
+ *   <li>Handling nested embedded types recursively</li>
+ *   <li>Managing relationships within embedded types (@ManyToOne, @OneToOne)</li>
+ * </ul>
+ */
 public class EmbeddedHandler {
 
+    /**
+     * Container for @AssociationOverride information including JoinColumn and JoinTable configurations
+     */
     public static class AssociationOverrideInfo {
         private final List<JoinColumn> joinColumns;
         private final JoinTable joinTable;
@@ -49,6 +64,13 @@ public class EmbeddedHandler {
         this.support = new RelationshipSupport(context);
     }
 
+    /**
+     * Processes an @Embedded attribute, flattening its columns into the owning entity.
+     *
+     * @param attribute the embedded attribute descriptor
+     * @param ownerEntity the entity that owns this embedded attribute
+     * @param processedTypes set to track processed types and prevent infinite recursion
+     */
     public void processEmbedded(AttributeDescriptor attribute, EntityModel ownerEntity, Set<String> processedTypes) {
         Map<String, String> nameOverrides = new HashMap<>();
         Map<String, String> tableOverrides = new HashMap<>();
@@ -58,6 +80,16 @@ public class EmbeddedHandler {
         processEmbeddedInternal(attribute, ownerEntity, processedTypes, false, "", "", nameOverrides, tableOverrides, columnOverrides, assocOverrides);
     }
 
+    /**
+     * Processes an @EmbeddedId attribute (composite primary key).
+     *
+     * <p>All columns from the embedded type are promoted to primary keys and properly registered
+     * with the entity. This method handles both simple and composite PK attribute path registration.
+     *
+     * @param attribute the @EmbeddedId attribute descriptor
+     * @param ownerEntity the entity that owns this embedded ID
+     * @param processedTypes set to track processed types and prevent infinite recursion
+     */
     public void processEmbeddedId(AttributeDescriptor attribute, EntityModel ownerEntity, Set<String> processedTypes) {
         Map<String, String> nameOverrides = new HashMap<>();
         Map<String, String> tableOverrides = new HashMap<>();
@@ -75,24 +107,24 @@ public class EmbeddedHandler {
 
         if (!newPks.isEmpty()) {
             newPks.forEach(c -> {
-                c.setPrimaryKey(true); // FIX: PK 플래그 세팅
-                // FIX: tableName 보정
+                c.setPrimaryKey(true); // Ensure PK flag is set
+                // Ensure tableName is set correctly
                 if (c.getTableName() == null || c.getTableName().isEmpty()) {
                     c.setTableName(ownerEntity.getTableName());
                 }
             });
 
-            // 키 등록 시 두 형태 모두 등록: "customerId"와 "id.customerId"
+            // Register keys in both forms: "customerId" and "id.customerId"
             List<String> columnNames = newPks.stream().map(ColumnModel::getColumnName).toList();
             context.registerPkAttributeColumns(ownerEntity.getFqcn(), attribute.name(), columnNames);
 
-            // 각 임베디드 필드에 대해서도 개별 키 등록
+            // Register individual keys for each embedded field
             for (ColumnModel pk : newPks) {
                 String columnName = pk.getColumnName();
                 String embeddedFieldName = extractEmbeddedFieldName(columnName, attribute.name());
                 if (embeddedFieldName != null) {
                     context.registerPkAttributeColumns(ownerEntity.getFqcn(), embeddedFieldName, List.of(columnName));
-                    // "id.fieldName" 형태도 등록
+                    // Also register in "id.fieldName" form
                     context.registerPkAttributeColumns(ownerEntity.getFqcn(), attribute.name() + "." + embeddedFieldName, List.of(columnName));
                 }
             }
@@ -100,8 +132,11 @@ public class EmbeddedHandler {
     }
 
     /**
-     * 임베디드 PK 컬럼명에서 원래 필드명을 추출합니다.
-     * 예: "id_customerId" -> "customerId"
+     * Extracts the original field name from an embedded PK column name.
+     *
+     * @param columnName the column name (e.g., "id_customerId")
+     * @param embeddedAttributeName the embedded attribute name (e.g., "id")
+     * @return the extracted field name (e.g., "customerId"), or null if not prefixed
      */
     private String extractEmbeddedFieldName(String columnName, String embeddedAttributeName) {
         String prefix = embeddedAttributeName + "_";
@@ -111,6 +146,20 @@ public class EmbeddedHandler {
         return null;
     }
 
+    /**
+     * Internal recursive method to process embedded types with override support.
+     *
+     * @param attribute the embedded attribute to process
+     * @param ownerEntity the owning entity
+     * @param processedTypes tracking set to prevent infinite recursion
+     * @param isPrimaryKey true if this embedded type is an @EmbeddedId
+     * @param parentColumnPrefix accumulated column name prefix for nested embeddables
+     * @param parentAttributePath accumulated attribute path for PK registration
+     * @param nameOverrides map of attribute name overrides from @AttributeOverride
+     * @param tableOverrides map of table name overrides from @AttributeOverride
+     * @param columnOverrides map of full @Column annotation overrides
+     * @param assocOverrides map of association overrides from @AssociationOverride
+     */
     private void processEmbeddedInternal(
             AttributeDescriptor attribute,
             EntityModel ownerEntity,
@@ -203,15 +252,15 @@ public class EmbeddedHandler {
                         }
 
                         if (hasOverrideName) {
-                            // 1. 최우선: AttributeOverride가 있으면 접두사 없이 해당 이름 사용
+                            // 1. Highest priority: Use @AttributeOverride name without prefix
                             column.setColumnName(overrideName);
                         }
                         else if (hasExplicitLeafName) {
-                            // 2. 차선: 명시적 @Column 이름이 있으면 접두사 없이 해당 이름 사용
-                            // createFromAttribute에서 이미 설정되었으므로 별도 작업 불필요. 이 블록은 로직의 명확성을 위해 존재.
+                            // 2. Second priority: Use explicit @Column name without prefix
+                            // Already set by createFromAttribute, no action needed. This block exists for clarity.
                         }
                         else {
-                            // 3. 기본: 접두사와 컬럼명을 조합하여 이름 설정
+                            // 3. Default: Combine prefix with column name
                             column.setColumnName(columnPrefix + "_" + column.getColumnName());
                         }
 
@@ -232,6 +281,17 @@ public class EmbeddedHandler {
         }
     }
 
+    /**
+     * Processes relationship annotations (@ManyToOne, @OneToOne) within embedded types.
+     *
+     * <p>Handles proper FK column naming with embedded prefix, applies association overrides,
+     * and creates relationship models with appropriate constraints.
+     *
+     * @param attribute the relationship attribute from the embedded type
+     * @param ownerEntity the owning entity
+     * @param associationOverrides map of association overrides to apply
+     * @param prefix the column name prefix for FK columns
+     */
     private void processEmbeddedRelationship(AttributeDescriptor attribute, EntityModel ownerEntity,
                                              Map<String, AssociationOverrideInfo> associationOverrides, String prefix) {
         ManyToOne manyToOne = attribute.getAnnotation(ManyToOne.class);
@@ -339,7 +399,7 @@ public class EmbeddedHandler {
         boolean noConstraint = !joinColumns.isEmpty() &&
                 joinColumns.get(0).foreignKey().value() == ConstraintMode.NO_CONSTRAINT;
 
-        // 1) 검증 단계: FK 컬럼들을 미리 생성하고 검증
+        // Phase 1: Validation - create and validate FK columns before committing
         List<ColumnModel> pendingFkColumns = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         
@@ -367,7 +427,7 @@ public class EmbeddedHandler {
             boolean colUnique = (oneToOne != null && mapsId == null && (joinColumns.isEmpty() ? refPkList.size() == 1 : joinColumns.size() == 1))
                     && (jc != null ? jc.unique() : true);
 
-            // @MapsId PK 승격은 지연 단계(RelationshipHandler)에서 처리
+            // @MapsId PK promotion is handled in deferred phase (RelationshipHandler)
             boolean makePk = false;
 
             String fkTable = resolveJoinColumnTable(jc, ownerEntity);
@@ -385,7 +445,7 @@ public class EmbeddedHandler {
                     .javaType(pkCol.getJavaType())
                     .isPrimaryKey(false)
                     .isNullable(colNullable)
-                    // 컬럼 레벨 unique 제거 - 제약 기반으로만 처리
+                    // Column-level unique removed - handled via constraints only
                     .generationStrategy(GenerationStrategy.NONE)
                     .build();
 
@@ -404,7 +464,7 @@ public class EmbeddedHandler {
             referencedPkNamesInOrder.add(pkCol.getColumnName());
         }
 
-        // 2) 커밋 단계: 오류가 없을 때만 실제 ownerEntity에 추가
+        // Phase 2: Commit - add to ownerEntity only if no errors occurred
         if (!errors.isEmpty()) {
             errors.forEach(msg -> context.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR, msg, attribute.elementForDiagnostics()));
             return;
@@ -451,8 +511,16 @@ public class EmbeddedHandler {
         support.addForeignKeyIndex(ownerEntity, fkColumnNames, fkTableBase);
     }
 
+    /**
+     * Resolves the target entity TypeElement for a relationship within an embedded type.
+     *
+     * @param attr the relationship attribute descriptor
+     * @param m2o the @ManyToOne annotation if present
+     * @param o2o the @OneToOne annotation if present
+     * @return Optional containing the target entity TypeElement, or empty if not resolvable
+     */
     private Optional<TypeElement> resolveTargetEntityForEmbedded(AttributeDescriptor attr, ManyToOne m2o, OneToOne o2o) {
-        // 1) 명시적 targetEntity 우선 처리(MirroredTypeException 대응)
+        // 1) Prefer explicit targetEntity (handles MirroredTypeException)
         try {
             Class<?> c =
                     (m2o != null) ? m2o.targetEntity() :
@@ -466,13 +534,20 @@ public class EmbeddedHandler {
                 return Optional.of(te);
             }
         }
-        // 2) 필드/프로퍼티 타입으로 추론
+        // 2) Infer from field/property type
         if (attr.type() instanceof DeclaredType dt && dt.asElement() instanceof TypeElement te) {
             return Optional.of(te);
         }
         return Optional.empty();
     }
 
+    /**
+     * Resolves the target table for a JoinColumn, with fallback to primary table.
+     *
+     * @param jc the JoinColumn annotation (may be null)
+     * @param owner the owning entity model
+     * @return the resolved table name
+     */
     private String resolveJoinColumnTable(JoinColumn jc, EntityModel owner) {
         String primary = owner.getTableName();
         if (jc == null || jc.table().isEmpty()) return primary;
@@ -488,6 +563,15 @@ public class EmbeddedHandler {
         return req;
     }
 
+    /**
+     * Extracts all override configurations from @AttributeOverride and @AssociationOverride annotations.
+     *
+     * @param attribute the embedded attribute with potential override annotations
+     * @param nameOverrides output map for column name overrides
+     * @param tableOverrides output map for table name overrides
+     * @param columnOverrides output map for full @Column annotation overrides
+     * @return map of association overrides
+     */
     private Map<String, AssociationOverrideInfo> extractOverrides(AttributeDescriptor attribute, Map<String, String> nameOverrides, Map<String, String> tableOverrides, Map<String, Column> columnOverrides) {
         AttributeOverrides aos = attribute.getAnnotation(AttributeOverrides.class);
         if (aos != null) {
@@ -526,6 +610,13 @@ public class EmbeddedHandler {
         return assocOverrides;
     }
 
+    /**
+     * Filters and remaps overrides for nested embedded types by removing the prefix.
+     *
+     * @param parentOverrides the parent-level override map
+     * @param prefix the prefix to filter and remove (e.g., "address.")
+     * @return filtered and remapped overrides for the child level
+     */
     private Map<String, String> filterAndRemapOverrides(Map<String, String> parentOverrides, String prefix) {
         return parentOverrides.entrySet().stream()
                 .filter(e -> e.getKey().startsWith(prefix))
@@ -535,18 +626,27 @@ public class EmbeddedHandler {
                 ));
     }
 
+    /**
+     * Filters and remaps association overrides for nested embedded types.
+     *
+     * <p>Handles both exact matches and hierarchical path matching for nested overrides.
+     *
+     * @param parentOverrides the parent-level association override map
+     * @param prefixWithDot the prefix with trailing dot (e.g., "address.")
+     * @return filtered and remapped association overrides for the child level
+     */
     private Map<String, AssociationOverrideInfo> filterAndRemapAssocOverrides(Map<String, AssociationOverrideInfo> parentOverrides, String prefixWithDot) {
         Map<String, AssociationOverrideInfo> out = new HashMap<>();
 
         String dotted = prefixWithDot;
         String exact = dotted.endsWith(".") ? dotted.substring(0, dotted.length() - 1) : dotted;
 
-        // (A) 자식 레벨 정확 일치: "country"
+        // (A) Exact match at child level: e.g., "country"
         if (parentOverrides.containsKey(exact)) {
             out.put(exact, parentOverrides.get(exact));
         }
 
-        // (B) 하위 경로 매칭: "country.*" → 접두사 제거해 자식 기준 키로 재매핑
+        // (B) Hierarchical path matching: e.g., "country.*" → remove prefix and remap to child-level keys
         for (Map.Entry<String, AssociationOverrideInfo> e : parentOverrides.entrySet()) {
             String k = e.getKey();
             if (k.startsWith(dotted)) {
@@ -560,6 +660,13 @@ public class EmbeddedHandler {
         return arr == null ? List.of() : Arrays.stream(arr).toList();
     }
 
+    /**
+     * Filters and remaps @Column annotation overrides for nested embedded types.
+     *
+     * @param parentOverrides the parent-level column override map
+     * @param prefix the prefix to filter and remove
+     * @return filtered and remapped column overrides for the child level
+     */
     private Map<String, Column> filterAndRemapColumnOverrides(Map<String, Column> parentOverrides, String prefix) {
         return parentOverrides.entrySet().stream()
                 .filter(e -> e.getKey().startsWith(prefix))
@@ -569,8 +676,16 @@ public class EmbeddedHandler {
                 ));
     }
 
-
-     // Apply @Column attributes from @AttributeOverride to the ColumnModel
+    /**
+     * Applies @Column attributes from @AttributeOverride to a ColumnModel.
+     *
+     * <p>Overrides include nullable, unique, length, precision, scale, and columnDefinition.
+     *
+     * @param column the column model to modify
+     * @param columnOverride the @Column annotation from @AttributeOverride
+     * @param ownerEntity the owning entity (for constraint management)
+     * @param attribute the attribute descriptor (for diagnostics)
+     */
     private void applyColumnOverrides(ColumnModel column, Column columnOverride, EntityModel ownerEntity, AttributeDescriptor attribute) {
         // Apply nullable override
         if (columnOverride.nullable() != true) { // JPA default is true

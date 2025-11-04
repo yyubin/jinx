@@ -2,39 +2,49 @@ package org.jinx.util;
 
 import jakarta.persistence.Access;
 import jakarta.persistence.AccessType;
-import jakarta.persistence.Entity;
-import jakarta.persistence.MappedSuperclass;
 
 import javax.lang.model.element.*;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import java.util.Set;
 
+/**
+ * Utility class for determining the JPA {@link AccessType} for an entity.
+ * <p>
+ * It follows the rules defined in the JPA specification:
+ * 1. Explicit {@code @Access} annotation on the class.
+ * 2. Inherited class-level {@code @Access} from the superclass chain.
+ * 3. Inferred from the placement of {@code @Id} or {@code @EmbeddedId} in the hierarchy.
+ * 4. Defaults to {@link AccessType#FIELD} if no other rule applies.
+ */
 public final class AccessUtils {
 
     private AccessUtils() {}
 
+    /**
+     * Determines the access type for a given entity {@link TypeElement}.
+     *
+     * @param typeElement The entity class element.
+     * @return The determined {@link AccessType}.
+     */
     public static AccessType determineAccessType(TypeElement typeElement) {
-        // 1) 현재 클래스에 명시적 @Access
+        // 1) Explicit @Access on the current class.
         Access classAccess = typeElement.getAnnotation(Access.class);
         if (classAccess != null) {
             return classAccess.value();
         }
 
-        // 2) 상위 체인의 클래스 레벨 @Access만 상속
+        // 2) Inherit only class-level @Access from the superclass chain.
         AccessType inherited = findClassLevelAccessInSuperclasses(typeElement);
         if (inherited != null) {
             return inherited;
         }
 
-        // 3) 계층에서 @Id/@EmbeddedId 배치 기반 추론
+        // 3) Infer based on the placement of @Id/@EmbeddedId in the hierarchy.
         AccessType inferred = findFirstIdAccessTypeInHierarchy(typeElement);
         return inferred != null ? inferred : AccessType.FIELD;
     }
 
     /**
-     * 상위 클래스들에서 명시적 클래스 레벨 @Access만 찾아 상속
+     * Finds and inherits only the explicit class-level @Access from superclasses.
      */
     private static AccessType findClassLevelAccessInSuperclasses(TypeElement typeElement) {
         TypeElement current = getSuperclass(typeElement);
@@ -49,23 +59,24 @@ public final class AccessUtils {
     }
 
     /**
-     * 계층 전체에서 @Id/@EmbeddedId 위치(필드/메서드)를 스캔해 첫 일치로 결정
+     * Scans the entire hierarchy for the location (field/method) of @Id/@EmbeddedId
+     * and determines the access type from the first match.
      */
     private static AccessType findFirstIdAccessTypeInHierarchy(TypeElement typeElement) {
         for (TypeElement current = typeElement; 
              current != null && !"java.lang.Object".equals(current.getQualifiedName().toString()); 
              current = getSuperclass(current)) {
 
-            // 필드에 @Id/@EmbeddedId?
+            // @Id/@EmbeddedId on a field?
             if (hasIdOnFields(current)) {
                 return AccessType.FIELD;
             }
-            // 메서드(getter)에 @Id/@EmbeddedId?
+            // @Id/@EmbeddedId on a method (getter)?
             if (hasIdOnMethods(current)) {
                 return AccessType.PROPERTY;
             }
         }
-        // 아무 데도 없음 → null 반환 (호출부에서 FIELD로 폴백)
+        // Not found anywhere -> return null (the caller will fall back to FIELD).
         return null;
     }
 

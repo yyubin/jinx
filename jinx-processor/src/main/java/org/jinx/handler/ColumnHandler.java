@@ -13,6 +13,13 @@ import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.util.Map;
 
+/**
+ * Handles the creation of {@link ColumnModel} instances from various sources.
+ * <p>
+ * This class acts as a facade, delegating the actual column resolution logic
+ * to a set of specialized {@link ColumnResolver} and {@link AttributeColumnResolver}
+ * implementations. It also provides validation for table names.
+ */
 public class ColumnHandler {
     private final ProcessingContext context;
     private final SequenceHandler sequenceHandler;
@@ -28,14 +35,37 @@ public class ColumnHandler {
         this.attributeBasedResolver = new AttributeBasedEntityResolver(context, sequenceHandler);
     }
 
+    /**
+     * Creates a ColumnModel from a field element, considering overrides.
+     *
+     * @param field The field element.
+     * @param overrides A map of property overrides.
+     * @return A new ColumnModel instance.
+     */
     public ColumnModel createFrom(VariableElement field, Map<String, String> overrides) {
         return typeBasedResolver.resolve(field, null, null, overrides);
     }
 
+    /**
+     * Creates a ColumnModel from a field's type with a specific column name.
+     *
+     * @param field The field element.
+     * @param type The type of the column.
+     * @param columnName The explicit name for the column.
+     * @return A new ColumnModel instance.
+     */
     public ColumnModel createFromFieldType(VariableElement field, TypeMirror type, String columnName) {
         return fieldBasedResolver.resolve(field, type, columnName, Map.of());
     }
 
+    /**
+     * Creates a ColumnModel from an attribute descriptor, applying overrides and validating the table name.
+     *
+     * @param attribute The attribute descriptor.
+     * @param entity The owning entity model.
+     * @param overrides A map of property overrides.
+     * @return A new, validated ColumnModel instance.
+     */
     public ColumnModel createFromAttribute(AttributeDescriptor attribute, EntityModel entity, Map<String, String> overrides) {
         ColumnModel column = attributeBasedResolver.resolve(attribute, null, null, overrides);
         if (column == null) {
@@ -49,6 +79,15 @@ public class ColumnHandler {
         return column;
     }
 
+    /**
+     * Creates a ColumnModel from an attribute's type with a specific column name and validates the table name.
+     *
+     * @param attribute The attribute descriptor.
+     * @param entity The owning entity model.
+     * @param type The type of the column.
+     * @param columnName The explicit name for the column.
+     * @return A new, validated ColumnModel instance.
+     */
     public ColumnModel createFromAttributeType(AttributeDescriptor attribute, EntityModel entity, TypeMirror type, String columnName) {
         ColumnModel column = attributeBasedResolver.resolve(attribute, type, columnName, Map.of());
         if (column == null) {

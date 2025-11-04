@@ -35,8 +35,8 @@ public final class OneToManyOwningFkProcessor implements RelationshipProcessor {
             return false; // Not owning side or not OneToMany
         }
         
-        // OneToMany FK 전략: 반드시 JoinColumn이 있어야 하고, JoinTable은 없어야 함
-        // 이 조건을 통과하면 process()에서 j == null인 경우는 발생하지 않음
+        // OneToMany FK strategy: must have JoinColumn and no JoinTable
+        // If this condition passes, j == null case will not occur in process()
         JoinTable jt = descriptor.getAnnotation(JoinTable.class);
         JoinColumns jcs = descriptor.getAnnotation(JoinColumns.class);
         JoinColumn jc = descriptor.getAnnotation(JoinColumn.class);
@@ -62,7 +62,7 @@ public final class OneToManyOwningFkProcessor implements RelationshipProcessor {
             return;
         }
 
-        // attr.isCollection()으로 이미 검증했으므로 중복 Collection 검사 제거
+        // Duplicate Collection check removed - already validated by attr.isCollection()
 
         Optional<TypeElement> targetEntityElementOpt = support.resolveTargetEntity(attr, null, null, oneToMany, null);
         if (targetEntityElementOpt.isEmpty()) return;
@@ -110,7 +110,7 @@ public final class OneToManyOwningFkProcessor implements RelationshipProcessor {
         List<String> fkNames = new ArrayList<>();
         List<String> refNames = new ArrayList<>();
 
-        // 준비: PK 이름 → ColumnModel 맵
+        // Prepare: PK name → ColumnModel map
         Map<String, ColumnModel> pkByName = ownerPks.stream()
                 .collect(java.util.stream.Collectors.toMap(ColumnModel::getColumnName, c -> c, (a, b) -> a, LinkedHashMap::new));
 
@@ -120,7 +120,7 @@ public final class OneToManyOwningFkProcessor implements RelationshipProcessor {
         for (int i = 0; i < ownerPks.size(); i++) {
             JoinColumn j = jlist.isEmpty() ? null : jlist.get(i);
 
-            // 1) referenced PK 결정 (이름 우선, 없으면 인덱스)
+            // 1) Determine referenced PK (name-based first, fallback to index-based)
             ColumnModel ownerPk;
             String refNameRaw = (j != null && j.referencedColumnName() != null) ? j.referencedColumnName().trim() : "";
             if (!refNameRaw.isEmpty()) {
@@ -140,7 +140,7 @@ public final class OneToManyOwningFkProcessor implements RelationshipProcessor {
                     return;
                 }
             } else {
-                // 인덱스 기반 fallback (이미 size 일치 검증됨)
+                // Index-based fallback (size match already validated)
                 ownerPk = ownerPks.get(i);
                 if (!usedPkNames.add(ownerPk.getColumnName())) {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
@@ -154,7 +154,7 @@ public final class OneToManyOwningFkProcessor implements RelationshipProcessor {
 
             String refName = ownerPk.getColumnName();
 
-            // 2) FK 컬럼명 결정 (명시적 name 우선)
+            // 2) Determine FK column name (explicit name has priority)
             String fkName = (j != null && !j.name().isEmpty())
                     ? j.name()
                     : context.getNaming().foreignKeyColumnName(attr.name(), refName);
@@ -169,8 +169,8 @@ public final class OneToManyOwningFkProcessor implements RelationshipProcessor {
             }
 
             String tableNameForFk = support.resolveJoinColumnTable(j, targetEntityModel);
-            // nullability 규칙: @OneToMany(FK 전략)에서는 JoinColumn.nullable()을 그대로 따름
-            // 스펙상 OneToMany엔 optional이 없고, N쪽에 있는 FK의 nullability가 실제 제약이므로
+            // Nullability rule: @OneToMany (FK strategy) follows JoinColumn.nullable() directly
+            // Since OneToMany has no 'optional' attribute in JPA spec, FK nullability on the N-side is the actual constraint
             ColumnModel fkColumn = ColumnModel.builder()
                     .columnName(fkName)
                     .tableName(tableNameForFk)
@@ -220,7 +220,7 @@ public final class OneToManyOwningFkProcessor implements RelationshipProcessor {
             }
         }
 
-        // FK 제약 이름 생성 시 실제 FK가 위치하는 테이블 기준
+        // FK constraint name generation based on the table where FK actually resides
         String fkBaseTable = jlist.isEmpty()
                 ? targetEntityModel.getTableName()
                 : support.resolveJoinColumnTable(jlist.get(0), targetEntityModel);
@@ -243,16 +243,16 @@ public final class OneToManyOwningFkProcessor implements RelationshipProcessor {
                 jlist.get(0).foreignKey().value() == ConstraintMode.NO_CONSTRAINT;
 
         // Create relationship model
-        // NOTE: 관계 타입과 실제 FK 방향의 의미적 차이
-        // - 도메인 관점: User(1) -> Orders(N) = ONE_TO_MANY (JPA 애노테이션 기준)
-        // - 스키마 관점: Orders 테이블에 user_id FK = MANY_TO_ONE (실제 FK 방향)
-        // 여기서는 도메인 의미를 보존하여 ONE_TO_MANY로 기록 (JPA 표준 준수)
+        // NOTE: Semantic difference between relationship type and actual FK direction
+        // - Domain perspective: User(1) -> Orders(N) = ONE_TO_MANY (based on JPA annotation)
+        // - Schema perspective: Orders table has user_id FK = MANY_TO_ONE (actual FK direction)
+        // Here we preserve domain semantics by recording as ONE_TO_MANY (JPA standard compliance)
         RelationshipModel rel = RelationshipModel.builder()
                 .type(RelationshipType.ONE_TO_MANY)
-                .tableName(fkBaseTable) // FK가 걸리는 테이블 (many 쪽 테이블)
-                .columns(fkNames)                          // FK 컬럼들 (many 쪽 테이블에 위치)
-                .referencedTable(ownerEntity.getTableName())   // 참조 테이블 (one 쪽)
-                .referencedColumns(refNames)               // 참조 컬럼들 (one 쪽 PK)
+                .tableName(fkBaseTable) // Table where FK resides (many-side table)
+                .columns(fkNames)       // FK columns (located in many-side table)
+                .referencedTable(ownerEntity.getTableName())   // Referenced table (one-side)
+                .referencedColumns(refNames)                   // Referenced columns (one-side PK)
                 .noConstraint(noConstraint)
                 .constraintName(constraintName)
                 .cascadeTypes(support.toCascadeList(oneToMany.cascade()))
@@ -262,7 +262,7 @@ public final class OneToManyOwningFkProcessor implements RelationshipProcessor {
 
         targetEntityModel.getRelationships().put(rel.getConstraintName(), rel);
 
-        // @JoinColumn(unique=true) 처리 - OneToMany에서 unique FK 제약 (실질적으로 OneToOne)
+        // Handle @JoinColumn(unique=true) - unique FK constraint in OneToMany (effectively OneToOne)
         boolean anyUnique = jlist.stream().anyMatch(JoinColumn::unique);
         if (anyUnique) {
             context.getMessager().printMessage(Diagnostic.Kind.WARNING,
@@ -277,7 +277,7 @@ public final class OneToManyOwningFkProcessor implements RelationshipProcessor {
             }
         }
 
-        // FK 컬럼에 자동 인덱스 생성 (성능 향상을 위해)
+        // Automatically create index on FK columns (for performance optimization)
         support.addForeignKeyIndex(targetEntityModel, fkNames, fkBaseTable);
     }
 }

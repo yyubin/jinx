@@ -1,6 +1,5 @@
 package org.jinx.context;
 
-import jakarta.persistence.Table;
 import lombok.Getter;
 import org.jinx.descriptor.AttributeDescriptor;
 import org.jinx.descriptor.AttributeDescriptorFactory;
@@ -28,7 +27,14 @@ import java.io.Writer;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.Map;
+
+/**
+ * Holds the shared state and environment for a single annotation processing run.
+ * <p>
+ * This class provides access to the {@link ProcessingEnvironment}, the global {@link SchemaModel},
+ * configuration settings, and various caches and registries that are valid for the duration
+ * of one processing round.
+ */
 @Getter
 public class ProcessingContext {
     private final ProcessingEnvironment processingEnv;
@@ -41,7 +47,7 @@ public class ProcessingContext {
 
     private final ConstraintManager constraintManager = new ConstraintManager(this);
 
-    // 라운드 동안만 유효한 TypeElement 레지스트리
+    // TypeElement registry, valid only for the current processing round.
     private final Map<String, TypeElement> mappedSuperclassElements = new HashMap<>();
     private final Map<String, TypeElement> embeddableElements = new HashMap<>();
     
@@ -58,7 +64,7 @@ public class ProcessingContext {
         this.processingEnv = processingEnv;
         this.schemaModel = schemaModel;
 
-        // 설정 로드 (프로파일 지원)
+        // Load configuration (with profile support).
         Map<String, String> config = loadConfiguration(processingEnv);
         int maxLength = parseMaxLength(config);
 
@@ -67,17 +73,17 @@ public class ProcessingContext {
     }
 
     /**
-     * 프로파일을 고려하여 설정을 로드합니다.
-     * 우선순위: -A 옵션 > 설정 파일 > 기본값
+     * Loads configuration, considering profiles.
+     * Priority: -A options > configuration file > default values.
      */
     private Map<String, String> loadConfiguration(ProcessingEnvironment processingEnv) {
-        // 프로파일 결정: -Ajinx.profile > JINX_PROFILE 환경변수 > dev
+        // Determine profile: -Ajinx.profile > JINX_PROFILE environment variable > dev.
         String profile = processingEnv.getOptions().get(JinxOptions.Profile.PROCESSOR_KEY);
 
         ConfigurationLoader loader = new ConfigurationLoader();
         Map<String, String> config = loader.loadConfiguration(profile);
 
-        // -A 옵션으로 명시적으로 지정된 값들이 있으면 덮어쓰기
+        // If values are explicitly specified with -A options, they override the config file.
         String explicitMaxLength = processingEnv.getOptions().get(JinxOptions.Naming.MAX_LENGTH_KEY);
         if (explicitMaxLength != null) {
             Map<String, String> mutableConfig = new HashMap<>(config);
@@ -89,7 +95,7 @@ public class ProcessingContext {
     }
 
     /**
-     * 설정에서 maxLength 값을 파싱합니다.
+     * Parses the maxLength value from the configuration.
      */
     private int parseMaxLength(Map<String, String> config) {
         String maxLenOpt = config.get(JinxOptions.Naming.MAX_LENGTH_KEY);

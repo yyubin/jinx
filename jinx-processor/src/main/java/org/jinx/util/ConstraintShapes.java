@@ -10,9 +10,23 @@ import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
+/**
+ * Utility class to generate canonical "shape keys" for constraints and indexes.
+ * <p>
+ * These keys are used to uniquely identify a constraint or index based on its
+ * semantic properties (type, table, columns, etc.), allowing for reliable
+ * detection of duplicates regardless of the assigned name.
+ */
 public final class ConstraintShapes {
     private ConstraintShapes() {}
 
+    /**
+     * Generates a canonical shape key for a {@link ConstraintModel}.
+     * For UNIQUE and PRIMARY_KEY constraints, column order is ignored.
+     *
+     * @param c The constraint model.
+     * @return A unique string representing the constraint's shape.
+     */
     public static String shapeKey(ConstraintModel c) {
         String table = norm(c.getTableName());
         List<String> colsInput = c.getColumns() != null ? c.getColumns() : List.of();
@@ -24,7 +38,7 @@ public final class ConstraintShapes {
             Collections.sort(sorted);
             colsKey = String.join(",", sorted);
         } else {
-            // 순서 의미 유지
+            // Preserve order for other constraint types.
             colsKey = String.join(",", cols);
         }
 
@@ -35,8 +49,15 @@ public final class ConstraintShapes {
         return c.getType() + "|" + table + "|" + colsKey + "|" + whereKey;
     }
 
+    /**
+     * Generates a canonical shape key for an {@link IndexModel}.
+     * Column order is preserved for indexes.
+     *
+     * @param ix The index model.
+     * @return A unique string representing the index's shape.
+     */
     public static String shapeKey(IndexModel ix) {
-        // 인덱스는 순서 의미 유지
+        // Preserve order for indexes.
         String table = norm(ix.getTableName());
         String colsKey = (ix.getColumnNames() != null ? ix.getColumnNames() : List.<String>of())
                 .stream()

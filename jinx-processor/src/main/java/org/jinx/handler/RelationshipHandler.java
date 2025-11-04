@@ -16,6 +16,17 @@ import java.util.*;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+/**
+ * Handles the processing of all JPA relationship annotations (@ManyToOne, @OneToOne, @OneToMany, @ManyToMany).
+ *
+ * <p>This class orchestrates a set of specialized {@link RelationshipProcessor} instances
+ * to handle different types of relationships (e.g., owning side, inverse side, join tables).
+ * It also includes a deferred processing step for {@code @MapsId} attributes to ensure
+ * that all primary key and foreign key information is available.
+ *
+ * <p>The handler respects the {@code @Access} type of the entity, scanning either fields or
+ * getter methods to find relationship annotations.
+ */
 public class RelationshipHandler {
     private final ProcessingContext context;
     private final List<RelationshipProcessor> processors;
@@ -41,12 +52,17 @@ public class RelationshipHandler {
     }
 
     /**
-     * 엔티티 관계를 처리합니다.
-     * @Access 어노테이션에 따라 FIELD 또는 PROPERTY 접근 방식을 선택하여
-     * 필드/게터 중복 처리 문제를 해결합니다.
+     * Resolves all relationships for a given entity.
+     * <p>
+     * This method first attempts to use cached attribute descriptors. If the cache is not
+     * available, it falls back to scanning the entity's fields or properties based on its
+     * {@code @Access} type to avoid processing duplicate annotations on both fields and getters.
+     *
+     * @param ownerType The TypeElement of the owning entity.
+     * @param ownerEntity The model of the owning entity.
      */
     public void resolveRelationships(TypeElement ownerType, EntityModel ownerEntity) {
-        // 1) 우선 디스크립터 캐시가 있다면 그대로 사용
+        // 1) First, try to use cached descriptors if available.
         boolean resolvedFromCache = false;
         try {
             java.util.List<AttributeDescriptor> descriptors = context.getCachedDescriptors(ownerType);
@@ -57,25 +73,25 @@ public class RelationshipHandler {
                 resolvedFromCache = true;
             }
         } catch (Exception ignore) {
-            // 캐시 미구현/예외 시 @Access 기반 스캔으로 폴백
+            // Fallback to @Access-based scanning if cache is not implemented or an exception occurs.
         }
 
-        // 2) 캐시에서 처리되지 않았다면 @Access 기반으로 스캔
+        // 2) If not resolved from cache, scan based on the @Access type.
         if (!resolvedFromCache) {
             AccessType accessType = AccessUtils.determineAccessType(ownerType);
 
             if (accessType == AccessType.FIELD) {
-                // FIELD 접근: 필드의 관계 어노테이션만 스캔
+                // FIELD access: Scan only fields for relationship annotations.
                 scanFieldsForRelationships(ownerType, ownerEntity);
             } else {
-                // PROPERTY 접근: 게터 메서드의 관계 어노테이션만 스캔
+                // PROPERTY access: Scan only getter methods for relationship annotations.
                 scanPropertiesForRelationships(ownerType, ownerEntity);
             }
         }
     }
 
     /**
-     * 필드에서 관계 어노테이션 스캔
+     * Scans fields for relationship annotations.
      */
     private void scanFieldsForRelationships(TypeElement ownerType, EntityModel ownerEntity) {
         for (Element e : ownerType.getEnclosedElements()) {
@@ -88,16 +104,14 @@ public class RelationshipHandler {
     }
 
     /**
-     * 게터 메서드에서 관계 어노테이션 스캔
+     * Scans getter methods for relationship annotations.
      */
     private void scanPropertiesForRelationships(TypeElement ownerType, EntityModel ownerEntity) {
         for (Element e : ownerType.getEnclosedElements()) {
             if (e.getKind() == ElementKind.METHOD && e instanceof ExecutableElement ex) {
                 if (AccessUtils.isGetterMethod(ex) && hasRelationshipAnnotation(ex)) {
                     Optional<AttributeDescriptor> pdOpt = context.getAttributeDescriptorFactory().createPropertyDescriptor(ex);
-                    if (pdOpt.isPresent()) {
-                        resolve(pdOpt.get(), ownerEntity);
-                    }
+                    pdOpt.ifPresent(attributeDescriptor -> resolve(attributeDescriptor, ownerEntity));
                 }
             }
         }
@@ -124,6 +138,13 @@ public class RelationshipHandler {
                 descriptor.getAnnotation(ManyToMany.class)!= null;
     }
 
+    /**
+     * Resolves a relationship for a given attribute descriptor by delegating to the first
+     * supporting {@link RelationshipProcessor}.
+     *
+     * @param descriptor The attribute descriptor representing the relationship field/property.
+     * @param entityModel The model of the owning entity.
+     */
     public void resolve(AttributeDescriptor descriptor, EntityModel entityModel) {
         boolean handled = false;
         for (RelationshipProcessor p : processors) {
@@ -138,8 +159,11 @@ public class RelationshipHandler {
     }
 
     /**
-     * 호환성을 위한 VariableElement 오버로드
-     * VariableElement를 AttributeDescriptor로 래핑해서 처리
+     * Overload for compatibility to handle {@link VariableElement}.
+     * Wraps the VariableElement in an AttributeDescriptor for processing.
+     *
+     * @param field The relationship field element.
+     * @param ownerEntity The model of the owning entity.
      */
     public void resolve(VariableElement field, EntityModel ownerEntity) {
         AttributeDescriptor fieldAttr = new FieldAttributeDescriptor(field, context.getTypeUtils(), context.getElementUtils());
@@ -147,8 +171,12 @@ public class RelationshipHandler {
     }
 
     /**
-     * @MapsId 지연 처리 패스 - 모든 관계/컬럼이 생성된 후 실행
-     * PK 구조와 @MapsId.value()의 정합성을 검증하고 정확한 FK→PK 매핑을 생성
+     * A deferred processing pass for {@code @MapsId} attributes.
+     * This runs after all relationships and columns have been created to validate the consistency
+     * of the PK structure with the {@code @MapsId.value()} and create accurate FK-to-PK mappings.
+     *
+     * @param ownerType The TypeElement of the owning entity.
+     * @param ownerEntity The model of the owning entity.
      */
     public void processMapsIdAttributes(TypeElement ownerType, EntityModel ownerEntity) {
         java.util.List<AttributeDescriptor> descriptors = context.getCachedDescriptors(ownerType);
@@ -161,14 +189,14 @@ public class RelationshipHandler {
             return;
         }
 
-        // 캐시가 없을 때만 Access로 스캔
+        // Scan using AccessType only if cache is unavailable.
         AccessType accessType = AccessUtils.determineAccessType(ownerType);
 
         if (accessType == AccessType.FIELD) {
-            // 필드에서 @MapsId가 붙은 ToOne 관계 처리
+            // Process @MapsId on ToOne relationships defined on fields.
             processMapsIdFromFields(ownerType, ownerEntity);
         } else {
-            // 게터에서 @MapsId가 붙은 ToOne 관계 처리
+            // Process @MapsId on ToOne relationships defined on getters.
             processMapsIdFromProperties(ownerType, ownerEntity);
         }
     }
@@ -189,22 +217,23 @@ public class RelationshipHandler {
             if (element.getKind() == ElementKind.METHOD && element instanceof ExecutableElement method) {
                 if (AccessUtils.isGetterMethod(method) && method.getAnnotation(MapsId.class) != null && hasRelationshipAnnotation(method)) {
                     Optional<AttributeDescriptor> descriptorOpt = context.getAttributeDescriptorFactory().createPropertyDescriptor(method);
-                    if (descriptorOpt.isPresent()) {
-                        processMapsIdAttribute(descriptorOpt.get(), ownerEntity);
-                    }
+                    descriptorOpt.ifPresent(descriptor -> processMapsIdAttribute(descriptor, ownerEntity));
                 }
             }
         }
     }
 
     /**
-     * 개별 @MapsId 속성 처리
+     * Processes an individual {@code @MapsId} attribute.
+     *
+     * @param descriptor The attribute descriptor with the @MapsId annotation.
+     * @param ownerEntity The model of the owning entity.
      */
     public void processMapsIdAttribute(AttributeDescriptor descriptor, EntityModel ownerEntity) {
         MapsId mapsId = descriptor.getAnnotation(MapsId.class);
         String keyPath = (mapsId != null && !mapsId.value().isEmpty()) ? mapsId.value() : "";
 
-        // 1) ToOne owning side만 대상
+        // 1) Target only ToOne owning sides.
         ManyToOne m2o = descriptor.getAnnotation(ManyToOne.class);
         OneToOne o2o = descriptor.getAnnotation(OneToOne.class);
         if (m2o == null && (o2o == null || !o2o.mappedBy().isEmpty())) {
@@ -214,7 +243,7 @@ public class RelationshipHandler {
             return;
         }
 
-        // 2) 소유 엔티티 PK 수집
+        // 2) Collect the owning entity's primary key columns.
         List<ColumnModel> ownerPkCols = context.findAllPrimaryKeyColumns(ownerEntity);
         if (ownerPkCols.isEmpty()) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
@@ -223,7 +252,7 @@ public class RelationshipHandler {
             return;
         }
 
-        // 3) 해당 필드의 RelationshipModel 찾기
+        // 3) Find the RelationshipModel for the field.
         RelationshipModel relationship = findToOneRelationshipFor(descriptor, ownerEntity);
         if (relationship == null) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
@@ -242,12 +271,12 @@ public class RelationshipHandler {
 
         List<String> fkColumns = relationship.getColumns();
 
-        // 4) @MapsId.value() 처리
+        // 4) Process @MapsId.value().
         if (keyPath.isEmpty()) {
-            // 전체 PK 공유
+            // Share the entire primary key.
             processFullPrimaryKeyMapping(descriptor, ownerEntity, relationship, fkColumns, ownerPkCols, keyPath);
         } else {
-            // 특정 PK 속성 매핑
+            // Map to a specific primary key attribute.
             processPartialPrimaryKeyMapping(descriptor, ownerEntity, relationship, fkColumns, ownerPkCols, keyPath);
         }
     }
@@ -263,7 +292,7 @@ public class RelationshipHandler {
             return;
         }
 
-        // PK 승격 확인 및 매핑 기록
+        // Verify PK promotion and record mappings.
         ensureAllArePrimaryKeys(ownerEntity, relationship.getTableName(), fkColumns, descriptor);
         
         List<String> ownerPkColumnNames = ownerPkCols.stream()
@@ -298,7 +327,7 @@ public class RelationshipHandler {
     }
 
     /**
-     * ToOne 관계에 대한 RelationshipModel 찾기
+     * Finds the RelationshipModel for a ToOne relationship.
      */
     private RelationshipModel findToOneRelationshipFor(AttributeDescriptor d, EntityModel owner) {
         for (var rel : owner.getRelationships().values()) {
@@ -311,7 +340,8 @@ public class RelationshipHandler {
     }
 
     /**
-     * PK 승격 확인 및 설정, 중복된 임베디드 PK 컬럼 제거
+     * Ensures that the specified columns are primary keys, promotes them if necessary,
+     * and removes any duplicate embedded PK columns.
      */
     private void ensureAllArePrimaryKeys(EntityModel ownerEntity, String tableName, List<String> columnNames, AttributeDescriptor descriptor) {
         for (String columnName : columnNames) {
@@ -330,15 +360,15 @@ public class RelationshipHandler {
                 column.setNullable(false);
             }
 
-            // 중복된 임베디드 PK 컬럼 제거
+            // Remove duplicate embedded PK columns.
             removeDuplicateEmbeddedPkColumns(ownerEntity, columnName, descriptor);
         }
         refreshPrimaryKeyConstraint(ownerEntity, tableName);
     }
 
     /**
-     * @MapsId FK 컬럼과 중복되는 임베디드 PK 컬럼을 제거합니다.
-     * 예: customer_id (FK->PK)가 있으면 id_customerId (임베디드 PK)를 제거
+     * Removes embedded PK columns that are duplicates of a @MapsId foreign key column.
+     * For example, if `customer_id` (FK->PK) exists, this removes `id_customerId` (embedded PK).
      */
     private void removeDuplicateEmbeddedPkColumns(EntityModel ownerEntity, String fkColumnName, AttributeDescriptor descriptor) {
         MapsId mapsId = descriptor.getAnnotation(MapsId.class);
@@ -347,16 +377,16 @@ public class RelationshipHandler {
         String keyPath = mapsId.value();
         if (keyPath.isEmpty()) return;
 
-        // 중복될 수 있는 임베디드 PK 컬럼명 생성
+        // Generate possible names for the embedded PK column that might be a duplicate.
         List<String> possibleEmbeddedPkColumns = List.of(
-            "id_" + keyPath,           // "id_customerId"
-            "id." + keyPath,          // "id.customerId" (잘못된 컬럼명이지만 확인)
-            keyPath                   // "customerId" (직접)
+            "id_" + keyPath,           // e.g., "id_customerId"
+            "id." + keyPath,          // e.g., "id.customerId" (incorrect but worth checking)
+            keyPath                   // e.g., "customerId" (direct)
         );
 
         for (String embeddedPkColumn : possibleEmbeddedPkColumns) {
             if (!embeddedPkColumn.equals(fkColumnName)) {
-                // FK 컬럼과 다른 이름의 임베디드 PK 컬럼을 찾아서 제거
+                // Find and remove the embedded PK column if it has a different name than the FK column.
                 ColumnModel duplicateColumn = ownerEntity.getColumns().values().stream()
                     .filter(col -> embeddedPkColumn.equals(col.getColumnName()))
                     .filter(ColumnModel::isPrimaryKey)
@@ -364,7 +394,7 @@ public class RelationshipHandler {
                     .orElse(null);
 
                 if (duplicateColumn != null) {
-                    // 중복 컬럼 제거
+                    // Remove the duplicate column.
                     ownerEntity.getColumns().entrySet()
                         .removeIf(entry -> entry.getValue() == duplicateColumn);
 
@@ -403,12 +433,12 @@ public class RelationshipHandler {
     }
 
     /**
-     * @MapsId 매핑 기록
+     * Records the @MapsId bindings.
      */
     private void recordMapsIdBindings(RelationshipModel relationship, List<String> fkColumns, List<String> pkColumns, String keyPath) {
         relationship.setMapsIdKeyPath(keyPath);
 
-        // FK컬럼 → PK컬럼 매핑 (순서대로 1:1 매핑)
+        // Map FK columns to PK columns (1:1 mapping in order).
         Map<String, String> bindings = relationship.getMapsIdBindings();
         if (bindings == null) {
             bindings = new HashMap<>();
@@ -420,7 +450,7 @@ public class RelationshipHandler {
     }
 
     /**
-     * 특정 PK 속성에 해당하는 컬럼 찾기 (IdClass/EmbeddedId 지원)
+     * Finds the columns corresponding to a specific PK attribute, supporting @IdClass and @EmbeddedId.
      */
     private List<String> findPkColumnsForAttribute(EntityModel ownerEntity, String attributeName, AttributeDescriptor where) {
         // 1. If user specifies an attribute path, but the PK is a single ID, it's an error.
@@ -435,7 +465,7 @@ public class RelationshipHandler {
         // 2. For composite keys, look up the attribute path in the context map with flexible matching
         String fqcn = ownerEntity.getFqcn() != null ? ownerEntity.getFqcn() : ownerEntity.getEntityName();
 
-        // 여러 형태의 키로 시도
+        // Try various key formats.
         List<String> possibleKeys = List.of(
             attributeName,                    // "customerId"
             "id." + attributeName,           // "id.customerId"
@@ -450,12 +480,12 @@ public class RelationshipHandler {
             }
         }
 
-        // 3. 직접 매칭도 시도: FK 컬럼명과 일치하는 PK 컬럼이 있는지 확인
+        // 3. Also try direct matching: check if a PK column exists with the same name as the FK column.
         if ((cols == null || cols.isEmpty()) && where != null) {
             JoinColumn joinColumn = where.getAnnotation(JoinColumn.class);
             if (joinColumn != null && !joinColumn.name().isEmpty()) {
                 String fkColumnName = joinColumn.name();
-                // FK 컬럼명과 일치하는 PK 컬럼이 있는지 확인
+                // Check if a PK column exists with the same name as the FK column.
                 boolean hasPkWithSameName = allPkColumns.stream()
                     .anyMatch(pk -> fkColumnName.equals(pk.getColumnName()));
                 if (hasPkWithSameName) {

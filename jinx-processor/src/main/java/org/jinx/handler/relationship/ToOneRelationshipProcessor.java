@@ -35,12 +35,12 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
         ManyToOne manyToOne = descriptor.getAnnotation(ManyToOne.class);
         OneToOne oneToOne = descriptor.getAnnotation(OneToOne.class);
         
-        // ManyToOne는 항상 owning side (mappedBy 없음)
+        // ManyToOne is always on the owning side (no mapped By)
         if (manyToOne != null) {
             return true;
         }
         
-        // OneToOne은 mappedBy가 없는 경우만 (owning side)
+        // OneToOne is only when there is no mapped By  (owning side)
         if (oneToOne != null && oneToOne.mappedBy().isEmpty()) {
             return true;
         }
@@ -53,7 +53,7 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
         ManyToOne manyToOne = descriptor.getAnnotation(ManyToOne.class);
         OneToOne oneToOne = descriptor.getAnnotation(OneToOne.class);
 
-        // supports()에서 이미 owning side만 필터링하므로 inverse side 체크 불필요
+        // Inverse side check unnecessary - already filtered to owning side only in supports()
 
         Optional<TypeElement> referencedTypeElementOpt = support.resolveTargetEntity(descriptor, manyToOne, oneToOne, null, null);
         if (referencedTypeElementOpt.isEmpty()) return;
@@ -62,8 +62,8 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
         EntityModel referencedEntity = context.getSchemaModel().getEntities()
                 .get(referencedTypeElement.getQualifiedName().toString());
         if (referencedEntity == null) {
-            // 참조된 엔티티가 아직 처리되지 않은 경우 처리를 지연
-            // 이는 엔티티들이 의존성 순서와 무관하게 처리되는 상황 대비
+            // Defer processing if referenced entity has not been processed yet
+            // Handles cases where entities are processed regardless of dependency order
             context.getMessager().printMessage(Diagnostic.Kind.NOTE,
                     "Deferring FK generation for @" + (manyToOne != null ? "ManyToOne" : "OneToOne") +
                     " relationship to '" + referencedTypeElement.getQualifiedName() +
@@ -131,7 +131,7 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
             String fkBaseTable = existingRelationship.getTableName();
 
             // Jump to UNIQUE constraint check for OneToOne
-            // OneToOne 관계는 논리적으로 항상 UNIQUE해야 하므로 @JoinColumn.unique 값과 무관하게 추가
+            // OneToOne relationship must logically always be UNIQUE, so add regardless of @JoinColumn.unique value
             if (oneToOne != null && mapsId == null && fkColumnNames.size() == 1) {
                 if (!support.coveredByPkOrUnique(ownerEntity, fkBaseTable, fkColumnNames)) {
                     String uqName = context.getNaming().uqName(fkBaseTable, fkColumnNames);
@@ -179,7 +179,7 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
             }
 
             String fieldName = descriptor.name();
-            // 일반 엔티티의 FK 네이밍: 속성명 기반 (fieldName + referencedPK)
+            // FK naming for regular entities: based on attribute name (fieldName + referencedPK)
             String fkColumnName = (jc != null && !jc.name().isEmpty())
                     ? jc.name()
                     : context.getNaming().foreignKeyColumnName(fieldName, referencedPkName);
@@ -193,10 +193,10 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
                 return;
             }
 
-            // PK 승격은 후처리(MapsId) 단계에서 수행. 여기서는 nullability만 결정.
-            // nullability 규칙: ToOne 관계에서는 optional과 JoinColumn.nullable() 둘 다 고려
-            // - optional=false이면 무조건 NOT NULL (JoinColumn.nullable=true여도 무시)
-            // - optional=true이면 JoinColumn.nullable() 값을 따름 (기본값: true)
+            // PK promotion is performed in post-processing (@MapsId) phase. Only determine nullability here.
+            // Nullability rule: For ToOne relationships, consider both optional and JoinColumn.nullable()
+            // - If optional=false, always NOT NULL (ignores JoinColumn.nullable=true)
+            // - If optional=true, follows JoinColumn.nullable() value (default: true)
             boolean associationOptional =
                     (manyToOne != null) ? manyToOne.optional() : oneToOne.optional();
             boolean columnNullableFromAnno =
@@ -208,8 +208,8 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
                         "@JoinColumn(nullable=true) conflicts with optional=false; treating as NOT NULL.", descriptor.elementForDiagnostics());
             }
 
-            // @MapsId로 PK가 될 컬럼이라도 여기서는 isNullable=true로 생성될 수 있음.
-            // 최종 nullability는 processMapsIdAttributes에서 PK로 승격하며 isNullable=false로 강제함.
+            // Even columns that will become PK via @MapsId may initially be created with isNullable=true here.
+            // Final nullability is enforced to isNullable=false when promoted to PK in processMapsIdAttributes.
             if (!associationOptional) {
                 isNullable = false;
             }
@@ -219,7 +219,7 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
                     .columnName(fkColumnName)
                     .tableName(tableNameForFk)
                     .javaType(referencedPkColumn.getJavaType())
-                    .isPrimaryKey(false) // PK 승격은 MapsId 후처리 단계에서.
+                    .isPrimaryKey(false) // PK promotion happens in MapsId post-processing phase
                     .isNullable(isNullable)
                     .build();
 
@@ -238,7 +238,7 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
                     return;
                 }
                 // If types match, apply relationship constraints (nullable) to existing column
-                // PK promotion is deferred.
+                // PK promotion is deferred
                 if (existing.isNullable() != isNullable) {
                     existing.setNullable(isNullable);
                 }
@@ -273,7 +273,7 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
             }
         }
 
-        // FK 제약 이름 생성 시 실제 FK가 위치하는 테이블 기준
+        // FK constraint name generation based on the table where FK actually resides
         String fkBaseTable = joinColumns.isEmpty()
             ? ownerEntity.getTableName()
             : support.resolveJoinColumnTable(joinColumns.get(0), ownerEntity);
@@ -298,12 +298,12 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
         // Create relationship model
         RelationshipModel relationship = RelationshipModel.builder()
                 .type(manyToOne != null ? RelationshipType.MANY_TO_ONE : RelationshipType.ONE_TO_ONE)
-                .tableName(fkBaseTable) // FK가 걸리는 테이블 (보조 테이블 포함)
+                .tableName(fkBaseTable) // Table where FK resides (including secondary tables)
                 .columns(fkColumnNames)
                 .referencedTable(referencedEntity.getTableName())
                 .referencedColumns(referencedPkNames)
                 .mapsId(mapsId != null)
-                .mapsIdKeyPath(mapsIdAttr) // @MapsId.value() 저장
+                .mapsIdKeyPath(mapsIdAttr) // Store @MapsId.value()
                 .noConstraint(noConstraint)
                 .constraintName(relationConstraintName)
                 .sourceAttributeName(descriptor.name())
@@ -313,9 +313,9 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
                 .build();
 
         ownerEntity.getRelationships().put(relationship.getConstraintName(), relationship);
-        
-        // 1:1(단일 FK)이며 @MapsId가 아닌 경우 UNIQUE 제약 추가
-        // OneToOne 관계는 논리적으로 항상 UNIQUE해야 하므로 @JoinColumn.unique 값과 무관하게 추가
+
+        // Add UNIQUE constraint for 1:1 (single FK) without @MapsId
+        // OneToOne relationship must logically always be UNIQUE, so add regardless of @JoinColumn.unique value
         boolean isSingleFk = fkColumnNames.size() == 1;
         boolean shouldAddUnique = (oneToOne != null) && (mapsId == null) && isSingleFk;
         if (shouldAddUnique && !support.coveredByPkOrUnique(ownerEntity, fkBaseTable, fkColumnNames)) {
@@ -326,8 +326,8 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
                     .tableName(fkBaseTable).columns(new ArrayList<>(fkColumnNames)).build());
             }
         }
-        
-        // FK 컬럼에 자동 인덱스 생성 (성능 향상을 위해)
+
+        // Automatically create index on FK columns (for performance optimization)
         support.addForeignKeyIndex(ownerEntity, fkColumnNames, fkBaseTable);
     }
 

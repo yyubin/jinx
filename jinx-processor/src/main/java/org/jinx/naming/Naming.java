@@ -9,11 +9,11 @@ public interface Naming {
     
     /**
      * Foreign key column naming strategy.
-     * 
+     *
      * Usage patterns:
-     * - 일반 엔티티의 FK: foreignKeyColumnName(fieldName, referencedPK) - 속성명 기반
-     * - 조인테이블의 FK: foreignKeyColumnName(entityTableName, referencedPK) - 참조 테이블명 기반
-     * 
+     * - Regular entity FK: foreignKeyColumnName(fieldName, referencedPK) - attribute name based
+     * - Join table FK: foreignKeyColumnName(entityTableName, referencedPK) - referenced table name based
+     *
      * @param ownerName For regular entities: field name, For join tables: referenced entity table name
      * @param referencedPkColumnName Referenced primary key column name
      * @return Foreign key column name

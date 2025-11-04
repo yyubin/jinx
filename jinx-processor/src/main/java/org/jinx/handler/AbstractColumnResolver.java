@@ -12,6 +12,12 @@ import org.jinx.util.ColumnUtils;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 
+/**
+ * An abstract base class for {@link ColumnResolver} implementations.
+ * <p>
+ * This class provides common functionality for processing standard JPA annotations
+ * like {@code @Lob}, {@code @Enumerated}, and {@code @Temporal} that affect column definitions.
+ */
 public abstract class AbstractColumnResolver implements ColumnResolver {
     protected final ProcessingContext context;
 
@@ -19,8 +25,15 @@ public abstract class AbstractColumnResolver implements ColumnResolver {
         this.context = context;
     }
 
+    /**
+     * Applies common JPA annotations to a {@link ColumnModel.ColumnModelBuilder}.
+     *
+     * @param builder The column model builder to configure.
+     * @param field The field element being processed.
+     * @param type The type of the field.
+     */
     protected void applyCommonAnnotations(ColumnModel.ColumnModelBuilder builder, VariableElement field, TypeMirror type) {
-        // @Lob 처리
+        // Handle @Lob
         if (field.getAnnotation(Lob.class) != null) {
             builder.isLob(true);
             String javaType = type.toString();
@@ -31,7 +44,7 @@ public abstract class AbstractColumnResolver implements ColumnResolver {
             }
         }
 
-        // @Enumerated 처리
+        // Handle @Enumerated
         Enumerated enumerated = field.getAnnotation(Enumerated.class);
         if (enumerated != null) {
             boolean isStringMapping = enumerated.value() == EnumType.STRING;
@@ -41,7 +54,7 @@ public abstract class AbstractColumnResolver implements ColumnResolver {
             }
         }
 
-        // @Temporal 처리
+        // Handle @Temporal
         Temporal temporal = field.getAnnotation(Temporal.class);
         if (temporal != null) {
             builder.temporalType(temporal.value());

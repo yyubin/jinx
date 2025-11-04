@@ -41,7 +41,7 @@ public final class RelationshipSupport {
 
     public Optional<TypeElement> resolveTargetEntity(AttributeDescriptor attr,
                                                       ManyToOne m2o, OneToOne o2o, OneToMany o2m, ManyToMany m2m) {
-        // 1) 명시적 targetEntity 우선 (APT 안전)
+        // 1) Prefer explicit targetEntity (APT-safe)
         TypeElement explicit = null;
         if (m2o != null) explicit = classValToTypeElement(() -> m2o.targetEntity());
         else if (o2o != null) explicit = classValToTypeElement(() -> o2o.targetEntity());
@@ -49,17 +49,17 @@ public final class RelationshipSupport {
         else if (m2m != null) explicit = classValToTypeElement(() -> m2m.targetEntity());
         if (explicit != null) return Optional.of(explicit);
 
-        // 2) 컬렉션이면 제네릭 인자 사용
+        // 2) Use generic argument if collection
         if ((o2m != null) || (m2m != null)) {
             return attr.genericArg(0).map(dt -> (TypeElement) dt.asElement());
         }
-        // 3) 필드/프로퍼티 타입으로 추론
+        // 3) Infer from field/property type
         return Optional.ofNullable(getReferencedTypeElement(attr.type()));
     }
 
     /**
-     * 클래스값(annotation)에서 TypeElement를 안전하게 추출합니다.
-     * APT 환경에서 MirroredTypeException을 적절히 처리합니다.
+     * Safely extracts TypeElement from class value (annotation)
+     * Properly handles MirroredTypeException in APT environment
      */
     private TypeElement classValToTypeElement(java.util.function.Supplier<Class<?>> getter) {
         try {
@@ -81,16 +81,16 @@ public final class RelationshipSupport {
     }
 
     /**
-     * 테이블명을 고려하여 컴럼을 찾는 헬퍼 메서드
-     * 주/보조 테이블에 동일한 컴럼명이 있을 때 충돌 방지
+     * Help method to find a column considering the table name
+     * Avoid collisions when primary/secondary tables have the same column name
      */
     public ColumnModel findColumn(EntityModel entity, String tableName, String columnName) {
         return entity.findColumn(tableName, columnName);
     }
 
     /**
-     * 컴럼을 엔티티 모델에 추가하는 헬퍼 메서드
-     * 테이블과 컬럼명을 조합한 키를 사용하여 충돌 방지
+     * Helper method to add a column to the entity model
+     * Prevents conflicts by using a key combining table and column name
      */
     public void putColumn(EntityModel entity, ColumnModel column) {
         entity.putColumn(column);
@@ -110,14 +110,14 @@ public final class RelationshipSupport {
     }
 
     /**
-     * FK 컬럼에 자동 인덱스 생성 (성능 향상을 위해)
-     * PK/UNIQUE로 이미 커버된 경우는 생략
+     * Automatically create index on FK columns (for performance optimization)
+     * Skip if already covered by PK or UNIQUE constraint
      */
     public void addForeignKeyIndex(EntityModel entity, List<String> fkColumns, String tableName) {
         if (fkColumns == null || fkColumns.isEmpty()) return;
         if (coveredByPkOrUnique(entity, tableName, fkColumns)) return;
 
-        // 인덱스 컬럼 순서는 "FK 컬럼이 생성된 순서"를 유지하세요 (아래 3번 참고)
+        // Maintain index column order as "FK column creation order"
         List<String> colsInOrder = List.copyOf(fkColumns);
         if (hasSameIndex(entity, tableName, colsInOrder)) return;
         String indexName = context.getNaming().ixName(tableName, colsInOrder);
@@ -130,7 +130,7 @@ public final class RelationshipSupport {
     }
 
     /**
-     * FK 컬럼 집합이 PK나 UNIQUE 제약으로 이미 커버되는지 확인
+     * Check if the FK column set is already covered by PK or UNIQUE constraint
      */
     public boolean coveredByPkOrUnique(EntityModel e, String table, List<String> cols) {
         Set<String> want = new HashSet<>(cols);
@@ -151,11 +151,11 @@ public final class RelationshipSupport {
     }
 
     /**
-     * @MapsId 등에서 사용할 PK 승격 헬퍼 메소드
-     * 지정된 컬럼들을 PK로 승격하고 관련 제약을 설정
+     * Helper method for PK promotion used in @MapsId and similar cases
+     * Promotes specified columns to PK and sets related constraints
      */
     public void promoteColumnsToPrimaryKey(EntityModel entity, String table, List<String> cols) {
-        // 1) 컬럼 존재/타입 보강 및 PK/NULL 고정
+        // 1) Verify column existence/type and enforce PK/NOT NULL
         for (String col : cols) {
             ColumnModel c = entity.findColumn(table, col);
             if (c == null) {
@@ -171,7 +171,7 @@ public final class RelationshipSupport {
             }
         }
 
-        // 2) PK 제약 구성/병합
+        // 2) Construct/merge PK constraint
         String pkName = context.getNaming().pkName(table, cols);
         entity.getConstraints().put(pkName, ConstraintModel.builder()
                 .name(pkName)
@@ -180,6 +180,6 @@ public final class RelationshipSupport {
                 .columns(new ArrayList<>(cols))
                 .build());
 
-        // 3) UNIQUE 중복 커버는 자연스럽게 PK가 대체(있다면 그대로 두어도 무해)
+        // 3) PK naturally supersedes duplicate UNIQUE coverage (harmless if left as-is)
     }
 }

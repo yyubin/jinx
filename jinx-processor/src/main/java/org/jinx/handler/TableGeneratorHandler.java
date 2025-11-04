@@ -11,6 +11,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+/**
+ * Handles the processing of {@link TableGenerator} annotations.
+ * <p>
+ * This handler discovers {@code @TableGenerator} and {@code @TableGenerators}
+ * annotations at the class level and registers them as {@link TableGeneratorModel} instances
+ * in the global schema model.
+ */
 public class TableGeneratorHandler {
     private final ProcessingContext context;
 
@@ -18,7 +25,11 @@ public class TableGeneratorHandler {
         this.context = context;
     }
 
-    // 클래스 레벨의 @TableGenerator와 @TableGenerators 처리
+    /**
+     * Processes class-level {@code @TableGenerator} and {@code @TableGenerators} annotations.
+     *
+     * @param typeElement The TypeElement of the class to process.
+     */
     public void processTableGenerators(TypeElement typeElement) {
         List<TableGenerator> tableGenerators = new ArrayList<>();
         TableGenerator single = typeElement.getAnnotation(TableGenerator.class);
@@ -31,7 +42,12 @@ public class TableGeneratorHandler {
         }
     }
 
-    // 단일 @TableGenerator 처리 공통 메서드
+    /**
+     * Common method to process a single {@code @TableGenerator} annotation.
+     *
+     * @param tg The TableGenerator annotation instance.
+     * @param element The element on which the annotation was found, for error reporting.
+     */
     public void processSingleGenerator(TableGenerator tg, Element element) {
         if (tg.name().isBlank()) {
             context.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
@@ -39,7 +55,8 @@ public class TableGeneratorHandler {
             return;
         }
         if (context.getSchemaModel().getTableGenerators().containsKey(tg.name())) {
-            return;  // 중복 시 무시
+            // Ignore if duplicate.
+            return;
         }
         context.getSchemaModel().getTableGenerators().computeIfAbsent(tg.name(), key ->
                 TableGeneratorModel.builder()

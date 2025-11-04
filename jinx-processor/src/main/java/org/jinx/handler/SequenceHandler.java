@@ -11,6 +11,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+/**
+ * Handles the processing of {@link SequenceGenerator} annotations.
+ * <p>
+ * This handler discovers {@code @SequenceGenerator} and {@code @SequenceGenerators}
+ * annotations at the class level and registers them as {@link SequenceModel} instances
+ * in the global schema model.
+ */
 public class SequenceHandler {
     private final ProcessingContext context;
 
@@ -18,7 +25,11 @@ public class SequenceHandler {
         this.context = context;
     }
 
-    // 클래스 레벨의 @SequenceGenerator와 @SequenceGenerators 처리
+    /**
+     * Processes class-level {@code @SequenceGenerator} and {@code @SequenceGenerators} annotations.
+     *
+     * @param typeElement The TypeElement of the class to process.
+     */
     public void processSequenceGenerators(TypeElement typeElement) {
         List<SequenceGenerator> sequenceGenerators = new ArrayList<>();
         SequenceGenerator single = typeElement.getAnnotation(SequenceGenerator.class);
@@ -31,7 +42,12 @@ public class SequenceHandler {
         }
     }
 
-    // 단일 @SequenceGenerator 처리 공통 메서드
+    /**
+     * Common method to process a single {@code @SequenceGenerator} annotation.
+     *
+     * @param sg The SequenceGenerator annotation instance.
+     * @param element The element on which the annotation was found, for error reporting.
+     */
     public void processSingleGenerator(SequenceGenerator sg, Element element) {
         if (sg.name().isBlank()) {
             context.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR,
@@ -39,7 +55,7 @@ public class SequenceHandler {
             return;
         }
         if (context.getSchemaModel().getSequences().containsKey(sg.name())) {
-            // 중복 시 조용히 넘어갈까..?
+            // Ignore if already registered.
             return;
         }
         context.getSchemaModel().getSequences().computeIfAbsent(sg.name(), key ->
