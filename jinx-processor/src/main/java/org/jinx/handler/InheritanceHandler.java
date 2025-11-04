@@ -12,6 +12,18 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
+/**
+ * Handles JPA inheritance strategies (@Inheritance).
+ *
+ * <p>This handler is responsible for:
+ * <ul>
+ *   <li>Resolving inheritance hierarchies for SINGLE_TABLE, JOINED, and TABLE_PER_CLASS strategies.</li>
+ *   <li>Processing @DiscriminatorColumn and @DiscriminatorValue for SINGLE_TABLE and JOINED strategies.</li>
+ *   <li>Creating foreign key relationships for JOINED inheritance.</li>
+ *   <li>Copying columns and constraints for TABLE_PER_CLASS inheritance.</li>
+ *   <li>Validating inheritance-related configurations.</li>
+ * </ul>
+ */
 public class InheritanceHandler {
     private final ProcessingContext context;
 
@@ -19,6 +31,12 @@ public class InheritanceHandler {
         this.context = context;
     }
 
+    /**
+     * Resolves the inheritance strategy for a given entity.
+     *
+     * @param typeElement The TypeElement of the entity.
+     * @param entityModel The EntityModel representing the entity.
+     */
     public void resolveInheritance(TypeElement typeElement, EntityModel entityModel) {
         Inheritance inheritance = typeElement.getAnnotation(Inheritance.class);
         if (inheritance == null) return;
@@ -44,13 +62,20 @@ public class InheritanceHandler {
         handleDiscriminator(typeElement, entityModel, inheritance.strategy());
     }
 
+    /**
+     * Handles the @DiscriminatorColumn for SINGLE_TABLE and JOINED strategies.
+     *
+     * @param typeElement The TypeElement of the entity.
+     * @param entityModel The EntityModel representing the entity.
+     * @param strategy The inheritance strategy.
+     */
     private void handleDiscriminator(TypeElement typeElement, EntityModel entityModel, InheritanceType strategy) {
         DiscriminatorColumn dc = typeElement.getAnnotation(DiscriminatorColumn.class);
 
         boolean isSingleTable = strategy == InheritanceType.SINGLE_TABLE;
         boolean isJoined = strategy == InheritanceType.JOINED;
 
-        // SINGLE_TABLE: 없으면 기본 생성, JOINED: 있으면 생성
+        // For SINGLE_TABLE, a discriminator is created by default if not present. For JOINED, it's created only if specified.
         if (dc == null && !isSingleTable) return;
 
         String rawName = (dc != null && !dc.name().isEmpty()) ? dc.name() : "DTYPE";
@@ -64,24 +89,24 @@ public class InheritanceHandler {
 
         List<String> errors = new ArrayList<>();
 
-        // 1) columnDefinition vs options 상호배타
+        // 1) columnDefinition and options are mutually exclusive.
         if (!columnDef.isBlank() && !options.isBlank()) {
             errors.add("@DiscriminatorColumn: columnDefinition and options cannot be used together");
         }
 
-        // 2) 중복 컬럼명 체크
+        // 2) Check for duplicate column names.
         if (entityModel.hasColumn(null, name)) {
             errors.add("Duplicate column name '" + name + "' for discriminator in entity " + entityModel.getEntityName());
         }
 
-        // 3) 길이/타입 유효성
+        // 3) Validate length and type.
         if ((dtype == DiscriminatorType.STRING || dtype == DiscriminatorType.CHAR) && len <= 0) {
             errors.add("Invalid discriminator length: " + len + " (must be > 0)");
         }
 
         boolean needCharAdjust = false;
         if (dtype == DiscriminatorType.CHAR && len != 1) {
-            // 경고 + 자동 보정
+            // Warn and auto-correct.
             needCharAdjust = true;
             len = 1;
         }
@@ -102,7 +127,7 @@ public class InheritanceHandler {
             );
         }
 
-        // 타입 매핑
+        // Type mapping.
         String javaType = switch (dtype) {
             case STRING, CHAR -> "java.lang.String";
             case INTEGER -> "java.lang.Integer";
@@ -126,6 +151,12 @@ public class InheritanceHandler {
         entityModel.putColumn(col);
     }
 
+    /**
+     * Checks for the use of IDENTITY generation strategy with TABLE_PER_CLASS inheritance, which can be problematic.
+     *
+     * @param typeElement The TypeElement of the entity.
+     * @param entityModel The EntityModel representing the entity.
+     */
     private void checkIdentityStrategy(TypeElement typeElement, EntityModel entityModel) {
         for (Element enclosed : typeElement.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.FIELD) continue;
@@ -146,6 +177,12 @@ public class InheritanceHandler {
         }
     }
 
+    /**
+     * Finds and processes all child entities for a parent using JOINED inheritance.
+     *
+     * @param parentEntity The parent entity model.
+     * @param parentType The parent entity's TypeElement.
+     */
     private void findAndProcessJoinedChildren(EntityModel parentEntity, TypeElement parentType) {
         if (context.findAllPrimaryKeyColumns(parentEntity).isEmpty()) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
@@ -161,7 +198,7 @@ public class InheritanceHandler {
                     String fqcn = childEntity.getFqcn();
                     TypeElement childType = (fqcn == null || fqcn.isBlank()) ? null : context.getElementUtils().getTypeElement(fqcn);
                     if (childType == null) {
-                        // 타입이 없으면 스킵(원인 로깅은 선택)
+                        // Skip if type cannot be resolved (logging the reason is optional).
                         context.getMessager().printMessage(
                                 Diagnostic.Kind.NOTE,
                                 "Skip inheritance child: cannot resolve TypeElement for " + fqcn);
@@ -172,7 +209,7 @@ public class InheritanceHandler {
                             processSingleJoinedChild(childEntity, parentEntity, childType);
                             checkIdentityStrategy(childType, childEntity);
                         } catch (IllegalStateException ex) {
-                            // 이미 ERROR/NOTE 로깅했다면 여기선 삼키고 진행
+                            // If already logged as ERROR/NOTE, swallow here to proceed.
                             childEntity.setValid(false);
                         }
                     }
@@ -182,13 +219,15 @@ public class InheritanceHandler {
     public record JoinPair(ColumnModel parent, String childName) {}
     
     /**
-     * 타입명을 정규화하여 비교할 수 있도록 합니다.
-     * 예: "java.lang.Long" -> "Long", 박스됨 타입 처리 등
+     * Normalizes a Java type name for comparison.
+     * e.g., "java.lang.Long" -> "long", handles boxed types.
+     * @param javaType The Java type to normalize.
+     * @return The normalized type name.
      */
     private String normalizeType(String javaType) {
         if (javaType == null) return null;
         String jt = javaType.trim();
-        // 기본 타입 정규화
+        // Normalize primitive wrapper types.
         return switch (jt) {
             case "java.lang.Boolean" -> "boolean";
             case "java.lang.Byte" -> "byte";
@@ -199,13 +238,20 @@ public class InheritanceHandler {
             case "java.lang.Double" -> "double";
             case "java.lang.Character" -> "char";
             default -> {
-                // 패키지명 제거
+                // Remove package name.
                 int lastDot = javaType.lastIndexOf('.');
                 yield lastDot >= 0 ? javaType.substring(lastDot + 1) : javaType;
             }
         };
     }
 
+    /**
+     * Processes a single child entity in a JOINED inheritance hierarchy.
+     *
+     * @param childEntity The child entity model.
+     * @param parentEntity The parent entity model.
+     * @param childType The child entity's TypeElement.
+     */
     private void processSingleJoinedChild(EntityModel childEntity, EntityModel parentEntity, TypeElement childType) {
         List<ColumnModel> parentPkCols = context.findAllPrimaryKeyColumns(parentEntity);
         if (parentPkCols.isEmpty()) {
@@ -219,7 +265,7 @@ public class InheritanceHandler {
             return;
         }
 
-        // 1) 검증 단계: 기존 컬럼과 타입/PK/nullable 조건을 모두 점검하고 추가될 컬럼은 pending 목록에만 만든다.
+        // 1) Validation phase: Check existing columns for type/PK/nullable compatibility and create a pending list for new columns.
         List<ColumnModel> pendingAdds = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         String childTable = childEntity.getTableName();
@@ -263,7 +309,7 @@ public class InheritanceHandler {
             pendingAdds.add(add);
         }
 
-        // 2) 커밋 단계: 오류가 없을 때만 실제 childEntity에 put
+        // 2) Commit phase: Only add columns to the child entity if no errors occurred.
         if (!errors.isEmpty()) {
             errors.forEach(msg -> context.getMessager().printMessage(Diagnostic.Kind.ERROR, msg, childType));
             childEntity.setValid(false);
@@ -272,23 +318,23 @@ public class InheritanceHandler {
 
         pendingAdds.forEach(childEntity::putColumn);
 
-        // @ForeignKey 어노테이션 처리
+        // Process @ForeignKey annotation.
         ForeignKeyInfo fkInfo = extractForeignKeyInfo(childType);
 
-        // FK 제약조건 이름 결정
+        // Determine FK constraint name.
         String constraintName;
         if (fkInfo.explicitName != null && !fkInfo.explicitName.isEmpty()) {
-            // 명시적으로 지정된 이름 사용
+            // Use explicitly specified name.
             constraintName = fkInfo.explicitName;
         } else {
-            // 자동 생성 (JOINED 상속 전용 네이밍으로 충돌 방지)
+            // Auto-generate (use JOINED inheritance-specific naming to avoid conflicts).
             constraintName = context.getNaming().fkName(
                     childEntity.getTableName(),
                     joinPairs.stream().map(JoinPair::childName).toList(),
                     parentEntity.getTableName(),
                     joinPairs.stream().map(j -> j.parent().getColumnName()).toList());
 
-            // 중복 방지: 기존 제약조건명과 충돌 시 suffix 추가
+            // Avoid duplicates: add a suffix if the constraint name conflicts with an existing one.
             constraintName = ensureUniqueConstraintName(childEntity, constraintName);
         }
 
@@ -326,8 +372,11 @@ public class InheritanceHandler {
     }
 
     /**
-     * 중복되지 않는 제약조건 이름을 보장합니다.
-     * 충돌 시 _1, _2 등의 suffix를 추가합니다.
+     * Ensures a unique constraint name by adding a suffix (_1, _2, etc.) if a conflict is found.
+     *
+     * @param entity The entity model.
+     * @param baseName The base name for the constraint.
+     * @return A unique constraint name.
      */
     private String ensureUniqueConstraintName(EntityModel entity, String baseName) {
         String candidate = baseName;
@@ -337,7 +386,7 @@ public class InheritanceHandler {
             candidate = baseName + "_" + suffix;
             suffix++;
             if (suffix > 100) {
-                // 무한루프 방지
+                // Prevent infinite loops.
                 context.getMessager().printMessage(Diagnostic.Kind.WARNING,
                     "Too many constraint name collisions for base name: " + baseName);
                 break;
@@ -348,7 +397,11 @@ public class InheritanceHandler {
     }
 
     /**
-     * 제약조건 이름이 이미 사용 중인지 확인합니다.
+     * Checks if a constraint name is already in use within an entity.
+     *
+     * @param entity The entity model.
+     * @param name The constraint name to check.
+     * @return True if the name is used, false otherwise.
      */
     private boolean isConstraintNameUsed(EntityModel entity, String name) {
         String normalized = name.trim().toLowerCase(Locale.ROOT);
@@ -358,12 +411,15 @@ public class InheritanceHandler {
     }
 
     /**
-     * @PrimaryKeyJoinColumn의 @ForeignKey 정보를 추출합니다.
+     * Extracts @ForeignKey information from @PrimaryKeyJoinColumn annotations.
+     *
+     * @param childType The child entity's TypeElement.
+     * @return A ForeignKeyInfo object containing the extracted information.
      */
     private ForeignKeyInfo extractForeignKeyInfo(TypeElement childType) {
         ForeignKeyInfo info = new ForeignKeyInfo();
 
-        // @PrimaryKeyJoinColumns 확인
+        // Check for @PrimaryKeyJoinColumns.
         PrimaryKeyJoinColumns multiAnno = childType.getAnnotation(PrimaryKeyJoinColumns.class);
         if (multiAnno != null && multiAnno.value().length > 0) {
             for (PrimaryKeyJoinColumn pkjc : multiAnno.value()) {
@@ -372,7 +428,7 @@ public class InheritanceHandler {
             return info;
         }
 
-        // @PrimaryKeyJoinColumn 확인
+        // Check for @PrimaryKeyJoinColumn.
         PrimaryKeyJoinColumn singleAnno = childType.getAnnotation(PrimaryKeyJoinColumn.class);
         if (singleAnno != null) {
             processPrimaryKeyJoinColumnForeignKey(singleAnno, info, childType);
@@ -382,18 +438,22 @@ public class InheritanceHandler {
     }
 
     /**
-     * @PrimaryKeyJoinColumn의 foreignKey 속성을 처리합니다.
+     * Processes the foreignKey attribute of a @PrimaryKeyJoinColumn.
+     *
+     * @param pkjc The @PrimaryKeyJoinColumn annotation.
+     * @param info The ForeignKeyInfo object to populate.
+     * @param childType The child entity's TypeElement for error reporting.
      */
     private void processPrimaryKeyJoinColumnForeignKey(PrimaryKeyJoinColumn pkjc, ForeignKeyInfo info, TypeElement childType) {
         ForeignKey fk = pkjc.foreignKey();
         if (fk == null) return;
 
-        // ConstraintMode.NO_CONSTRAINT 확인
+        // Check for ConstraintMode.NO_CONSTRAINT.
         if (fk.value() == ConstraintMode.NO_CONSTRAINT) {
             info.noConstraint = true;
         }
 
-        // 명시적 이름 확인
+        // Check for an explicit name.
         String name = fk.name();
         if (name != null && !name.isEmpty()) {
             if (info.explicitName == null) {
@@ -407,13 +467,20 @@ public class InheritanceHandler {
     }
 
     /**
-     * @ForeignKey 정보를 담는 내부 클래스
+     * Internal class to hold @ForeignKey information.
      */
     private static class ForeignKeyInfo {
         boolean noConstraint = false;
         String explicitName = null;
     }
 
+    /**
+     * Resolves the join pairs for a JOINED inheritance relationship based on @PrimaryKeyJoinColumn annotations.
+     *
+     * @param childType The child entity's TypeElement.
+     * @param parentPkCols The list of primary key columns from the parent entity.
+     * @return A list of JoinPair objects, or null if there is a configuration error.
+     */
     private List<JoinPair> resolvePrimaryKeyJoinPairs(TypeElement childType, List<ColumnModel> parentPkCols) {
         List<PrimaryKeyJoinColumn> annotations = collectPrimaryKeyJoinColumns(childType);
         if (annotations.isEmpty()) {
@@ -427,7 +494,7 @@ public class InheritanceHandler {
                     .toList();
         }
 
-        // 개수 검증
+        // Validate annotation count.
         if (annotations.size() != parentPkCols.size()) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     String.format("JOINED inheritance PK mapping mismatch in %s: expected %d columns, but got %d",
@@ -454,6 +521,12 @@ public class InheritanceHandler {
         return result;
     }
 
+    /**
+     * Collects all @PrimaryKeyJoinColumn annotations from a TypeElement, handling both single and repeated annotations.
+     *
+     * @param childType The TypeElement to inspect.
+     * @return A list of @PrimaryKeyJoinColumn annotations.
+     */
     private List<PrimaryKeyJoinColumn> collectPrimaryKeyJoinColumns(TypeElement childType) {
         List<PrimaryKeyJoinColumn> result = new ArrayList<>();
 
@@ -470,6 +543,14 @@ public class InheritanceHandler {
         return result;
     }
 
+    /**
+     * Resolves the parent primary key column referenced by a @PrimaryKeyJoinColumn annotation.
+     *
+     * @param parentPkCols The list of parent primary key columns.
+     * @param anno The @PrimaryKeyJoinColumn annotation.
+     * @param index The index of the annotation, used for positional matching.
+     * @return The referenced parent ColumnModel, or null if not found.
+     */
     private ColumnModel resolveParentReference(List<ColumnModel> parentPkCols, PrimaryKeyJoinColumn anno, int index) {
         if (!anno.referencedColumnName().trim().isEmpty()) {
             Optional<ColumnModel> found = parentPkCols.stream()
@@ -485,6 +566,12 @@ public class InheritanceHandler {
         return parentPkCols.get(index);
     }
 
+    /**
+     * Finds and processes all child entities for a parent using TABLE_PER_CLASS inheritance.
+     *
+     * @param parentEntity The parent entity model.
+     * @param parentType The parent entity's TypeElement.
+     */
     private void findAndProcessTablePerClassChildren(EntityModel parentEntity, TypeElement parentType) {
         context.getSchemaModel().getEntities().values().stream()
                 .filter(childCandidate -> !childCandidate.getEntityName().equals(parentEntity.getEntityName()))
@@ -502,6 +589,12 @@ public class InheritanceHandler {
         return (src == null) ? java.util.Collections.emptyList() : new java.util.ArrayList<>(src);
     }
 
+    /**
+     * Processes a single child entity in a TABLE_PER_CLASS inheritance hierarchy by copying parent properties.
+     *
+     * @param childEntity The child entity model.
+     * @param parentEntity The parent entity model.
+     */
     private void processSingleTablePerClassChild(EntityModel childEntity, EntityModel parentEntity) {
         childEntity.setParentEntity(parentEntity.getEntityName());
         childEntity.setInheritance(InheritanceType.TABLE_PER_CLASS);

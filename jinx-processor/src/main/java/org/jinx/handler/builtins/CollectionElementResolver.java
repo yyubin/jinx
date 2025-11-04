@@ -10,6 +10,9 @@ import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 import java.util.Map;
 
+/**
+ * A {@link org.jinx.handler.ColumnResolver} for basic type elements within an {@code @ElementCollection}.
+ */
 public class CollectionElementResolver extends AbstractColumnResolver {
 
     public CollectionElementResolver(ProcessingContext context) {
@@ -22,7 +25,7 @@ public class CollectionElementResolver extends AbstractColumnResolver {
         ColumnModel.ColumnModelBuilder builder = ColumnModel.builder()
                 .columnName(columnName)
                 .javaType(type.toString())
-                .isPrimaryKey(false) // 컬렉션 요소는 기본적으로 PK가 아님
+                .isPrimaryKey(false) // Collection elements are not part of the primary key by default.
                 .isNullable(column == null || column.nullable())
                 .length(column != null ? column.length() : 255)
                 .precision(column != null ? column.precision() : 0)

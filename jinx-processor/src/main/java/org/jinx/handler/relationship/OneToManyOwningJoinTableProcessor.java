@@ -63,7 +63,7 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
             return;
         }
 
-        // attr.isCollection()으로 이미 검증했으므로 중복 Collection 검사 제거
+        // Duplicate Collection check removed - already validated by attr.isCollection()
 
         Optional<TypeElement> targetEntityElementOpt = support.resolveTargetEntity(attr, null, null, oneToMany, null);
         if (targetEntityElementOpt.isEmpty()) return;
@@ -191,19 +191,19 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
                 ownerFkConstraint, targetFkConstraint, ownerNoConstraint, inverseNoConstraint
         );
 
-        // JoinTable 이름이 owner/referenced 엔티티 테이블명과 충돌하는지 검증
+        // Validate that JoinTable name does not conflict with owner/referenced entity table names
         if (!joinSupport.validateJoinTableNameConflict(joinTableName, ownerEntity, targetEntity, attr)) return;
 
         EntityModel existing = context.getSchemaModel().getEntities().get(joinTableName);
         if (existing != null) {
-            // 조인테이블 이름 충돌 검증: 기존 엔티티가 진짜 조인테이블인지 확인
+            // Validate join table name conflict: check if existing entity is truly a join table
             if (existing.getTableType() != EntityModel.TableType.JOIN_TABLE) {
                 context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                         "JoinTable name '" + joinTableName + "' conflicts with a non-join entity/table.", attr.elementForDiagnostics());
                 return;
             }
 
-            // 기존 JoinTable의 FK 컬럼셋이 일치하는지 검증 (스키마 일관성 보장)
+            // Validate FK column set consistency of existing JoinTable (ensures schema consistency)
             if (!joinSupport.validateJoinTableFkConsistency(existing, details, attr)) return;
 
             joinSupport.ensureJoinTableColumns(existing, ownerPks, targetPks, ownerFkToPkMap, targetFkToPkMap, attr);
@@ -257,7 +257,7 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
         Map<String, String> mapping = new LinkedHashMap<>();
         if (joinColumns == null || joinColumns.length == 0) {
             for (ColumnModel pk : referencedPks) {
-                // 조인테이블의 FK 네이밍: 참조 테이블명 기반 (entityTableName + referencedPK)
+                // Join table FK naming: based on referenced table name (entityTableName + referencedPK)
                 String fk = context.getNaming().foreignKeyColumnName(entityTableName, pk.getColumnName());
                 if (mapping.containsKey(fk)) {
                     context.getMessager().printMessage(Diagnostic.Kind.ERROR,
@@ -278,7 +278,7 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
                             "referencedColumnName '" + pkName + "' is not a primary key column of " + entityTableName + " (side=" + side + ")", attr.elementForDiagnostics());
                     return null;
                 }
-                // 조인테이블의 FK 네이밍: 참조 테이블명 기반 (entityTableName + referencedPK)
+                // Join table FK naming: based on referenced table name (entityTableName + referencedPK)
                 String fkName = jc.name().isEmpty()
                         ? context.getNaming().foreignKeyColumnName(entityTableName, pkName)
                         : jc.name();

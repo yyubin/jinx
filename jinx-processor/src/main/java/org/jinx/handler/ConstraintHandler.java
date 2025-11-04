@@ -15,6 +15,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+/**
+ * Handles the processing of custom {@link Constraint} and {@link Constraints} annotations.
+ * <p>
+ * This handler discovers constraint annotations on elements and attributes,
+ * converts them into {@link ConstraintModel} instances, and adds them to a list
+ * for further processing by other handlers.
+ */
 public class ConstraintHandler {
     private final ProcessingContext context;
 
@@ -22,6 +29,14 @@ public class ConstraintHandler {
         this.context = context;
     }
 
+    /**
+     * Processes {@code @Constraint} and {@code @Constraints} annotations on a given {@link Element}.
+     *
+     * @param element The element to inspect for annotations.
+     * @param fieldName The name of the field associated with the constraint.
+     * @param constraints The list to which the created {@link ConstraintModel}s will be added.
+     * @param tableName The name of the table for the constraint.
+     */
     public void processConstraints(Element element, String fieldName, List<ConstraintModel> constraints, String tableName) {
         Constraint c1 = element.getAnnotation(Constraint.class);
         Constraints cs = element.getAnnotation(Constraints.class);
@@ -45,7 +60,7 @@ public class ConstraintHandler {
                     .name(nullIfBlank(c.value()))
                     .type(type)
                     .columns(fieldName != null ? List.of(fieldName) : List.of())
-                    .checkClause(checkExpr) // <- nullable
+                    .checkClause(checkExpr) // can be nullable
                     .build();
 
             if (c.onDelete() != OnDeleteAction.NO_ACTION) m.setOnDelete(c.onDelete());
@@ -55,6 +70,14 @@ public class ConstraintHandler {
         }
     }
 
+    /**
+     * Processes {@code @Constraint} and {@code @Constraints} annotations on a given {@link AttributeDescriptor}.
+     *
+     * @param attr The attribute descriptor to inspect for annotations.
+     * @param fieldName The name of the field associated with the constraint.
+     * @param constraints The list to which the created {@link ConstraintModel}s will be added.
+     * @param tableName The name of the table for the constraint.
+     */
     public void processConstraints(AttributeDescriptor attr, String fieldName, List<ConstraintModel> constraints, String tableName) {
         Constraint c1 = attr.getAnnotation(Constraint.class);
         Constraints cs = attr.getAnnotation(Constraints.class);
@@ -78,7 +101,7 @@ public class ConstraintHandler {
                     .name(nullIfBlank(c.value()))
                     .type(type)
                     .columns(List.of(fieldName))
-                    .checkClause(checkExpr) // <- nullable
+                    .checkClause(checkExpr) // can be nullable
                     .build();
 
             if (c.onDelete() != OnDeleteAction.NO_ACTION) m.setOnDelete(c.onDelete());

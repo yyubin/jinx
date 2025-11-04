@@ -46,35 +46,35 @@ public class EntityHandler {
         // Clear mappedBy visited set for each new entity to allow proper cycle detection
         context.clearMappedByVisited();
 
-        // 1. 엔티티 기본 정보 설정
+        // 1. Set up basic entity information
         EntityModel entity = createEntityModel(typeElement);
         if (entity == null) return;
 
-        // 가등록: 부모/자식 간 상호 조회 가능하게
+        // Pre-register: enable mutual lookups between parent/child entities
         context.getSchemaModel().getEntities().putIfAbsent(entity.getEntityName(), entity);
 
-        // 2. 테이블 메타데이터 처리
+        // 2. Process table metadata
         processTableMetadata(typeElement, entity);
 
-        // 3. 시퀀스/테이블 제너레이터 처리
+        // 3. Process sequence/table generators
         processGenerators(typeElement);
 
-        // 4. 제약조건 처리
+        // 4. Process constraints
         processEntityConstraints(typeElement, entity);
 
-        // 5. (REMOVED) 상속 필드 주입 - AttributeDescriptor 기반 처리에서 통합됨
+        // 5. (REMOVED) Inheritance field injection - integrated in AttributeDescriptor-based processing
 
-        // 6. 보조 테이블 이름 사전 등록 (검증용)
+        // 6. Pre-register secondary table names (for validation)
         List<SecondaryTable> secondaryTableAnns = collectSecondaryTables(typeElement);
         registerSecondaryTableNames(secondaryTableAnns, entity);
 
-        // 7. 복합키 처리 (@EmbeddedId)
+        // 7. Process composite keys (@EmbeddedId)
         if (!processCompositeKeys(typeElement, entity)) return;
 
-        // 8. 필드 처리 (AttributeDescriptor 기반) - MappedSuperclass 속성 포함
+        // 8. Process fields (AttributeDescriptor-based) - includes MappedSuperclass attributes
         processFieldsWithAttributeDescriptor(typeElement, entity);
 
-        // 10. 보조 테이블 조인 및 상속 관계 처리 (PK 확정 후)
+        // 10. Process secondary table joins and inheritance relationships (after PK is determined)
         processSecondaryTableJoins(secondaryTableAnns, typeElement, entity);
         processInheritanceJoin(typeElement, entity);
 
@@ -172,7 +172,7 @@ public class EntityHandler {
                 .orElse(typeElement.getSimpleName().toString());
         String entityName = typeElement.getQualifiedName().toString();
 
-        // 중복 체크
+        // Check for duplicates
         if (context.getSchemaModel().getEntities().containsKey(entityName)) {
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Duplicate entity found: " + entityName, typeElement);
@@ -220,16 +220,16 @@ public class EntityHandler {
         Inheritance parentInheritance = parentType.getAnnotation(Inheritance.class);
         if (parentInheritance == null || parentInheritance.strategy() != InheritanceType.JOINED) return;
 
-        // 부모 엔티티 모델/PK 컬럼 조회
+        // Lookup parent entity model/PK columns
         EntityModel parentEntity = context.getSchemaModel().getEntities()
                 .get(parentType.getQualifiedName().toString());
         String childName = childEntity.getEntityName();
         if (parentEntity == null) {
             if (context.getDeferredNames().contains(childName)) {
-                return; // 이미 재시도 대기 중
+                return; // Already waiting for retry
             }
             context.getDeferredNames().add(childName);
-            context.getDeferredEntities().add(childEntity); // 부모가 아직 처리되지 않음 -> 나중에 재시도
+            context.getDeferredEntities().add(childEntity); // Parent not yet processed -> retry later
             return;
         }
 
@@ -268,7 +268,7 @@ public class EntityHandler {
         }
     }
 
-    // 다층 상속 방어 유틸
+    // Utility to protect against multi-level inheritance
     private Optional<TypeElement> findNearestJoinedParentEntity(TypeElement type) {
         Set<String> seen = new java.util.HashSet<>();
         TypeMirror sup = type.getSuperclass();
@@ -278,7 +278,7 @@ public class EntityHandler {
             String qn = p.getQualifiedName().toString();
 
             if (!seen.add(qn)) {
-                // 선택: warning으로 남기고 중단
+                // Log warning and stop
                 context.getMessager().printMessage(
                         javax.tools.Diagnostic.Kind.WARNING,
                         "Detected inheritance cycle near: " + qn + " while scanning for JOINED parent of " +
@@ -287,22 +287,22 @@ public class EntityHandler {
                 break;
             }
 
-            // 엔티티가 아니면 계속 상위로
+            // Continue upward if not an entity
             if (p.getAnnotation(jakarta.persistence.Entity.class) == null) {
                 sup = p.getSuperclass();
                 continue;
             }
 
-            // 엔티티면 상속 전략 확인
+            // Check inheritance strategy if it's an entity
             jakarta.persistence.Inheritance inh = p.getAnnotation(jakarta.persistence.Inheritance.class);
             if (inh != null) {
                 switch (inh.strategy()) {
                     case JOINED:
-                        // 가장 가까운 JOINED 부모 반환
+                        // Return nearest JOINED parent
                         return Optional.of(p);
                     case SINGLE_TABLE:
                     case TABLE_PER_CLASS:
-                        // JOINED 탐색과 충돌 → 에러 및 종료
+                        // Conflict with JOINED search → error and terminate
                         context.getMessager().printMessage(
                                 javax.tools.Diagnostic.Kind.ERROR,
                                 "Found explicit inheritance strategy '" + inh.strategy() +
@@ -312,11 +312,11 @@ public class EntityHandler {
                         );
                         return Optional.empty();
                     default:
-                        // 미래 확장 대비: 그냥 계속
+                        // For future expansion: just continue
                         break;
                 }
             }
-            // 명시적 @Inheritance 없으면 계속 상위로
+            // Continue upward if no explicit @Inheritance
             sup = p.getSuperclass();
         }
         return Optional.empty();
@@ -328,7 +328,7 @@ public class EntityHandler {
         List<String> refCols = new ArrayList<>();
 
         if (pkjcs.isEmpty()) {
-            // pkjcs가 없으면 부모 테이블의 PK를 그대로 상속받음
+            // If no pkjcs, inherit parent table's PK as-is
             for (ColumnModel pkCol : parentPkCols) {
                 childCols.add(pkCol.getColumnName());
                 refCols.add(pkCol.getColumnName());
@@ -370,16 +370,16 @@ public class EntityHandler {
                 .build();
         entity.getRelationships().put(rel.getConstraintName(), rel);
 
-        // 보조 테이블의 경우엔 일반적으로 자식(보조) 테이블 쪽 컬럼을 생성해야 함
+        // For secondary tables, typically need to create columns on child (secondary) table side
         ensureChildPkColumnsExist(entity, tableName, childCols, parentPkCols);
 
-        // FK 인덱스 생성 (PK/UNIQUE로 커버되지 않은 경우에만)
+        // Create FK index (only if not covered by PK/UNIQUE)
         relationshipSupport.addForeignKeyIndex(entity, childCols, tableName);
 
         return true;
     }
 
-    // 기존 private 메서드들 (변경 없음)
+    // Existing private methods (unchanged)
     private void processTableLike(TableLike tableLike, EntityModel entity) {
         tableLike.getSchema().ifPresent(entity::setSchema);
         tableLike.getCatalog().ifPresent(entity::setCatalog);
@@ -485,22 +485,22 @@ public class EntityHandler {
             if (existing.getComment() == null && col.getComment() != null) existing.setComment(col.getComment());
         }
 
-        // @Column(unique=true) → UNIQUE 제약 자동 추가
+        // @Column(unique=true) → automatically add UNIQUE constraint
         if (columnAnn != null && columnAnn.unique()) {
             context.getConstraintManager().addUniqueIfAbsent(
                     entity,
                     targetTable,
                     List.of(col.getColumnName()),
-                    Optional.empty() // ConstraintManager 내부에서 .orElse(null)로 표준화
+                    Optional.empty() // Normalized to .orElse(null) inside ConstraintManager
             );
         }
 
-        // 커스텀 제약 수집
+        // Collect custom constraints
         List<ConstraintModel> collected = new ArrayList<>();
         processConstraints(descriptor.elementForDiagnostics(), col.getColumnName(), collected, targetTable);
 
         for (ConstraintModel c : collected) {
-            // where / name null-safe 정규화
+            // Normalize where / name to null-safe
             String where = normalizeBlankToNull(c.getWhere());
             String name  = normalizeBlankToNull(c.getName());
 
@@ -517,7 +517,7 @@ public class EntityHandler {
                             .build());
                 }
                 case UNIQUE -> {
-                    // ConstraintManager는 Optional 받아도 되고 내부에서 null 변환
+                    // ConstraintManager accepts Optional and converts to null internally
                     context.getConstraintManager().addUniqueIfAbsent(
                             entity,
                             c.getTableName(),
@@ -535,14 +535,14 @@ public class EntityHandler {
                             entity.getSchema(),
                             c.getTableName(),
                             c.getColumns(),
-                            where // 이미 null 표준화됨
+                            where // Already normalized to null
                     );
 
                     c.setName(pkName);
                     entity.getConstraints().putIfAbsent(key, c);
                 }
                 case NOT_NULL, CHECK, DEFAULT -> {
-                    // 이름 자동 생성
+                    // Auto-generate name
                     if (name == null) {
                         name = switch (c.getType()) {
                             case CHECK    -> context.getNaming().ckName(c.getTableName(), c.getColumns());
@@ -560,11 +560,11 @@ public class EntityHandler {
                             c.getColumns(),
                             where
                     );
-                    c.setWhere(where); // 빈 문자열 → null로 정규화 반영
+                    c.setWhere(where); // Normalize empty string → null
                     entity.getConstraints().putIfAbsent(key, c);
                 }
                 default -> {
-                    // 기타 타입은 현재 처리 없음
+                    // Other types currently not processed
                 }
             }
         }
@@ -618,19 +618,19 @@ public class EntityHandler {
     }
 
     /**
-     * @MapsId 처리 전에 의존성이 해결되지 않은 상태인지 확인
-     * 재시도가 필요한 일시적 문제인지 판단 (참조 엔티티 준비 상태만 확인)
+     * Checks if dependencies are unresolved before processing @MapsId
+     * Determines if retry is needed for temporary issues (checks only referenced entity readiness)
      */
     private boolean hasUnresolvedMapsIdDeps(TypeElement typeElement, EntityModel child) {
-        // 이미 invalid된 엔티티는 재시도 의미 없음
+        // No point retrying already invalid entities
         if (!child.isValid()) {
             return false;
         }
 
-        // 자기 자신의 PK는 @MapsId 승격에서 생성/승격하므로 재시도 조건에서 제외
-        // (교착 위험 방지: @MapsId 전용 PK의 경우 이 단계에서 승격됨)
+        // Self PK is created/promoted in @MapsId promotion, exclude from retry condition
+        // (Prevents deadlock: @MapsId-only PKs are promoted at this stage)
 
-        // @MapsId 관계 속성들의 참조 엔티티 의존성 확인
+        // Check referenced entity dependencies for @MapsId relationship attributes
         List<AttributeDescriptor> mapsIdDescriptors = context.getCachedDescriptors(typeElement).stream()
                 .filter(d -> d.hasAnnotation(MapsId.class) && isRelationshipAttribute(d))
                 .toList();
@@ -639,35 +639,35 @@ public class EntityHandler {
             ManyToOne manyToOne = descriptor.getAnnotation(ManyToOne.class);
             OneToOne oneToOne = descriptor.getAnnotation(OneToOne.class);
 
-            // 참조 엔티티 타입 해석
+            // Resolve referenced entity type
             Optional<TypeElement> refElementOpt =
                     relationshipSupport.resolveTargetEntity(descriptor, manyToOne, oneToOne, null, null);
 
             if (refElementOpt.isEmpty()) {
-                return true; // target TypeElement 아직 없음 → 재시도 필요
+                return true; // target TypeElement not yet available → retry needed
             }
 
             TypeElement refElement = refElementOpt.get();
             String refEntityName = refElement.getQualifiedName().toString();
             EntityModel refEntity = context.getSchemaModel().getEntities().get(refEntityName);
 
-            // 참조 엔티티가 아직 등록되지 않음
+            // Referenced entity not yet registered
             if (refEntity == null) {
-                return true; // target EntityModel 아직 없음 → 재시도 필요
+                return true; // target EntityModel not yet available → retry needed
             }
 
-            // 참조 엔티티가 invalid 상태 (영구 오류)
+            // Referenced entity is in invalid state (permanent error)
             if (!refEntity.isValid()) {
-                return false; // 영구 실패 → 재시도X
+                return false; // permanent failure → no retry
             }
 
-            // 참조 엔티티의 PK가 아직 확정되지 않음
+            // Referenced entity's PK not yet determined
             if (context.findAllPrimaryKeyColumns(refEntity).isEmpty()) {
-                return true; // target PK 미확정 → 재시도 필요
+                return true; // target PK not determined → retry needed
             }
         }
 
-        return false; // 준비 완료 → 이번 라운드에서 승격 처리
+        return false; // Ready → process promotion in this round
     }
 
 
@@ -710,8 +710,8 @@ public class EntityHandler {
     private void ensureChildPkColumnsExist(
             EntityModel childEntity,
             String childTableName,
-            List<String> childCols,              // 자식 측 컬럼명들 (FK=PK)
-            List<ColumnModel> parentPkCols) {    // 동일 순서의 부모 PK 메타
+            List<String> childCols,              // Child-side column names (FK=PK)
+            List<ColumnModel> parentPkCols) {    // Parent PK metadata in same order
 
         int n = childCols.size();
         for (int i = 0; i < n; i++) {
@@ -723,8 +723,8 @@ public class EntityHandler {
                 ColumnModel newCol = ColumnModel.builder()
                         .columnName(childColName)
                         .tableName(childTableName)
-                        .isPrimaryKey(true)                 // 또는 setPrimaryKey(true)
-                        .isNullable(false)                  // PK는 NOT NULL 고정
+                        .isPrimaryKey(true)                 // or setPrimaryKey(true)
+                        .isNullable(false)                  // PK is always NOT NULL
                         .javaType(parentCol.getJavaType())
                         .length(parentCol.getLength())
                         .precision(parentCol.getPrecision())
@@ -735,11 +735,11 @@ public class EntityHandler {
                 childEntity.putColumn(newCol);
             } else {
                 existing.setPrimaryKey(true);
-                existing.setNullable(false);              // PK는 NOT NULL로 강제
+                existing.setNullable(false);              // Force PK to NOT NULL
                 if (existing.getTableName() == null) {
                     existing.setTableName(childTableName);
                 }
-                // 타입 메타가 비어있다면 부모 값 보강
+                // Supplement with parent values if type metadata is empty
                 if (existing.getJavaType() == null) existing.setJavaType(parentCol.getJavaType());
                 if (existing.getLength() == 0)   existing.setLength(parentCol.getLength());
                 if (existing.getPrecision() == 0) existing.setPrecision(parentCol.getPrecision());

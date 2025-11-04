@@ -1,6 +1,5 @@
 package org.jinx.handler.builtins;
 
-import jakarta.persistence.CheckConstraint;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Index;
 import jakarta.persistence.UniqueConstraint;
@@ -15,6 +14,10 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * An adapter that wraps a {@link CollectionTable} annotation to expose its properties
+ * through the {@link TableLike} interface.
+ */
 public class CollectionTableAdapter implements TableLike {
     private final CollectionTable collectionTable;
     private final ProcessingContext context;
@@ -38,7 +41,7 @@ public class CollectionTableAdapter implements TableLike {
         if (name.isEmpty()) {
             return (effectiveTableName != null && !effectiveTableName.isEmpty())
                    ? effectiveTableName
-                   : "_anonymous_collection_"; // 안전 폴백
+                   : "_anonymous_collection_"; // Safe fallback.
         }
         return name;
     }
@@ -57,18 +60,18 @@ public class CollectionTableAdapter implements TableLike {
     public List<IndexModel> getIndexes() {
         List<IndexModel> indexes = new ArrayList<>();
         for (Index index : collectionTable.indexes()) {
-            // 먼저 컬럼명을 트리밍하고 빈 토큰 제거
+            // First, trim column names and remove empty tokens.
             List<String> columnNames = Arrays.stream(index.columnList().split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .toList();
             
-            // 빈 컬럼 리스트인 경우 건너뛰기
+            // Skip if the column list is empty.
             if (columnNames.isEmpty()) {
                 continue;
             }
             
-            // 트리밍된 컬럼 리스트로 인덱스명 생성
+            // Generate index name from the trimmed column list.
             String indexName = index.name().isEmpty()
                 ? context.getNaming().ixName(getName(), columnNames)
                 : index.name();
@@ -87,7 +90,7 @@ public class CollectionTableAdapter implements TableLike {
     public List<ConstraintModel> getConstraints() {
         List<ConstraintModel> constraints = new ArrayList<>();
         
-        // UniqueConstraints 처리
+        // Process UniqueConstraints.
         for (UniqueConstraint uc : collectionTable.uniqueConstraints()) {
             List<String> cols = Arrays.stream(uc.columnNames())
                 .map(String::trim)
