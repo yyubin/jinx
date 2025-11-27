@@ -18,7 +18,7 @@ public class EntityModificationDiffer implements Differ {
 
     public EntityModificationDiffer(CaseNormalizer normalizer) {
         this.componentDiffers = java.util.List.of(
-                new ColumnDiffer(),
+                new SimpleColumnDiffer(),
                 new IndexDiffer(normalizer),
                 new ConstraintDiffer(),
                 new RelationshipDiffer(normalizer)
