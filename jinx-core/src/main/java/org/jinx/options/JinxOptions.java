@@ -1,8 +1,8 @@
 package org.jinx.options;
 
 /**
- * Jinx 전체에서 사용하는 설정 옵션 상수들을 정의합니다.
- * CLI와 Annotation Processor에서 동일한 키를 사용하여 설정 일관성을 보장합니다.
+ * Defines configuration option constants used throughout Jinx.
+ * Ensures configuration consistency by using the same keys in both the CLI and the Annotation Processor.
  */
 public final class JinxOptions {
 
@@ -10,41 +10,41 @@ public final class JinxOptions {
     }
 
     /**
-     * 프로파일 관련 설정
+     * Profile-related settings.
      */
     public static final class Profile {
         private Profile() {}
 
         /**
-         * 기본 프로파일 이름
+         * Default profile name.
          */
         public static final String DEFAULT = "dev";
 
         /**
-         * 프로파일 환경변수명
+         * Profile environment variable name.
          */
         public static final String ENV_VAR = "JINX_PROFILE";
 
         /**
-         * 설정 파일명
+         * Configuration file name.
          */
         public static final String CONFIG_FILE = "jinx.yaml";
 
         /**
-         * Annotation Processor에서 프로파일을 지정하는 옵션 키
+         * Option key for specifying the profile in the Annotation Processor.
          */
         public static final String PROCESSOR_KEY = "jinx.profile";
     }
 
     /**
-     * 네이밍 관련 설정
+     * Naming-related settings.
      */
     public static final class Naming {
         private Naming() {}
 
         /**
-         * 생성되는 제약조건/인덱스 이름의 최대 길이
-         * 기본값: 30
+         * Maximum length for generated constraint/index names.
+         * Default: 30
          */
         public static final String MAX_LENGTH_KEY = "jinx.naming.maxLength";
         public static final int MAX_LENGTH_DEFAULT = 30;

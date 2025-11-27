@@ -8,7 +8,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 public class DefaultNaming implements Naming {
@@ -33,7 +32,7 @@ public class DefaultNaming implements Naming {
 
     @Override
     public String fkName(String childTable, List<String> childCols, String parentTable, List<String> parentCols) {
-        // 주의: 기존 규칙을 유지 — childCols만 이름에 반영 (parentCols는 반영하지 않음)
+        // Note: Maintain the existing rule — only childCols are reflected in the name (parentCols are not).
         String base = "fk_"
                 + norm(childTable)
                 + "__"
@@ -84,15 +83,15 @@ public class DefaultNaming implements Naming {
         return buildNameWithColumns("cn_", tableName, columns);
     }
 
-    // prefix + norm(table) + "__" + joinNormalizedColumns(cols) -> clamp
+    // Generates a name from a prefix, table, and columns, then clamps it.
     private String buildNameWithColumns(String prefix, String table, List<String> cols) {
         String base = prefix + norm(table) + "__" + joinNormalizedColumns(cols);
         return clampWithHash(base);
     }
 
     /**
-     * 컬럼 리스트에 대해: 정규화 → 정렬(CASE_INSENSITIVE_ORDER) -> '_' 조인
-     * 입력이 null/빈이면 빈 문자열 반환
+     * For a list of columns: Normalize -> Sort (CASE_INSENSITIVE_ORDER) -> Join with '_'.
+     * Returns an empty string if the input is null or empty.
      */
     private String joinNormalizedColumns(List<String> cols) {
         if (cols == null || cols.isEmpty()) return "";
@@ -104,17 +103,17 @@ public class DefaultNaming implements Naming {
     }
 
     /**
-     * 정규화 규칙:
+     * Normalization rules:
      *  - null -> "null"
-     *  - 비허용문자([^A-Za-z0-9_]) -> '_'
-     *  - 연속 '_' -> 단일 '_'
-     *  - 소문자화
-     *  - 결과가 빈 문자열이거나 전부 '_'이면 'x'
+     *  - Disallowed characters ([^A-Za-z0-9_]) -> '_'
+     *  - Consecutive '_' -> single '_'
+     *  - Convert to lowercase
+     *  - If the result is an empty string or all '_', it becomes 'x'
      */
     private String norm(String s) {
         if (s == null) return "null";
-        String x = s.replaceAll("[^A-Za-z0-9_]", "_"); // 비허용자 -> '_'
-        x = x.replaceAll("_+", "_");                   // 연속 '_' -> 단일 '_'
+        String x = s.replaceAll("[^A-Za-z0-9_]", "_"); // Disallowed characters -> '_'
+        x = x.replaceAll("_+", "_");                    // Consecutive '_' -> single '_'
         x = x.toLowerCase();
         if (x.isEmpty() || x.chars().allMatch(ch -> ch == '_')) {
             return "x";
@@ -122,27 +121,27 @@ public class DefaultNaming implements Naming {
         return x;
     }
 
-    // 길이 제한 초과 시: [prefix] + '_' + [hex(hash)] 형태로 절단
-    // SHA-256 기반 해시를 사용하여 충돌 가능성을 최소화
+    // If the length limit is exceeded, truncate to the form: [prefix] + '_' + [hex(hash)].
+    // Uses a SHA-256 based hash to minimize collision probability.
     private String clampWithHash(String name) {
         if (name.length() <= maxLength) return name;
         String hash = computeStableHash(name);
-        int keep = Math.max(1, maxLength - (hash.length() + 1)); // '_' 포함
+        int keep = Math.max(1, maxLength - (hash.length() + 1)); // including the '_' separator
         return name.substring(0, keep) + "_" + hash;
     }
 
     /**
-     * SHA-256 기반 안정적인 해시를 생성합니다.
-     * String.hashCode()보다 충돌 가능성이 낮습니다.
+     * Generates a stable hash based on SHA-256.
+     * Has a lower collision probability than String.hashCode().
      */
     private String computeStableHash(String input) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
-            // 앞 4바이트(8자리 hex)만 사용
+            // Use only the first 4 bytes (8 hex characters).
             return String.format("%02x%02x%02x%02x", hash[0], hash[1], hash[2], hash[3]);
         } catch (NoSuchAlgorithmException e) {
-            // Fallback: String.hashCode() 사용
+            // Fallback: Use String.hashCode().
             return Integer.toHexString(input.hashCode());
         }
     }
