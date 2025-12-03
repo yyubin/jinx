@@ -187,15 +187,47 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 }
             }
 
-            // 4. Process deferred FK (JOINED inheritance related)
-            // Attempt up to 5 times
-            int maxPass = 5;
+            // 4. Process deferred FK (JOINED inheritance, ToOne relationships, and @MapsId)
+            // Dynamic retry count based on entity count with progress detection
+            int entityCount = context.getSchemaModel().getEntities().size();
+            int maxPass = Math.max(20, entityCount * 2); // At least 20, or 2x entity count
+            int noProgressCount = 0;
+            int previousSize = context.getDeferredEntities().size();
+
             for (int pass = 0; pass < maxPass && !context.getDeferredEntities().isEmpty(); pass++) {
                 entityHandler.runDeferredPostProcessing();
+
+                int currentSize = context.getDeferredEntities().size();
+
+                // Detect deadlock: no progress for 3 consecutive passes
+                if (currentSize == previousSize) {
+                    noProgressCount++;
+                    if (noProgressCount >= 3) {
+                        // Collect detailed information about unresolved entities
+                        Set<String> unresolvedNames = new HashSet<>();
+                        context.getDeferredEntities().forEach(e -> unresolvedNames.add(e.getEntityName()));
+
+                        context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                                "Circular dependency or unresolvable entity references detected after " + pass + " passes. " +
+                                "No progress in last 3 passes. Unresolved entities: " + unresolvedNames);
+                        break;
+                    }
+                } else {
+                    noProgressCount = 0; // Reset counter if progress was made
+                }
+
+                previousSize = currentSize;
             }
+
+            // Report any remaining unresolved entities
             if (!context.getDeferredEntities().isEmpty()) {
+                Set<String> unresolvedNames = new HashSet<>();
+                context.getDeferredEntities().forEach(e -> unresolvedNames.add(e.getEntityName()));
+
                 context.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "Unresolved JOINED inheritance: " + context.getDeferredEntities());
+                        "Failed to resolve all deferred entity relationships after " + maxPass + " passes. " +
+                        "This may indicate circular dependencies or missing entity definitions. " +
+                        "Unresolved entities: " + unresolvedNames);
             }
 
             // 5. Final PK validation after JOINED inheritance processing
