@@ -1,61 +1,74 @@
-# Jinx — JPA → DDL / Liquibase Migration Generator
+# Jinx — JPA → DDL SQL / Liquibase Migration Generator
 
-> 📖 **한국어로 읽기**: [README.md](./README.md)
+> 📖 **Original Korean README**: [README.md](./README.md)
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.yyubin/jinx-core.svg)](https://central.sonatype.com/artifact/io.github.yyubin/jinx-core)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Jinx is a tool that scans JPA annotations to create **schema snapshots (JSON)** and automatically generates **DB migration SQL** and **Liquibase YAML** by comparing with previous snapshots.
+Jinx scans your JPA annotations to generate **schema snapshots (JSON)** and automatically produces **DDL SQL** and **Liquibase migration YAML** by comparing changes across snapshots.
 
-**MySQL priority support** | **JDK 21+ required** | **Latest release: 0.0.17** | **JPA 3.2.0+ required**
+**MySQL First** | **JDK 21+ Required** | **Latest Version: 0.0.18** | **JPA 3.2.0 Supported**
+
+---
 
 ## Why Jinx?
 
-- **JPA annotations → snapshots → diff-based auto generation**: No manual DDL writing required
-- **DDL + Liquibase YAML simultaneous output**: Compatible with existing migration tools
-- **Phase-based incremental changes**: Support for safe migrations like rename/backfill (roadmap)
+* **Automatic schema analysis based on JPA annotations**  
+  No manual DDL writing—schema snapshots track changes over time.
+* **Diff-based migration generation**  
+  Automatically detects renames, nullable changes, index additions, and more.
+* **Outputs both DDL SQL and Liquibase YAML**  
+  Works seamlessly with existing migration tools.
+* **Easy integration with Gradle and Java projects**
 
-Sample entities/JSON/SQL can be found in the [jinx-test repository](https://github.com/yyubin/jinx-test).
+Sample entities and outputs:  
+https://github.com/yyubin/jinx-test
 
 ---
 
 ## Quick Start
 
-### 1. Add Dependencies
+### 1. Add dependencies
 
 ```gradle
 dependencies {
-    annotationProcessor "io.github.yyubin:jinx-processor:0.0.17"
-    implementation "io.github.yyubin:jinx-core:0.0.17"
+    annotationProcessor("io.github.yyubin:jinx-processor:0.0.18")
+    implementation("io.github.yyubin:jinx-core:0.0.18")
 }
-```
+````
 
 ---
 
-### 2. Write Entities
+### 2. Create an entity
 
 ```java
 @Entity
 public class Bird {
     @Id @GeneratedValue
     private Long id;
+
     private String name;
     private Long zooId;
 }
-
 ```
 
 ---
 
-### 3. Generate Snapshots
+### 3. Generate snapshots
 
-When you build, schema snapshots are generated in the `build/classes/java/main/jinx/` path.
+Snapshots are automatically generated when you build:
 
-**Filename convention**: `schema-<yyyyMMddHHmmss>.json` (KST timezone, collision prevention)
+```
+build/classes/java/main/jinx/
+```
 
-**Automatic index inference**: `Long zooId` → `zoo_id` column → `ix_<table>__<column>` index creation
+Snapshot file naming:
 
-Example: `schema-20250922010911.json`
+```
+schema-<yyyyMMddHHmmss>.json
+```
+
+Example:
 
 ```json
 {
@@ -63,7 +76,7 @@ Example: `schema-20250922010911.json`
     "org.example.Bird": {
       "tableName": "Bird",
       "columns": {
-        "bird::id": { "type": "BIGINT", "primaryKey": true, "autoIncrement": true },
+        "bird::id":   { "type": "BIGINT", "primaryKey": true, "autoIncrement": true },
         "bird::name": { "type": "VARCHAR(255)" },
         "bird::zoo_id": { "type": "BIGINT" }
       },
@@ -77,9 +90,7 @@ Example: `schema-20250922010911.json`
 
 ---
 
-### 4. Run Migration
-
-Compares the latest 2 snapshots to generate SQL and Liquibase YAML.
+### 4. Run migrations (CLI)
 
 ```bash
 jinx migrate \
@@ -90,7 +101,7 @@ jinx migrate \
   --liquibase
 ```
 
-Generated SQL example:
+Example output (SQL):
 
 ```sql
 CREATE TABLE `Bird` (
@@ -98,13 +109,12 @@ CREATE TABLE `Bird` (
   `name` VARCHAR(255),
   `zoo_id` BIGINT,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB;
 
 CREATE INDEX `ix_bird__zoo_id` ON `Bird` (`zoo_id`);
-
 ```
 
-Liquibase YAML is also generated:
+Example (Liquibase YAML):
 
 ```yaml
 databaseChangeLog:
@@ -121,195 +131,163 @@ databaseChangeLog:
                   autoIncrement: true
                   constraints:
                     primaryKey: true
-              - column:
-                  name: name
-                  type: VARCHAR(255)
-              - column:
-                  name: zoo_id
-                  type: BIGINT
-
 ```
 
 ---
 
-## Example Project
+## Gradle Integration (Spring Boot & JDK 21)
 
-Check the [jinx-test](https://github.com/yyubin/jinx-test) repository for more entity, snapshot, and migration SQL samples.
+Below is a minimal example of integrating Jinx into a Spring Boot project.
 
----
+### 1) Create a dedicated configuration for jinx-cli
 
-## CLI Options
-
-| Option | Description | Default |
-| --- | --- | --- |
-| `-p, --path` | Schema JSON directory | `build/classes/java/main/jinx` |
-| `-d, --dialect` | DB dialect (e.g., `mysql`) | - |
-| `--out` | Output path | `build/jinx` |
-| `--rollback` | Generate rollback SQL | Disabled |
-| `--liquibase` | Generate Liquibase YAML | Disabled |
-| `--force` | Force allow dangerous changes | Disabled |
-
----
-
----
-
-## Advanced: Gradle Integration
-
-By adding a **dedicated configuration + JavaExec task**, you can run everything from build artifact (schema snapshot) generation → CLI execution in one go.
-
-**`build.gradle` example (Gradle 8+, JDK 21)**
-
-```
-plugins {
-    id 'java'
-    id 'org.springframework.boot' version '3.5.5'
-    id 'io.spring.dependency-management' version '1.1.7'
-}
-
-group = 'org.jinx'
-version = '0.0.1-SNAPSHOT'
-description = 'jinx-test'
-
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
-}
-
-configurations {
-    compileOnly {
-        extendsFrom annotationProcessor
-    }
-    jinxCli
-}
-
-repositories {
-    mavenCentral()
-}
+```gradle
+val jinxCli by configurations.creating
 
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-    implementation 'org.springframework.boot:spring-boot-starter-validation'
-    implementation 'org.springframework.boot:spring-boot-starter-web'
-    compileOnly 'org.projectlombok:lombok'
-    runtimeOnly 'com.mysql:mysql-connector-j'
-    annotationProcessor 'org.projectlombok:lombok'
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-
-    // Jinx (0.0.17)
-    implementation       "io.github.yyubin:jinx-core:0.0.17"
-    annotationProcessor  "io.github.yyubin:jinx-processor:0.0.17"
-
-    // CLI (includes transitives)
-    jinxCli              "io.github.yyubin:jinx-cli:0.0.17"
+    jinxCli("io.github.yyubin:jinx-cli:0.0.18")
 }
-
-// Default values that can be overridden with gradle -P properties
-ext.defaultJinxPath      = "build/classes/java/main/jinx"
-ext.defaultJinxDialect   = "mysql"
-ext.defaultJinxOut       = "build/jinx"
-
-tasks.register('jinxMigrate', JavaExec) {
-    group = 'jinx'
-    description = 'Run Jinx CLI to generate migration SQL / Liquibase YAML'
-    classpath = configurations.jinxCli
-    mainClass = 'org.jinx.cli.JinxCli'
-
-    // Can be overridden with project properties
-    def p  = (String) (project.findProperty("jinxPath")    ?: defaultJinxPath)
-    def d  = (String) (project.findProperty("jinxDialect") ?: defaultJinxDialect)
-    def out= (String) (project.findProperty("jinxOut")     ?: defaultJinxOut)
-
-    // Flag options: check for existence only
-    def withLb  = project.hasProperty("jinxLiquibase")
-    def withRb  = project.hasProperty("jinxRollback")
-    def force   = project.hasProperty("jinxForce")
-
-    // CLI subcommand: migrate
-    args 'migrate',
-         '-p', p,
-         '-d', d,
-         '--out', out
-
-    if (withLb) args '--liquibase'
-    if (withRb) args '--rollback'
-    if (force)  args '--force'
-
-    // Ensure snapshots are generated first
-    dependsOn 'classes'
-}
-
-tasks.named('test') {
-    useJUnitPlatform()
-}
-
 ```
 
-### Execution Examples
+### 2) Register a migration task
 
-Run with default values (path/dialect/output path)
+```gradle
+tasks.register<JavaExec>("jinxMigrate") {
+    group = "jinx"
+    classpath = configurations["jinxCli"]
+    mainClass.set("org.jinx.cli.JinxCli")
+
+    dependsOn("classes")
+    args("db", "migrate", "-d", "mysql")
+}
+```
+
+### 3) Register a baseline promotion task
+
+```gradle
+tasks.register<JavaExec>("jinxPromoteBaseline") {
+    group = "jinx"
+    classpath = configurations["jinxCli"]
+    mainClass.set("org.jinx.cli.JinxCli")
+
+    dependsOn("classes")
+    args("db", "promote-baseline", "--force")
+}
+```
+
+---
+
+### Run via Gradle
+
+Generate SQL/YAML from the latest snapshots:
 
 ```bash
 ./gradlew jinxMigrate
-
 ```
 
-Run with changed parameters (override with project properties)
+Promote the latest snapshot as the new baseline:
 
 ```bash
-./gradlew jinxMigrate \
-  -PjinxPath=build/classes/java/main/jinx \
-  -PjinxDialect=mysql \
-  -PjinxOut=build/jinx \
-  -PjinxLiquibase \
-  -PjinxRollback
-
+./gradlew jinxPromoteBaseline
 ```
-
-Windows PowerShell:
-
-```powershell
-.\gradlew.bat jinxMigrate -PjinxDialect=mysql -PjinxLiquibase
-
-```
-
-> Note: Gradle's --args is an option for the default run task. Using project properties (-P) as shown above is the cleanest and most portable approach for custom JavaExec tasks.
->
-
-### Checklist (Common Issues)
-
-- **If there's only one snapshot**, "compare latest 2" is not possible. Run a new build once more to secure 2 or more snapshots.
-- If **Annotation Processing is disabled** in your IDE, snapshots won't be generated.
-- Dialect (`d`) currently prioritizes `mysql` support. Other DBs can be extended by implementing the SPI interface (`org.jinx.dialect.Dialect`).
-
-### More Examples
-
-Check actual entities/snapshots/SQL outputs here:
-
-**jinx-test** → https://github.com/yyubin/jinx-test
 
 ---
 
-## Currently Supported Features
+## Gradle Plugin (Pending Publication)
 
-- Major DDL including tables/columns/PK/indexes/constraints/rename
-- ID strategies: `IDENTITY`, `SEQUENCE`, `TABLE`
-- Liquibase YAML output
-- MySQL Dialect provided by default (other DBs can be added via SPI interface extension)
+The official **Jinx Gradle Plugin is currently under review** in the Gradle Plugin Portal.
+Once approved, you can apply it as:
+
+```kotlin
+plugins {
+    id("org.jinx.gradle") version "0.0.18"
+}
+```
+
+Until then, you may apply it manually:
+
+```kotlin
+buildscript {
+    repositories { mavenCentral() }
+    dependencies {
+        classpath("org.jinx:jinx-gradle:0.0.18")
+    }
+}
+
+apply(plugin = "org.jinx.gradle")
+```
 
 ---
 
-## License
-Jinx is licensed under the [Apache License 2.0](LICENSE).
+## DSL Example
+
+```kotlin
+jinx {
+    profile.set("local")
+
+    naming {
+        maxLength.set(63)
+        strategy.set("SNAKE_CASE")
+    }
+
+    database {
+        dialect.set("mysql")
+        url.set("jdbc:mysql://localhost:3306/app")
+    }
+
+    output {
+        format.set("liquibase")
+        directory.set("build/jinx")
+    }
+}
+```
+
+---
+
+## Plugin Publication Status
+
+Once the plugin is approved, it will be available at:
+
+```
+https://plugins.gradle.org/plugin/org.jinx.gradle
+```
+
+---
+
+## CLI Option Summary
+
+| Option             | Description                                       |
+| ------------------ | ------------------------------------------------- |
+| `migrate`          | Compare the latest two snapshots and generate SQL |
+| `promote-baseline` | Promote the current snapshot as the new baseline  |
+| `-d, --dialect`    | Database dialect (mysql, etc.)                    |
+| `--rollback`       | Generate rollback SQL                             |
+| `--liquibase`      | Output Liquibase YAML                             |
+| `--force`          | Allow dangerous schema changes                    |
+
+---
+
+## Supported Features
+
+* Table/column/PK/index/constraint creation & update detection
+* Automatic rename detection (progressively improving)
+* Rollback SQL generation
+* Liquibase YAML generation
+* MySQL dialect included
+  (Additional dialects can be added via SPI)
+
+---
+
+## Examples & Test Repository
+
+[https://github.com/yyubin/jinx-test](https://github.com/yyubin/jinx-test)
 
 ---
 
 ## Contributing
 
-- Add new DB dialects
-- Validate DDL ↔ Liquibase mappings
-- Expand test cases
-- Improve documentation
+* Add new DB dialects
+* Improve DDL/Liquibase mapping
+* Provide tests & documentation
 
-PRs and issues are welcome.
+PRs and issues are welcome!
