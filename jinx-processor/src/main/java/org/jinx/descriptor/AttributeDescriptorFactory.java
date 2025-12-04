@@ -9,6 +9,7 @@ import org.jinx.util.AccessUtils;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.*;
+import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
@@ -297,12 +298,8 @@ public class AttributeDescriptorFactory {
      *          (matches getter "isPrimary()" -> "primary")
      */
     private String normalizeFieldName(VariableElement field, String fieldName) {
-        // Check if field is boolean type
-        String fieldType = field.asType().toString();
-        boolean isBooleanType = "boolean".equals(fieldType) || "java.lang.Boolean".equals(fieldType);
-
-        // If field starts with "is" and is boolean, apply JavaBeans decapitalization
-        if (isBooleanType && fieldName.startsWith("is") && fieldName.length() > 2) {
+        // Check if field is boolean type using TypeMirror (more reliable than toString())
+        if (isBooleanField(field) && fieldName.startsWith("is") && fieldName.length() > 2) {
             char thirdChar = fieldName.charAt(2);
             // Only apply if third character is uppercase (e.g., "isPrimary", not "island")
             if (Character.isUpperCase(thirdChar)) {
@@ -312,6 +309,27 @@ public class AttributeDescriptorFactory {
 
         // Otherwise, use field name as-is
         return fieldName;
+    }
+
+    /**
+     * Check if field type is boolean using TypeMirror comparison.
+     * This is more reliable than toString() comparison in APT context.
+     */
+    private boolean isBooleanField(VariableElement field) {
+        TypeMirror fieldType = field.asType();
+
+        // Check primitive boolean
+        if (fieldType.getKind() == javax.lang.model.type.TypeKind.BOOLEAN) {
+            return true;
+        }
+
+        // Check Boolean wrapper type using TypeMirror comparison
+        TypeElement booleanWrapperType = elements.getTypeElement("java.lang.Boolean");
+        if (booleanWrapperType != null) {
+            return typeUtils.isSameType(fieldType, booleanWrapperType.asType());
+        }
+
+        return false;
     }
 
     private static class AttributeCandidate {
