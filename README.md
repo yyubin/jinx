@@ -196,6 +196,68 @@ tasks.register<JavaExec>("jinxPromoteBaseline") {
 
 ---
 
+## Gradle Plugin (게시 대기 중)
+
+Jinx Gradle Plugin은 현재 **Gradle Plugin Portal 승인 대기 중**입니다.
+승인 후에는 아래처럼 바로 적용할 수 있습니다.
+
+```kotlin
+plugins {
+    id("org.jinx.gradle") version "0.0.18"
+}
+```
+
+승인 전에는 다음 방식으로 사용 가능합니다.
+
+```kotlin
+buildscript {
+    repositories { mavenCentral() }
+    dependencies {
+        classpath("org.jinx:jinx-gradle:0.0.18")
+    }
+}
+
+apply(plugin = "org.jinx.gradle")
+```
+
+---
+
+## DSL 사용 예시
+
+```kotlin
+jinx {
+    profile.set("local")
+
+    naming {
+        maxLength.set(63)
+        strategy.set("SNAKE_CASE")
+    }
+
+    database {
+        dialect.set("mysql")
+        url.set("jdbc:mysql://localhost:3306/app")
+    }
+
+    output {
+        format.set("liquibase")
+        directory.set("build/jinx")
+    }
+}
+```
+
+---
+
+## 게시 상태 안내
+
+플러그인은 현재 Gradle Plugin Portal 심사 중이며,
+승인되면 해당 주소에서 사용 가능합니다.
+
+```
+https://plugins.gradle.org/plugin/org.jinx.gradle
+```
+
+---
+
 ## CLI 옵션 요약
 
 | 옵션                 | 설명                          |
