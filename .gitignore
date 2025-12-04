@@ -59,3 +59,5 @@ website/build/
 website/npm-debug.log*
 website/yarn-debug.log*
 website/yarn-error.log*
+
+gradle.properties
