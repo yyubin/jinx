@@ -17,7 +17,41 @@ public record FieldAttributeDescriptor(VariableElement field, Types typeUtils, E
 
     @Override
     public String name() {
-        return field.getSimpleName().toString();
+        String fieldName = field.getSimpleName().toString();
+
+        // Apply JavaBeans normalization for boolean fields starting with "is"
+        // to match the property name derived from their getter
+        if (isBooleanField() && fieldName.startsWith("is") && fieldName.length() > 2) {
+            char thirdChar = fieldName.charAt(2);
+            // Only apply if third character is uppercase (e.g., "isPrimary", not "island")
+            if (Character.isUpperCase(thirdChar)) {
+                // Example: "isPrimary" -> "Primary" -> "primary"
+                return java.beans.Introspector.decapitalize(fieldName.substring(2));
+            }
+        }
+
+        return fieldName;
+    }
+
+    /**
+     * Check if field type is boolean using TypeMirror comparison.
+     * This is more reliable than toString() comparison in APT context.
+     */
+    private boolean isBooleanField() {
+        TypeMirror fieldType = field.asType();
+
+        // Check primitive boolean
+        if (fieldType.getKind() == javax.lang.model.type.TypeKind.BOOLEAN) {
+            return true;
+        }
+
+        // Check Boolean wrapper type using TypeMirror comparison
+        TypeElement booleanWrapperType = elements.getTypeElement("java.lang.Boolean");
+        if (booleanWrapperType != null) {
+            return typeUtils.isSameType(fieldType, booleanWrapperType.asType());
+        }
+
+        return false;
     }
 
     @Override

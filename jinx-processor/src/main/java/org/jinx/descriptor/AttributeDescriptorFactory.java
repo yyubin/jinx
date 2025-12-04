@@ -9,6 +9,7 @@ import org.jinx.util.AccessUtils;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.*;
+import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
@@ -254,7 +255,8 @@ public class AttributeDescriptorFactory {
                 }
                 if (element.getKind() == ElementKind.FIELD) {
                     VariableElement field = (VariableElement) element;
-                    String attributeName = field.getSimpleName().toString();
+                    String fieldName = field.getSimpleName().toString();
+                    String attributeName = normalizeFieldName(field, fieldName);
                     candidates.computeIfAbsent(attributeName, AttributeCandidate::new)
                             .setField(field);
                 } else if (element.getKind() == ElementKind.METHOD && AccessUtils.isGetterMethod(element)) {
@@ -285,6 +287,49 @@ public class AttributeDescriptorFactory {
             return java.beans.Introspector.decapitalize(methodName.substring(2));
         }
         return java.beans.Introspector.decapitalize(methodName);
+    }
+
+    /**
+     * Normalize field name to match JavaBeans property name convention.
+     * For boolean fields starting with "is", apply the same decapitalization
+     * as their corresponding getter to ensure field and getter map to the same attribute.
+     *
+     * Example: field "isPrimary" (boolean) -> attribute "primary"
+     *          (matches getter "isPrimary()" -> "primary")
+     */
+    private String normalizeFieldName(VariableElement field, String fieldName) {
+        // Check if field is boolean type using TypeMirror (more reliable than toString())
+        if (isBooleanField(field) && fieldName.startsWith("is") && fieldName.length() > 2) {
+            char thirdChar = fieldName.charAt(2);
+            // Only apply if third character is uppercase (e.g., "isPrimary", not "island")
+            if (Character.isUpperCase(thirdChar)) {
+                return java.beans.Introspector.decapitalize(fieldName.substring(2));
+            }
+        }
+
+        // Otherwise, use field name as-is
+        return fieldName;
+    }
+
+    /**
+     * Check if field type is boolean using TypeMirror comparison.
+     * This is more reliable than toString() comparison in APT context.
+     */
+    private boolean isBooleanField(VariableElement field) {
+        TypeMirror fieldType = field.asType();
+
+        // Check primitive boolean
+        if (fieldType.getKind() == javax.lang.model.type.TypeKind.BOOLEAN) {
+            return true;
+        }
+
+        // Check Boolean wrapper type using TypeMirror comparison
+        TypeElement booleanWrapperType = elements.getTypeElement("java.lang.Boolean");
+        if (booleanWrapperType != null) {
+            return typeUtils.isSameType(fieldType, booleanWrapperType.asType());
+        }
+
+        return false;
     }
 
     private static class AttributeCandidate {

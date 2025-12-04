@@ -191,6 +191,7 @@ class CreateTableBuilderTest {
 
         // post 여부: IndexContributor(보통 CREATE 이후)만 post여야 함
         assertFalse(b.isPost.get(0), "ColumnContributor는 body여야 합니다");
+        assertFalse(b.isPost.get(1), "ConstraintContributor는 body여야 합니다");
         assertTrue(b.isPost.get(2), "IndexContributor는 post여야 합니다");
     }
 
