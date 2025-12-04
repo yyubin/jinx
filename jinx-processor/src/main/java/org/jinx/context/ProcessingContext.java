@@ -256,8 +256,8 @@ public class ProcessingContext {
      */
     public void beginRound() {
         clearMappedByVisited();
-        deferredEntities.clear();
-        deferredNames.clear();
+//        deferredEntities.clear();
+//        deferredNames.clear();
         descriptorCache.clear();
         pkAttributeToColumnMap.clear();
         mappedSuperclassElements.clear();

@@ -1,12 +1,12 @@
 package org.jinx.migration.contributor.create;
 
 import org.jinx.migration.contributor.DdlContributor;
-import org.jinx.migration.contributor.PostCreateContributor;
+import org.jinx.migration.contributor.TableBodyContributor;
 import org.jinx.migration.spi.dialect.DdlDialect;
 import org.jinx.model.ConstraintModel;
 import java.util.List;
 
-public record ConstraintContributor(List<ConstraintModel> constraints) implements DdlContributor, PostCreateContributor {
+public record ConstraintContributor(List<ConstraintModel> constraints) implements DdlContributor, TableBodyContributor {
     @Override
     public int priority() {
         return 60; // Constraint 정의

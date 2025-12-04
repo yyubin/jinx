@@ -17,7 +17,23 @@ public record FieldAttributeDescriptor(VariableElement field, Types typeUtils, E
 
     @Override
     public String name() {
-        return field.getSimpleName().toString();
+        String fieldName = field.getSimpleName().toString();
+
+        // Apply JavaBeans normalization for boolean fields starting with "is"
+        // to match the property name derived from their getter
+        String fieldType = field.asType().toString();
+        boolean isBooleanType = "boolean".equals(fieldType) || "java.lang.Boolean".equals(fieldType);
+
+        if (isBooleanType && fieldName.startsWith("is") && fieldName.length() > 2) {
+            char thirdChar = fieldName.charAt(2);
+            // Only apply if third character is uppercase (e.g., "isPrimary", not "island")
+            if (Character.isUpperCase(thirdChar)) {
+                // Example: "isPrimary" -> "Primary" -> "primary"
+                return java.beans.Introspector.decapitalize(fieldName.substring(2));
+            }
+        }
+
+        return fieldName;
     }
 
     @Override

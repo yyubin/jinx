@@ -7,7 +7,7 @@
 
 Jinx is a tool that scans JPA annotations to create **schema snapshots (JSON)** and automatically generates **DB migration SQL** and **Liquibase YAML** by comparing with previous snapshots.
 
-**MySQL priority support** | **JDK 21+ required** | **Latest release: 0.0.14** | **JPA 3.2.0+ required**
+**MySQL priority support** | **JDK 21+ required** | **Latest release: 0.0.16** | **JPA 3.2.0+ required**
 
 ## Why Jinx?
 
@@ -25,8 +25,8 @@ Sample entities/JSON/SQL can be found in the [jinx-test repository](https://gith
 
 ```gradle
 dependencies {
-    annotationProcessor "io.github.yyubin:jinx-processor:0.0.14"
-    implementation "io.github.yyubin:jinx-core:0.0.14"
+    annotationProcessor "io.github.yyubin:jinx-processor:0.0.16"
+    implementation "io.github.yyubin:jinx-core:0.0.16"
 }
 ```
 
@@ -197,12 +197,12 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
-    // Jinx (0.0.14)
-    implementation       "io.github.yyubin:jinx-core:0.0.14"
-    annotationProcessor  "io.github.yyubin:jinx-processor:0.0.14"
+    // Jinx (0.0.16)
+    implementation       "io.github.yyubin:jinx-core:0.0.16"
+    annotationProcessor  "io.github.yyubin:jinx-processor:0.0.16"
 
     // CLI (includes transitives)
-    jinxCli              "io.github.yyubin:jinx-cli:0.0.14"
+    jinxCli              "io.github.yyubin:jinx-cli:0.0.16"
 }
 
 // Default values that can be overridden with gradle -P properties
