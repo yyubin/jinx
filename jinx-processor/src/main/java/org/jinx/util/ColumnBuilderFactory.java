@@ -35,9 +35,9 @@ public class ColumnBuilderFactory {
     public static ColumnModel.ColumnModelBuilder fromAttributeDescriptor(AttributeDescriptor attribute, TypeMirror type, String columnName,
                                                                           ProcessingContext context, Map<String, String> overrides) {
         Column column = attribute.getAnnotation(Column.class);
-        
+
         // Use same priority-based column name resolution as AttributeBasedEntityResolver
-        String finalColumnName = determineColumnName(attribute, columnName, column, overrides);
+        String finalColumnName = determineColumnName(attribute, columnName, column, overrides, context);
 
         boolean isPk = attribute.hasAnnotation(Id.class) || attribute.hasAnnotation(EmbeddedId.class);
         TypeMirror effectiveType = (type != null) ? type : attribute.type();
@@ -77,9 +77,9 @@ public class ColumnBuilderFactory {
 
     /**
      * Determine column name using priority-based resolution
-     * Priority: explicit columnName > overrides > @Column.name() > attribute.name()
+     * Priority: explicit columnName > overrides > @Column.name() > namingStrategy > attribute.name()
      */
-    private static String determineColumnName(AttributeDescriptor attribute, String columnName, Column column, Map<String, String> overrides) {
+    private static String determineColumnName(AttributeDescriptor attribute, String columnName, Column column, Map<String, String> overrides, ProcessingContext context) {
         // Priority 1: Explicit parameter columnName
         if (isNotBlank(columnName)) {
             return columnName;
@@ -91,13 +91,18 @@ public class ColumnBuilderFactory {
         if (isNotBlank(overrideName)) {
             return overrideName;
         }
-        
-        // Priority 2: @Column.name() annotation
+
+        // Priority 3: @Column.name() annotation
         if (column != null && isNotBlank(column.name())) {
             return column.name();
         }
 
-        // Priority 4: Attribute name (fallback)
+        // Priority 4: NamingStrategy transformation
+        if (context != null && context.getNamingStrategy() != null) {
+            return context.getNamingStrategy().toPhysicalColumnName(attributeName);
+        }
+
+        // Priority 5: Attribute name (fallback)
         return attributeName;
     }
 

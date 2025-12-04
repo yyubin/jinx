@@ -95,6 +95,14 @@ public abstract class JinxExtension {
          * 생성되는 제약조건/인덱스 이름의 최대 길이
          */
         public abstract Property<Integer> getMaxLength();
+
+        /**
+         * 네이밍 전략 (SNAKE_CASE, NO_OP)
+         * <p>
+         * - SNAKE_CASE: 카멜케이스를 스네이크케이스로 변환 (maxLevel → max_level)
+         * - NO_OP: 변환 없이 그대로 사용 (기본값)
+         */
+        public abstract Property<String> getStrategy();
     }
 
     /**

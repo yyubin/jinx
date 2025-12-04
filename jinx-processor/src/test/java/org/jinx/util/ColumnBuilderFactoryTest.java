@@ -3,7 +3,11 @@ package org.jinx.util;
 import jakarta.persistence.Column;
 import jakarta.persistence.Id;
 import org.jinx.context.ProcessingContext;
+import org.jinx.descriptor.AttributeDescriptor;
 import org.jinx.model.ColumnModel;
+import org.jinx.spi.naming.JinxNamingStrategy;
+import org.jinx.spi.naming.impl.NoOpNamingStrategy;
+import org.jinx.spi.naming.impl.SnakeCaseNamingStrategy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -175,5 +179,156 @@ class ColumnBuilderFactoryTest {
         // Assert
         assertThat(model.getSqlTypeOverride()).isNull();
         assertThat(model.getDefaultValue()).isNull();
+    }
+
+    @Test
+    @DisplayName("NamingStrategy - NoOpNamingStrategy는 카멜케이스를 그대로 유지해야 한다")
+    void fromAttributeDescriptor_withNoOpNamingStrategy_preservesCamelCase() {
+        // Arrange: NoOpNamingStrategy를 사용하는 ProcessingContext
+        ProcessingContext contextWithNoOp = mock(ProcessingContext.class);
+        when(contextWithNoOp.getNamingStrategy()).thenReturn(new NoOpNamingStrategy());
+
+        AttributeDescriptor mockAttribute = mock(AttributeDescriptor.class);
+        when(mockAttribute.name()).thenReturn("maxLevel");
+        when(mockAttribute.type()).thenReturn(mockFieldType);
+        when(mockAttribute.getAnnotation(Column.class)).thenReturn(null);
+        when(mockAttribute.hasAnnotation(Id.class)).thenReturn(false);
+        when(mockAttribute.hasAnnotation(jakarta.persistence.EmbeddedId.class)).thenReturn(false);
+
+        // Act
+        ColumnModel.ColumnModelBuilder builder = ColumnBuilderFactory.fromAttributeDescriptor(
+                mockAttribute, null, null, contextWithNoOp, Collections.emptyMap()
+        );
+        ColumnModel model = builder.build();
+
+        // Assert: 카멜케이스가 그대로 유지됨
+        assertThat(model.getColumnName()).isEqualTo("maxLevel");
+    }
+
+    @Test
+    @DisplayName("NamingStrategy - SnakeCaseNamingStrategy는 카멜케이스를 스네이크케이스로 변환해야 한다")
+    void fromAttributeDescriptor_withSnakeCaseNamingStrategy_convertsToSnakeCase() {
+        // Arrange: SnakeCaseNamingStrategy를 사용하는 ProcessingContext
+        ProcessingContext contextWithSnakeCase = mock(ProcessingContext.class);
+        when(contextWithSnakeCase.getNamingStrategy()).thenReturn(new SnakeCaseNamingStrategy());
+
+        AttributeDescriptor mockAttribute = mock(AttributeDescriptor.class);
+        when(mockAttribute.name()).thenReturn("maxLevel");
+        when(mockAttribute.type()).thenReturn(mockFieldType);
+        when(mockAttribute.getAnnotation(Column.class)).thenReturn(null);
+        when(mockAttribute.hasAnnotation(Id.class)).thenReturn(false);
+        when(mockAttribute.hasAnnotation(jakarta.persistence.EmbeddedId.class)).thenReturn(false);
+
+        // Act
+        ColumnModel.ColumnModelBuilder builder = ColumnBuilderFactory.fromAttributeDescriptor(
+                mockAttribute, null, null, contextWithSnakeCase, Collections.emptyMap()
+        );
+        ColumnModel model = builder.build();
+
+        // Assert: 카멜케이스가 스네이크케이스로 변환됨
+        assertThat(model.getColumnName()).isEqualTo("max_level");
+    }
+
+    @Test
+    @DisplayName("NamingStrategy - @Column.name()이 있으면 NamingStrategy보다 우선해야 한다")
+    void fromAttributeDescriptor_withColumnAnnotation_overridesNamingStrategy() {
+        // Arrange: SnakeCaseNamingStrategy를 사용하지만 @Column.name()이 설정됨
+        ProcessingContext contextWithSnakeCase = mock(ProcessingContext.class);
+        when(contextWithSnakeCase.getNamingStrategy()).thenReturn(new SnakeCaseNamingStrategy());
+
+        Column mockColumn = mock(Column.class);
+        when(mockColumn.name()).thenReturn("CUSTOM_NAME");
+        when(mockColumn.nullable()).thenReturn(true);
+        when(mockColumn.length()).thenReturn(255);
+        when(mockColumn.precision()).thenReturn(0);
+        when(mockColumn.scale()).thenReturn(0);
+        when(mockColumn.columnDefinition()).thenReturn("");
+        when(mockColumn.table()).thenReturn("");
+
+        AttributeDescriptor mockAttribute = mock(AttributeDescriptor.class);
+        when(mockAttribute.name()).thenReturn("maxLevel");
+        when(mockAttribute.type()).thenReturn(mockFieldType);
+        when(mockAttribute.getAnnotation(Column.class)).thenReturn(mockColumn);
+        when(mockAttribute.hasAnnotation(Id.class)).thenReturn(false);
+        when(mockAttribute.hasAnnotation(jakarta.persistence.EmbeddedId.class)).thenReturn(false);
+
+        // Act
+        ColumnModel.ColumnModelBuilder builder = ColumnBuilderFactory.fromAttributeDescriptor(
+                mockAttribute, null, null, contextWithSnakeCase, Collections.emptyMap()
+        );
+        ColumnModel model = builder.build();
+
+        // Assert: @Column.name()이 NamingStrategy보다 우선함
+        assertThat(model.getColumnName()).isEqualTo("CUSTOM_NAME");
+    }
+
+    @Test
+    @DisplayName("NamingStrategy - overrides가 있으면 NamingStrategy와 @Column.name()보다 우선해야 한다")
+    void fromAttributeDescriptor_withOverride_overridesNamingStrategyAndColumn() {
+        // Arrange: SnakeCaseNamingStrategy와 @Column.name()이 있지만 overrides가 설정됨
+        ProcessingContext contextWithSnakeCase = mock(ProcessingContext.class);
+        when(contextWithSnakeCase.getNamingStrategy()).thenReturn(new SnakeCaseNamingStrategy());
+
+        Column mockColumn = mock(Column.class);
+        when(mockColumn.name()).thenReturn("IGNORED_NAME");
+        when(mockColumn.nullable()).thenReturn(true);
+        when(mockColumn.length()).thenReturn(255);
+        when(mockColumn.precision()).thenReturn(0);
+        when(mockColumn.scale()).thenReturn(0);
+        when(mockColumn.columnDefinition()).thenReturn("");
+        when(mockColumn.table()).thenReturn("");
+
+        AttributeDescriptor mockAttribute = mock(AttributeDescriptor.class);
+        when(mockAttribute.name()).thenReturn("maxLevel");
+        when(mockAttribute.type()).thenReturn(mockFieldType);
+        when(mockAttribute.getAnnotation(Column.class)).thenReturn(mockColumn);
+        when(mockAttribute.hasAnnotation(Id.class)).thenReturn(false);
+        when(mockAttribute.hasAnnotation(jakarta.persistence.EmbeddedId.class)).thenReturn(false);
+
+        Map<String, String> overrides = Map.of("maxLevel", "OVERRIDE_NAME");
+
+        // Act
+        ColumnModel.ColumnModelBuilder builder = ColumnBuilderFactory.fromAttributeDescriptor(
+                mockAttribute, null, null, contextWithSnakeCase, overrides
+        );
+        ColumnModel model = builder.build();
+
+        // Assert: overrides가 모든 것보다 우선함
+        assertThat(model.getColumnName()).isEqualTo("OVERRIDE_NAME");
+    }
+
+    @Test
+    @DisplayName("NamingStrategy - explicit columnName이 있으면 최우선으로 적용해야 한다")
+    void fromAttributeDescriptor_withExplicitColumnName_takesHighestPriority() {
+        // Arrange: 모든 네이밍 소스가 있지만 explicit columnName이 제공됨
+        ProcessingContext contextWithSnakeCase = mock(ProcessingContext.class);
+        when(contextWithSnakeCase.getNamingStrategy()).thenReturn(new SnakeCaseNamingStrategy());
+
+        Column mockColumn = mock(Column.class);
+        when(mockColumn.name()).thenReturn("IGNORED_NAME");
+        when(mockColumn.nullable()).thenReturn(true);
+        when(mockColumn.length()).thenReturn(255);
+        when(mockColumn.precision()).thenReturn(0);
+        when(mockColumn.scale()).thenReturn(0);
+        when(mockColumn.columnDefinition()).thenReturn("");
+        when(mockColumn.table()).thenReturn("");
+
+        AttributeDescriptor mockAttribute = mock(AttributeDescriptor.class);
+        when(mockAttribute.name()).thenReturn("maxLevel");
+        when(mockAttribute.type()).thenReturn(mockFieldType);
+        when(mockAttribute.getAnnotation(Column.class)).thenReturn(mockColumn);
+        when(mockAttribute.hasAnnotation(Id.class)).thenReturn(false);
+        when(mockAttribute.hasAnnotation(jakarta.persistence.EmbeddedId.class)).thenReturn(false);
+
+        Map<String, String> overrides = Map.of("maxLevel", "IGNORED_OVERRIDE");
+
+        // Act
+        ColumnModel.ColumnModelBuilder builder = ColumnBuilderFactory.fromAttributeDescriptor(
+                mockAttribute, null, "EXPLICIT_NAME", contextWithSnakeCase, overrides
+        );
+        ColumnModel model = builder.build();
+
+        // Assert: explicit columnName이 최우선
+        assertThat(model.getColumnName()).isEqualTo("EXPLICIT_NAME");
     }
 }

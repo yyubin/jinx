@@ -76,6 +76,11 @@ public class JinxPlugin implements Plugin<Project> {
                       extension.getNaming().getMaxLength().get().toString());
         }
 
+        if (extension.getNaming().getStrategy().isPresent()) {
+            config.put(JinxOptions.Naming.STRATEGY_KEY,
+                      extension.getNaming().getStrategy().get());
+        }
+
         // 3. Add profile information
         if (profile != null) {
             config.put(JinxOptions.Profile.PROCESSOR_KEY, profile);

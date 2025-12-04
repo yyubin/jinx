@@ -48,6 +48,14 @@ public final class JinxOptions {
          */
         public static final String MAX_LENGTH_KEY = "jinx.naming.maxLength";
         public static final int MAX_LENGTH_DEFAULT = 30;
+
+        /**
+         * Naming strategy for converting logical names to physical names.
+         * Values: "SNAKE_CASE", "NO_OP"
+         * Default: "NO_OP"
+         */
+        public static final String STRATEGY_KEY = "jinx.naming.strategy";
+        public static final String STRATEGY_DEFAULT = "NO_OP";
     }
 
     // public static final class Database {
