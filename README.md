@@ -7,7 +7,7 @@
 
 Jinx는 JPA 애노테이션을 스캔해 **스키마 스냅샷(JSON)** 을 만들고, 이전 스냅샷과 비교하여 **DB 마이그레이션 SQL**과 **Liquibase YAML**을 자동 생성하는 도구입니다.
 
-**현재 MySQL 우선 지원** | **JDK 21+ 필요** | **최신 릴리즈: 0.0.16** | **JPA 3.2.0 이상 지원**
+**현재 MySQL 우선 지원** | **JDK 21+ 필요** | **최신 릴리즈: 0.0.17** | **JPA 3.2.0 이상 지원**
 
 ## 왜 Jinx인가?
 
@@ -25,8 +25,8 @@ Jinx는 JPA 애노테이션을 스캔해 **스키마 스냅샷(JSON)** 을 만�
 
 ```gradle
 dependencies {
-    annotationProcessor "io.github.yyubin:jinx-processor:0.0.16"
-    implementation "io.github.yyubin:jinx-core:0.0.16"
+    annotationProcessor "io.github.yyubin:jinx-processor:0.0.17"
+    implementation "io.github.yyubin:jinx-core:0.0.17"
 }
 ```
 
@@ -197,12 +197,12 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
-    // Jinx (0.0.16)
-    implementation       "io.github.yyubin:jinx-core:0.0.16"
-    annotationProcessor  "io.github.yyubin:jinx-processor:0.0.16"
+    // Jinx (0.0.17)
+    implementation       "io.github.yyubin:jinx-core:0.0.17"
+    annotationProcessor  "io.github.yyubin:jinx-processor:0.0.17"
 
     // CLI (transitive 포함)
-    jinxCli              "io.github.yyubin:jinx-cli:0.0.16"
+    jinxCli              "io.github.yyubin:jinx-cli:0.0.17"
 }
 
 // gradle -P 속성으로 오버라이드 가능한 기본값
