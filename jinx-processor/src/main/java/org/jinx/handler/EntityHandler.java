@@ -168,9 +168,20 @@ public class EntityHandler {
 
     private EntityModel createEntityModel(TypeElement typeElement) {
         Optional<Table> tableOpt = Optional.ofNullable(typeElement.getAnnotation(Table.class));
-        String tableName = tableOpt.map(Table::name).filter(n -> !n.isEmpty())
-                .orElse(typeElement.getSimpleName().toString());
         String entityName = typeElement.getQualifiedName().toString();
+
+        // Determine table name using priority-based resolution:
+        // Priority 1: @Table(name="...") annotation
+        // Priority 2: NamingStrategy transformation
+        // Priority 3: Class simple name (fallback)
+        String tableName = tableOpt.map(Table::name).filter(n -> !n.isEmpty())
+                .orElseGet(() -> {
+                    String className = typeElement.getSimpleName().toString();
+                    if (context.getNamingStrategy() != null) {
+                        return context.getNamingStrategy().toPhysicalTableName(className);
+                    }
+                    return className;
+                });
 
         // Check for duplicates
         if (context.getSchemaModel().getEntities().containsKey(entityName)) {

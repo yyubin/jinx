@@ -9,6 +9,10 @@ import org.jinx.handler.*;
 import org.jinx.model.ClassInfoModel;
 import org.jinx.model.EntityModel;
 import org.jinx.model.SchemaModel;
+import org.jinx.options.JinxOptions;
+import org.jinx.spi.naming.JinxNamingStrategy;
+import org.jinx.spi.naming.impl.NoOpNamingStrategy;
+import org.jinx.spi.naming.impl.SnakeCaseNamingStrategy;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
@@ -52,7 +56,10 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         SchemaModel schemaModel = SchemaModel.builder()
                 .version(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")))
                 .build();
-        this.context = new ProcessingContext(processingEnv, schemaModel);
+
+        // Create naming strategy based on annotation processor options
+        JinxNamingStrategy namingStrategy = createNamingStrategy(processingEnv);
+        this.context = new ProcessingContext(processingEnv, schemaModel, namingStrategy);
 
         this.sequenceHandler = new SequenceHandler(context);
         ColumnHandler columnHandler = new ColumnHandler(context, sequenceHandler);
@@ -63,6 +70,29 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
         this.elementCollectionHandler = new ElementCollectionHandler(context, columnHandler, embeddedHandler);
         this.tableGeneratorHandler = new TableGeneratorHandler(context);
         this.entityHandler = new EntityHandler(context, columnHandler, embeddedHandler, constraintHandler, sequenceHandler, elementCollectionHandler, tableGeneratorHandler, relationshipHandler);
+    }
+
+    /**
+     * Create naming strategy based on annotation processor options
+     */
+    private JinxNamingStrategy createNamingStrategy(ProcessingEnvironment processingEnv) {
+        String strategyOption = processingEnv.getOptions().get(JinxOptions.Naming.STRATEGY_KEY);
+
+        if (strategyOption == null || strategyOption.isBlank()) {
+            strategyOption = JinxOptions.Naming.STRATEGY_DEFAULT;
+        }
+
+        return switch (strategyOption.toUpperCase()) {
+            case "SNAKE_CASE" -> new SnakeCaseNamingStrategy();
+            case "NO_OP" -> new NoOpNamingStrategy();
+            default -> {
+                processingEnv.getMessager().printMessage(
+                        Diagnostic.Kind.WARNING,
+                        "Unknown naming strategy: " + strategyOption + ". Using NO_OP as default."
+                );
+                yield new NoOpNamingStrategy();
+            }
+        };
     }
 
     @Override

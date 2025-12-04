@@ -33,19 +33,12 @@ public class AttributeBasedEntityResolver implements AttributeColumnResolver {
 
     @Override
     public ColumnModel resolve(AttributeDescriptor attribute, TypeMirror typeHint, String pColumnName, Map<String, String> overrides) {
-        Column column = attribute.getAnnotation(Column.class);
-        
-        // Priority-based column name resolution:
-        // 1. Explicit parameter columnName (highest priority)
-        // 2. Overrides map for this attribute
-        // 3. @Column.name() annotation
-        // 4. Attribute name (fallback)
-        String columnName = determineColumnName(attribute, pColumnName, column, overrides);
-        
         // Use AttributeDescriptor for type information
         TypeMirror actualType = typeHint != null ? typeHint : attribute.type();
+
+        // Delegate column name resolution to ColumnBuilderFactory, which includes naming strategy
         ColumnModel.ColumnModelBuilder builder = ColumnBuilderFactory.fromAttributeDescriptor(
-                attribute, actualType, columnName, context, overrides);
+                attribute, actualType, pColumnName, context, overrides);
 
         // Handle @Basic
         Basic basic = attribute.getAnnotation(Basic.class);
@@ -202,31 +195,6 @@ public class AttributeBasedEntityResolver implements AttributeColumnResolver {
 
         // Add some buffer for safety (20% extra or minimum 10 chars)
         return maxLength + Math.max(10, maxLength / 5);
-    }
-
-    /**
-     * Determine column name using priority-based resolution
-     */
-    private String determineColumnName(AttributeDescriptor attribute, String pColumnName, Column column, Map<String, String> overrides) {
-        // Priority 1: Explicit parameter columnName (highest priority)
-        if (notBlank(pColumnName)) {
-            return pColumnName;
-        }
-        
-        // Priority 2: Overrides map for this attribute  
-        String attributeName = attribute.name();
-        String overrideName = overrides.get(attributeName);
-        if (notBlank(overrideName)) {
-            return overrideName;
-        }
-        
-        // Priority 3: @Column.name() annotation
-        if (column != null && notBlank(column.name())) {
-            return column.name();
-        }
-        
-        // Priority 4: Attribute name (fallback)
-        return attributeName;
     }
 
     private void processIdGeneration(AttributeDescriptor attribute, ColumnModel.ColumnModelBuilder builder) {

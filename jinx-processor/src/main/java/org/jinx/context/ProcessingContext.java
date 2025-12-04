@@ -12,6 +12,8 @@ import org.jinx.naming.Naming;
 import org.jinx.options.JinxOptions;
 import org.jinx.config.ConfigurationLoader;
 import org.jinx.processor.JpaSqlGeneratorProcessor;
+import org.jinx.spi.naming.JinxNamingStrategy;
+import org.jinx.spi.naming.impl.NoOpNamingStrategy;
 
 import javax.annotation.processing.Messager;
 import javax.annotation.processing.ProcessingEnvironment;
@@ -41,6 +43,7 @@ public class ProcessingContext {
     private final SchemaModel schemaModel;
     private final Map<String, String> autoApplyConverters = new HashMap<>();
     private final Naming naming;
+    private final JinxNamingStrategy namingStrategy;
     private final Queue<EntityModel> deferredEntities = new ArrayDeque<>();
     private final Set<String> deferredNames = new HashSet<>();
     private final AttributeDescriptorFactory attributeDescriptorFactory;
@@ -60,9 +63,25 @@ public class ProcessingContext {
     // Map<entityFqcn, Map<pkAttrPath, List<columnName>>>
     private final Map<String, Map<String, List<String>>> pkAttributeToColumnMap = new HashMap<>();
 
+    /**
+     * 기본 생성자 (하위 호환성 유지)
+     * namingStrategy는 NoOpNamingStrategy로 초기화됩니다.
+     */
     public ProcessingContext(ProcessingEnvironment processingEnv, SchemaModel schemaModel) {
+        this(processingEnv, schemaModel, new NoOpNamingStrategy());
+    }
+
+    /**
+     * 네이밍 전략을 지정하는 생성자
+     *
+     * @param processingEnv 어노테이션 프로세싱 환경
+     * @param schemaModel 스키마 모델
+     * @param namingStrategy 네이밍 전략 (null인 경우 NoOpNamingStrategy 사용)
+     */
+    public ProcessingContext(ProcessingEnvironment processingEnv, SchemaModel schemaModel, JinxNamingStrategy namingStrategy) {
         this.processingEnv = processingEnv;
         this.schemaModel = schemaModel;
+        this.namingStrategy = namingStrategy != null ? namingStrategy : new NoOpNamingStrategy();
 
         // Load configuration (with profile support).
         Map<String, String> config = loadConfiguration(processingEnv);
