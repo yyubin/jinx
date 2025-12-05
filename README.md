@@ -14,7 +14,7 @@ Jinx scans your JPA annotations to generate **schema snapshots (JSON)** and auto
 * **Automatic schema analysis based on JPA annotations**  
   No manual DDL writing—schema snapshots track changes over time.
 * **Diff-based migration generation**  
-  Automatically detects renames, nullable changes, index additions, and more.
+  Nullable changes, index additions, and more.
 * **Outputs both DDL SQL and Liquibase YAML**  
   Works seamlessly with existing migration tools.
 * **Easy integration with Gradle and Java projects**
@@ -268,7 +268,6 @@ https://plugins.gradle.org/plugin/org.jinx.gradle
 ## Supported Features
 
 * Table/column/PK/index/constraint creation & update detection
-* Automatic rename detection (progressively improving)
 * Rollback SQL generation
 * Liquibase YAML generation
 * MySQL dialect included
