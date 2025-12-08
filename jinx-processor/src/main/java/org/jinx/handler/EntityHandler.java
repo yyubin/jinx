@@ -444,14 +444,27 @@ public class EntityHandler {
 
 
 
-    // NEW: AttributeDescriptor-based field processing
+    // NEW: AttributeDescriptor-based field processing with Two-Phase approach
     public void processFieldsWithAttributeDescriptor(TypeElement typeElement, EntityModel entity) {
         // Get cached AttributeDescriptor list based on Access strategy
         List<AttributeDescriptor> descriptors = context.getCachedDescriptors(typeElement);
 
         Map<String, SecondaryTable> tableMappings = buildTableMappings(entity, collectSecondaryTables(typeElement));
 
+        // Phase 1: Process @Id fields first to ensure primary key is registered before @ElementCollection
+        // Note: @EmbeddedId is already processed in processCompositeKeys() before this method is called
         for (AttributeDescriptor descriptor : descriptors) {
+            if (descriptor.hasAnnotation(Id.class)) {
+                processRegularAttribute(descriptor, entity, tableMappings);
+            }
+        }
+
+        // Phase 2: Process all other attributes (@ElementCollection, @Embedded, relationships, etc.)
+        for (AttributeDescriptor descriptor : descriptors) {
+            // Skip @Id (already processed in Phase 1) and @EmbeddedId (processed earlier in processCompositeKeys)
+            if (descriptor.hasAnnotation(Id.class) || descriptor.hasAnnotation(EmbeddedId.class)) {
+                continue;
+            }
             processAttributeDescriptor(descriptor, entity, tableMappings);
         }
     }

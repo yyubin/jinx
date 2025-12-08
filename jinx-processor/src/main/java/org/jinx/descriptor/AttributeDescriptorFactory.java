@@ -235,7 +235,9 @@ public class AttributeDescriptorFactory {
     }
 
     private Map<String, AttributeCandidate> collectAttributeCandidates(TypeElement typeElement) {
-        Map<String, AttributeCandidate> candidates = new HashMap<>();
+        // Use LinkedHashMap to preserve field declaration order, ensuring deterministic processing
+        // This prevents issues where @ElementCollection might be processed before @Id
+        Map<String, AttributeCandidate> candidates = new LinkedHashMap<>();
         collectAttributesFromHierarchy(typeElement, candidates);
         return candidates;
     }
