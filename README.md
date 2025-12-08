@@ -5,7 +5,7 @@
 
 Jinx scans your JPA annotations to generate **schema snapshots (JSON)** and automatically produces **DDL SQL** and **Liquibase migration YAML** by comparing changes across snapshots.
 
-**MySQL First** | **JDK 21+ Required** | **Latest Version: 0.0.18** | **JPA 3.2.0 Supported**
+**MySQL First** | **JDK 21+ Required** | **Latest Version: 0.0.19** | **JPA 3.2.0 Supported**
 
 ---
 
@@ -30,8 +30,8 @@ https://github.com/yyubin/jinx-test
 
 ```gradle
 dependencies {
-    annotationProcessor("io.github.yyubin:jinx-processor:0.0.18")
-    implementation("io.github.yyubin:jinx-core:0.0.18")
+    annotationProcessor("io.github.yyubin:jinx-processor:0.0.19")
+    implementation("io.github.yyubin:jinx-core:0.0.19")
 }
 ````
 
@@ -143,7 +143,7 @@ Below is a minimal example of integrating Jinx into a Spring Boot project.
 val jinxCli by configurations.creating
 
 dependencies {
-    jinxCli("io.github.yyubin:jinx-cli:0.0.18")
+    jinxCli("io.github.yyubin:jinx-cli:0.0.19")
 }
 ```
 
@@ -198,7 +198,7 @@ Once approved, you can apply it as:
 
 ```kotlin
 plugins {
-    id("org.jinx.gradle") version "0.0.18"
+    id("org.jinx.gradle") version "0.0.19"
 }
 ```
 
@@ -208,7 +208,7 @@ Until then, you may apply it manually:
 buildscript {
     repositories { mavenCentral() }
     dependencies {
-        classpath("org.jinx:jinx-gradle:0.0.18")
+        classpath("org.jinx:jinx-gradle:0.0.19")
     }
 }
 

@@ -67,7 +67,7 @@ afterEvaluate {
                         developer {
                             id = 'yyubin'
                             name = 'Yubin'
-                            email = 'yyubin@gmail.com'
+                            email = 'hazing0910@gmail.com'
                         }
                     }
 
@@ -79,7 +79,6 @@ afterEvaluate {
                 }
             }
 
-            // Plugin Marker: Plugin Portal 게시용, Maven Central에서는 의미 없음
             all { pub ->
                 if (pub.name.contains("PluginMarkerMaven")) {
                     pub.pom {
@@ -98,7 +97,7 @@ afterEvaluate {
                             developer {
                                 id = 'yyubin'
                                 name = 'Yubin'
-                                email = 'yyubin@gmail.com'
+                                email = 'hazing0910@gmail.com'
                             }
                         }
 
