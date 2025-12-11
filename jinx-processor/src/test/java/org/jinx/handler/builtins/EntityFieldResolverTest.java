@@ -111,16 +111,20 @@ class EntityFieldResolverTest {
     void resolve_shouldHandleFieldLevelConvertAnnotation() {
         // Arrange
         Convert convert = mock(Convert.class);
-        // 복잡한 TypeMirror 모의를 피하기 위해 간단한 클래스 사용
-        class DummyConverter {}
-        when(convert.converter()).thenAnswer(invocation -> DummyConverter.class);
+        TypeMirror converterTypeMirror = mock(TypeMirror.class);
+        when(converterTypeMirror.toString()).thenReturn("com.example.DummyConverter");
+
+        // Simulate annotation processing behavior: accessing Class value throws MirroredTypeException
+        when(convert.converter()).thenAnswer(invocation -> {
+            throw new javax.lang.model.type.MirroredTypeException(converterTypeMirror);
+        });
         when(mockField.getAnnotation(Convert.class)).thenReturn(convert);
 
         // Act
         resolver.resolve(mockField, null, "testField", Collections.emptyMap());
 
         // Assert
-        verify(mockBuilder).conversionClass(DummyConverter.class.getName());
+        verify(mockBuilder).conversionClass("com.example.DummyConverter");
     }
 
     @Test
