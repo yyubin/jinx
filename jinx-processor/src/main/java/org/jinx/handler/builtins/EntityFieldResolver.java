@@ -49,7 +49,12 @@ public class EntityFieldResolver extends AbstractColumnResolver {
         // Handle @Convert (field-level or autoApply)
         Convert convert = field.getAnnotation(Convert.class);
         if (convert != null) {
-            builder.conversionClass(convert.converter().getName());
+            try {
+                convert.converter();
+            } catch (javax.lang.model.type.MirroredTypeException mte) {
+                TypeMirror typeMirror = mte.getTypeMirror();
+                builder.conversionClass(typeMirror.toString());
+            }
         } else {
             String autoApplyConverter = context.getAutoApplyConverters().get(field.asType().toString());
             if (autoApplyConverter != null) {

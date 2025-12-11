@@ -44,68 +44,31 @@ java {
     withJavadocJar()
 }
 
-afterEvaluate {
-
-    publishing {
-        publications {
-            named('pluginMaven', MavenPublication) {
-                artifactId = 'jinx-gradle-plugin'
-
-                pom {
-                    name = 'jinx-gradle-plugin'
-                    description = 'Gradle plugin for Jinx JPA DDL generation tool'
-                    url = 'https://github.com/yyubin/jinx'
-
-                    licenses {
-                        license {
-                            name = 'The Apache License, Version 2.0'
-                            url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
-                        }
-                    }
-
-                    developers {
-                        developer {
-                            id = 'yyubin'
-                            name = 'Yubin'
-                            email = 'hazing0910@gmail.com'
-                        }
-                    }
-
-                    scm {
-                        connection = 'scm:git:git://github.com/yyubin/jinx.git'
-                        developerConnection = 'scm:git:ssh://github.com/yyubin/jinx.git'
-                        url = 'https://github.com/yyubin/jinx'
+publishing {
+    publications {
+        create('mavenJava', MavenPublication) {
+            from components.java
+            artifactId = 'jinx-gradle-plugin'
+            pom {
+                name = 'Jinx'
+                description = 'JPA DDL generation & Gradle plugin'
+                url = 'https://github.com/yyubin/jinx'
+                licenses {
+                    license {
+                        name = 'Apache-2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0'
                     }
                 }
-            }
-
-            all { pub ->
-                if (pub.name.contains("PluginMarkerMaven")) {
-                    pub.pom {
-                        name = 'Jinx Gradle Plugin Marker'
-                        description = 'Gradle plugin marker for Jinx JPA DDL generation tool'
-                        url = 'https://github.com/yyubin/jinx'
-
-                        licenses {
-                            license {
-                                name = 'The Apache License, Version 2.0'
-                                url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
-                            }
-                        }
-
-                        developers {
-                            developer {
-                                id = 'yyubin'
-                                name = 'Yubin'
-                                email = 'hazing0910@gmail.com'
-                            }
-                        }
-
-                        scm {
-                            connection = 'scm:git:git://github.com/yyubin/jinx.git'
-                            developerConnection = 'scm:git:ssh://github.com/yyubin/jinx.git'
-                            url = 'https://github.com/yyubin/jinx'
-                        }
+                scm {
+                    url = 'https://github.com/yyubin/jinx'
+                    connection = 'scm:git:https://github.com/yyubin/jinx.git'
+                    developerConnection = 'scm:git:git@github.com:yyubin/jinx.git'
+                }
+                developers {
+                    developer {
+                        id = 'yyubin'
+                        name = 'Yubin'
+                        url = 'https://github.com/yyubin'
                     }
                 }
             }
@@ -113,16 +76,94 @@ afterEvaluate {
     }
 }
 
-signing {
-    setRequired(false)
-
-    if (project.hasProperty("signingKey")) {
-        useInMemoryPgpKeys(
-                project.findProperty("signingKey"),
-                project.findProperty("signingPassword")
-        )
-
-        sign(publishing.publications.named("pluginMaven"))
+if (project.findProperty("signingKey") != null) {
+    signing {
+        def key = project.findProperty("signingKey") ?: System.getenv('ORG_GRADLE_PROJECT_signingKey')
+        def pass = project.findProperty("signingPassword") ?: System.getenv('ORG_GRADLE_PROJECT_signingPassword')
+        useInMemoryPgpKeys(key, pass)
+        sign publishing.publications.mavenJava
     }
 }
+
+//afterEvaluate {
+//
+//    publishing {
+//        publications {
+//            named('pluginMaven', MavenPublication) {
+//                artifactId = 'jinx-gradle-plugin'
+//
+//                pom {
+//                    name = 'jinx-gradle-plugin'
+//                    description = 'Gradle plugin for Jinx JPA DDL generation tool'
+//                    url = 'https://github.com/yyubin/jinx'
+//
+//                    licenses {
+//                        license {
+//                            name = 'The Apache License, Version 2.0'
+//                            url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+//                        }
+//                    }
+//
+//                    developers {
+//                        developer {
+//                            id = 'yyubin'
+//                            name = 'Yubin'
+//                            email = 'hazing0910@gmail.com'
+//                        }
+//                    }
+//
+//                    scm {
+//                        connection = 'scm:git:git://github.com/yyubin/jinx.git'
+//                        developerConnection = 'scm:git:ssh://github.com/yyubin/jinx.git'
+//                        url = 'https://github.com/yyubin/jinx'
+//                    }
+//                }
+//            }
+//
+//            all { pub ->
+//                if (pub.name.contains("PluginMarkerMaven")) {
+//                    pub.pom {
+//                        name = 'Jinx Gradle Plugin Marker'
+//                        description = 'Gradle plugin marker for Jinx JPA DDL generation tool'
+//                        url = 'https://github.com/yyubin/jinx'
+//
+//                        licenses {
+//                            license {
+//                                name = 'The Apache License, Version 2.0'
+//                                url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+//                            }
+//                        }
+//
+//                        developers {
+//                            developer {
+//                                id = 'yyubin'
+//                                name = 'Yubin'
+//                                email = 'hazing0910@gmail.com'
+//                            }
+//                        }
+//
+//                        scm {
+//                            connection = 'scm:git:git://github.com/yyubin/jinx.git'
+//                            developerConnection = 'scm:git:ssh://github.com/yyubin/jinx.git'
+//                            url = 'https://github.com/yyubin/jinx'
+//                        }
+//                    }
+//                }
+//            }
+//        }
+//    }
+//}
+//
+//signing {
+//    setRequired(false)
+//
+//    if (project.hasProperty("signingKey")) {
+//        useInMemoryPgpKeys(
+//                project.findProperty("signingKey"),
+//                project.findProperty("signingPassword")
+//        )
+//
+//        sign(publishing.publications.named("pluginMaven"))
+//    }
+//}
 
