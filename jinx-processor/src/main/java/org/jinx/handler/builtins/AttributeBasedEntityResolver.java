@@ -56,8 +56,12 @@ public class AttributeBasedEntityResolver implements AttributeColumnResolver {
         // Handle @Convert (field-level or autoApply)
         Convert convert = attribute.getAnnotation(Convert.class);
         if (convert != null) {
-            String converterClass = convert.converter().getName();
-            builder.conversionClass(converterClass);
+            try {
+                convert.converter();
+            } catch (javax.lang.model.type.MirroredTypeException mte) {
+                TypeMirror typeMirror = mte.getTypeMirror();
+                builder.conversionClass(typeMirror.toString());
+            }
         } else {
             // Check for autoApply converters
             String targetTypeName = actualType.toString();
