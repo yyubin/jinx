@@ -37,7 +37,7 @@ public class MigrationGenerator {
         // 1-1) ModifiedEntity: DROP 단계
         for (var m : diff.getModifiedTables()) {
             var v = providers.tableContentVisitor().apply(m);
-            diff.tableContentAccept(v, DiffResult.TableContentPhase.DROP);
+            m.accept(v, DiffResult.TableContentPhase.DROP);
             out.append(v.getGeneratedSql()).append('\n');
         }
 
@@ -60,14 +60,14 @@ public class MigrationGenerator {
         // 2-2) ModifiedEntity: ALTER 단계
         for (var m : diff.getModifiedTables()) {
             var v = providers.tableContentVisitor().apply(m);
-            diff.tableContentAccept(v, DiffResult.TableContentPhase.ALTER);
+            m.accept(v, DiffResult.TableContentPhase.ALTER);
             out.append(v.getGeneratedSql()).append('\n');
         }
 
         // 3) FK 추가 단계
         for (var m : diff.getModifiedTables()) {
             var v = providers.tableContentVisitor().apply(m);
-            diff.tableContentAccept(v, DiffResult.TableContentPhase.FK_ADD);
+            m.accept(v, DiffResult.TableContentPhase.FK_ADD);
             out.append(v.getGeneratedSql()).append('\n');
         }
 

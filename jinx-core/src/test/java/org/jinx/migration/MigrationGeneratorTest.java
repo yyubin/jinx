@@ -40,8 +40,9 @@ class MigrationGeneratorTest {
         when(newEntity.getTableName()).thenReturn("t_new");
         when(me.getNewEntity()).thenReturn(newEntity);
         when(diff.getModifiedTables()).thenReturn(List.of(me));
+        when(diff.getAddedTables()).thenReturn(List.of());
 
-        // tableContentAccept: Phase 별로 녹화형 비지터에 visit* 호출 → SQL 축적
+        // ModifiedEntity.accept: Phase 별로 녹화형 비지터에 visit* 호출 → SQL 축적
         doAnswer(inv -> {
             TableContentVisitor v = inv.getArgument(0);
             DiffResult.TableContentPhase phase = inv.getArgument(1);
@@ -53,7 +54,7 @@ class MigrationGeneratorTest {
                 v.visitDroppedPrimaryKey();
             }
             return null;
-        }).when(diff).tableContentAccept(any(), eq(DiffResult.TableContentPhase.DROP));
+        }).when(me).accept(any(), eq(DiffResult.TableContentPhase.DROP));
 
         doAnswer(inv -> {
             TableContentVisitor v = inv.getArgument(0);
@@ -67,7 +68,7 @@ class MigrationGeneratorTest {
                 v.visitModifiedColumn(newCol, oldCol);
             }
             return null;
-        }).when(diff).tableContentAccept(any(), eq(DiffResult.TableContentPhase.ALTER));
+        }).when(me).accept(any(), eq(DiffResult.TableContentPhase.ALTER));
 
         doAnswer(inv -> {
             TableContentVisitor v = inv.getArgument(0);
@@ -78,7 +79,7 @@ class MigrationGeneratorTest {
                 v.visitAddedRelationship(rel);
             }
             return null;
-        }).when(diff).tableContentAccept(any(), eq(DiffResult.TableContentPhase.FK_ADD));
+        }).when(me).accept(any(), eq(DiffResult.TableContentPhase.FK_ADD));
 
         // tableAccept: DROPPED/RENAMED/ADDED 각각 호출 시 녹화형 비지터에 visit* 호출
         doAnswer(inv -> {
@@ -208,8 +209,8 @@ class MigrationGeneratorTest {
         DiffResult diff = mock(DiffResult.class);
         when(diff.getWarnings()).thenReturn(List.of());
         when(diff.getModifiedTables()).thenReturn(List.of());
+        when(diff.getAddedTables()).thenReturn(List.of());
         doNothing().when(diff).tableAccept(any(), any());
-        doNothing().when(diff).tableContentAccept(any(), any());
         doNothing().when(diff).sequenceAccept(any(), any(), any());
         doNothing().when(diff).tableGeneratorAccept(any(), any(), any());
 
