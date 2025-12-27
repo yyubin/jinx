@@ -43,6 +43,7 @@ bin/
 
 ### Local Development ###
 gradle-local.properties
+local.properties
 
 gpg-key.conf
 private.asc
