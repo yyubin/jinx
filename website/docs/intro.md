@@ -6,7 +6,7 @@ sidebar_position: 1
 
 **Jinx**는 JPA 애노테이션을 스캔해 스키마 스냅샷(JSON)을 만들고, 이전 스냅샷과 비교하여 **DB 마이그레이션 SQL**과 **Liquibase YAML**을 자동 생성하는 도구입니다.
 
-**현재 MySQL 우선 지원** | **JDK 21+ 필요** | **최신 릴리즈: 0.0.21**
+**현재 MySQL 우선 지원** | **JDK 21+ 필요** | **최신 릴리즈: 0.0.22**
 
 ## 빠른 시작
 
@@ -14,8 +14,8 @@ sidebar_position: 1
 
 ```gradle
 dependencies {
-    annotationProcessor "io.github.yyubin:jinx-processor:0.0.21"
-    implementation "io.github.yyubin:jinx-core:0.0.21"
+    annotationProcessor "io.github.yyubin:jinx-processor:0.0.22"
+    implementation "io.github.yyubin:jinx-core:0.0.22"
 }
 ```
 
