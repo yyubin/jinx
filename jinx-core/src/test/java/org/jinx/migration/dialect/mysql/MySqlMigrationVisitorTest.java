@@ -250,13 +250,16 @@ class MySqlMigrationVisitorTest {
         List<Class<?>> expected = List.of(
                 IndexAddContributor.class,
                 IndexDropContributor.class,
-                IndexModifyContributor.class,
+                IndexDropContributor.class,      // visitModifiedIndex: drop
+                IndexAddContributor.class,       // visitModifiedIndex: add
                 ConstraintAddContributor.class,
                 ConstraintDropContributor.class,
-                ConstraintModifyContributor.class,
+                ConstraintDropContributor.class, // visitModifiedConstraint: drop
+                ConstraintAddContributor.class,  // visitModifiedConstraint: add
                 RelationshipAddContributor.class,
                 RelationshipDropContributor.class,
-                RelationshipModifyContributor.class
+                RelationshipDropContributor.class,  // visitModifiedRelationship: drop
+                RelationshipAddContributor.class    // visitModifiedRelationship: add
         );
         assertEquals(expected, rec.addedTypes);
     }
