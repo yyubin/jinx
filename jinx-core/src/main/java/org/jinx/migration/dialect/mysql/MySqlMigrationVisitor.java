@@ -116,7 +116,8 @@ public class MySqlMigrationVisitor extends AbstractMigrationVisitor implements
 
     @Override
     public void visitModifiedIndex(IndexModel newIndex, IndexModel oldIndex) {
-        alterBuilder.add(new IndexModifyContributor(alterBuilder.getTableName(), newIndex, oldIndex));
+        alterBuilder.add(new IndexDropContributor(alterBuilder.getTableName(), oldIndex));
+        alterBuilder.add(new IndexAddContributor(alterBuilder.getTableName(), newIndex));
     }
 
     @Override
@@ -131,7 +132,8 @@ public class MySqlMigrationVisitor extends AbstractMigrationVisitor implements
 
     @Override
     public void visitModifiedConstraint(ConstraintModel newConstraint, ConstraintModel oldConstraint) {
-        alterBuilder.add(new ConstraintModifyContributor(alterBuilder.getTableName(), newConstraint, oldConstraint));
+        alterBuilder.add(new ConstraintDropContributor(alterBuilder.getTableName(), oldConstraint));
+        alterBuilder.add(new ConstraintAddContributor(alterBuilder.getTableName(), newConstraint));
     }
 
     @Override
@@ -146,6 +148,7 @@ public class MySqlMigrationVisitor extends AbstractMigrationVisitor implements
 
     @Override
     public void visitModifiedRelationship(RelationshipModel newRelationship, RelationshipModel oldRelationship) {
-        alterBuilder.add(new RelationshipModifyContributor(alterBuilder.getTableName(), newRelationship, oldRelationship));
+        alterBuilder.add(new RelationshipDropContributor(alterBuilder.getTableName(), oldRelationship));
+        alterBuilder.add(new RelationshipAddContributor(alterBuilder.getTableName(), newRelationship));
     }
 }
