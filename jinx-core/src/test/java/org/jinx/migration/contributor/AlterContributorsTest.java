@@ -86,6 +86,7 @@ class AlterContributorsTest {
 
     @Nested
     @DisplayName("ConstraintModifyContributor")
+    @Deprecated // No longer used in MySqlMigrationVisitor (replaced with Drop + Add pattern)
     class ConstraintModifyContributorTest {
 
         @Test
@@ -108,6 +109,7 @@ class AlterContributorsTest {
 
     @Nested
     @DisplayName("IndexModifyContributor")
+    @Deprecated // No longer used in MySqlMigrationVisitor (replaced with Drop + Add pattern)
     class IndexModifyContributorTest {
 
         @Test
@@ -152,6 +154,7 @@ class AlterContributorsTest {
 
     @Nested
     @DisplayName("RelationshipModifyContributor")
+    @Deprecated // No longer used in MySqlMigrationVisitor (replaced with Drop + Add pattern)
     class RelationshipModifyContributorTest {
 
         @Test
