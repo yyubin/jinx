@@ -8,7 +8,7 @@ Jinx analyzes your **JPA annotations at compile time**, generates **schema snaps
 
 Liquibase YAML is supported as an **output dialect**, but **SQL is the primary and most thoroughly validated output format**.
 
-**MySQL First** | **JDK 21+ Required** | **Latest Version: 0.0.21** | **JPA 3.2.0 Supported**
+**MySQL First** | **JDK 21+ Required** | **Latest Version: 0.0.22** | **JPA 3.2.0 Supported**
 
 ---
 
@@ -86,8 +86,8 @@ Liquibase support is **not the core model**, but a translation layer on top of S
 
 ```gradle
 dependencies {
-    annotationProcessor("io.github.yyubin:jinx-processor:0.0.21")
-    implementation("io.github.yyubin:jinx-core:0.0.21")
+    annotationProcessor("io.github.yyubin:jinx-processor:0.0.22")
+    implementation("io.github.yyubin:jinx-core:0.0.22")
 }
 ```
 
@@ -176,7 +176,7 @@ CREATE INDEX `ix_bird__zoo_id` ON `Bird` (`zoo_id`);
 
 ```kotlin
 plugins {
-    id("io.github.yyubin.jinx") version "0.0.21"
+    id("io.github.yyubin.jinx") version "0.0.22"
 }
 ```
 

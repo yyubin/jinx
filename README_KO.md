@@ -11,7 +11,7 @@ Jinx는 **컴파일 타임에 JPA 애노테이션을 분석**하여
 Liquibase YAML도 **출력 포맷 중 하나**로 지원하지만,  
 **SQL이 주력이며 가장 많이 검증된 출력 결과**입니다.
 
-**MySQL 우선 지원** | **JDK 21+ 필요** | **최신 버전: 0.0.21** | **JPA 3.2.0 지원**
+**MySQL 우선 지원** | **JDK 21+ 필요** | **최신 버전: 0.0.22** | **JPA 3.2.0 지원**
 
 ---
 
@@ -98,8 +98,8 @@ Liquibase는 핵심 모델이 아니라
 
 ```gradle
 dependencies {
-    annotationProcessor("io.github.yyubin:jinx-processor:0.0.21")
-    implementation("io.github.yyubin:jinx-core:0.0.21")
+    annotationProcessor("io.github.yyubin:jinx-processor:0.0.22")
+    implementation("io.github.yyubin:jinx-core:0.0.22")
 }
 ````
 
@@ -155,7 +155,7 @@ jinx db migrate \
 
 ```kotlin
 plugins {
-    id("io.github.yyubin.jinx") version "0.0.21"
+    id("io.github.yyubin.jinx") version "0.0.22"
 }
 ```
 
