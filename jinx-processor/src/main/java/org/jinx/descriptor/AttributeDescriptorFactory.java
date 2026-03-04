@@ -141,14 +141,13 @@ public class AttributeDescriptorFactory {
                 return Optional.of(new FieldAttributeDescriptor(field, typeUtils, elements));
             }
         } else {
-            // Default FIELD access or when defaultAccessType is FIELD
+            // Default FIELD access: only fields are persistent attributes.
+            // A getter without a backing field is a computed method and must NOT be mapped
+            // as a column. (JPA spec §2.3: In field-based access, only fields are persistent.)
             if (field != null) {
                 return Optional.of(new FieldAttributeDescriptor(field, typeUtils, elements));
             }
-            // If no field but getter exists, fall back to property access
-            if (getter != null) {
-                return createPropertyDescriptor(getter);
-            }
+            // No field → not a persistent attribute in FIELD access mode.
         }
 
         return Optional.empty();
