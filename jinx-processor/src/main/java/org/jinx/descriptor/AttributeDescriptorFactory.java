@@ -245,7 +245,18 @@ public class AttributeDescriptorFactory {
         if (typeElement == null || "java.lang.Object".equals(typeElement.getQualifiedName().toString())) {
             return;
         }
-        collectAttributesFromHierarchy(AccessUtils.getSuperclass(typeElement), candidates);
+
+        // Only recurse into superclasses that do NOT have their own table.
+        // - @MappedSuperclass  → no own table → recurse (its fields belong to the child's table)
+        // - plain Java class   → no JPA annotation → recurse (transparent layer)
+        // - @Entity            → HAS its own table → STOP here.
+        //   In JOINED inheritance the parent's columns live in the parent's table and must NOT
+        //   be duplicated into the child.  TABLE_PER_CLASS children receive parent columns via
+        //   the explicit processSingleTablePerClassChild() copy step instead.
+        TypeElement superclass = AccessUtils.getSuperclass(typeElement);
+        if (superclass != null && superclass.getAnnotation(jakarta.persistence.Entity.class) == null) {
+            collectAttributesFromHierarchy(superclass, candidates);
+        }
         boolean isEntity = typeElement.getAnnotation(jakarta.persistence.Entity.class) != null;
         boolean isMappedSuperclass = typeElement.getAnnotation(jakarta.persistence.MappedSuperclass.class) != null;
         boolean isEmbeddable = typeElement.getAnnotation(jakarta.persistence.Embeddable.class) != null;
