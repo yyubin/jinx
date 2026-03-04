@@ -15,6 +15,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.*;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
@@ -117,19 +119,21 @@ class InheritanceHandlerTest {
 
         // === TypeElement 및 관련 객체들 명시적 모킹 ===
         TypeElement parentType = mock(TypeElement.class);
-        TypeMirror parentTypeMirror = mock(TypeMirror.class);
         Name parentName = mock(Name.class);
         lenient().when(parentName.toString()).thenReturn("com.example.Parent");
         lenient().when(parentType.getQualifiedName()).thenReturn(parentName);
-        when(parentType.asType()).thenReturn(parentTypeMirror);
         when(parentType.getAnnotation(Inheritance.class))
                 .thenReturn(AnnotationProxies.inheritance(InheritanceType.JOINED));
 
         TypeElement childType = mock(TypeElement.class);
-        TypeMirror childTypeMirror = mock(TypeMirror.class);
-        when(childType.asType()).thenReturn(childTypeMirror);
         when(elements.getTypeElement("com.example.Child")).thenReturn(childType);
-        when(types.isSubtype(childTypeMirror, parentTypeMirror)).thenReturn(true);
+
+        // findImmediateEntityParent(childType) 탐색: childType.superclass → parentType(@Entity)
+        DeclaredType childSuper = mock(DeclaredType.class);
+        when(childSuper.getKind()).thenReturn(TypeKind.DECLARED);
+        when(childSuper.asElement()).thenReturn(parentType);
+        when(childType.getSuperclass()).thenReturn(childSuper);
+        lenient().when(parentType.getAnnotation(Entity.class)).thenReturn(mock(Entity.class));
 
         // PK 조회 모킹
         when(context.findAllPrimaryKeyColumns(parent))
@@ -174,19 +178,21 @@ class InheritanceHandlerTest {
 
         // === TypeElement 명시적 모킹 ===
         TypeElement parentType = mock(TypeElement.class);
-        TypeMirror parentTypeMirror = mock(TypeMirror.class);
         Name parentName = mock(Name.class);
         lenient().when(parentName.toString()).thenReturn("com.example.Parent");
         lenient().when(parentType.getQualifiedName()).thenReturn(parentName);
-        when(parentType.asType()).thenReturn(parentTypeMirror);
         when(parentType.getAnnotation(Inheritance.class))
                 .thenReturn(AnnotationProxies.inheritance(InheritanceType.JOINED));
 
         TypeElement childType = mock(TypeElement.class);
-        TypeMirror childTypeMirror = mock(TypeMirror.class);
-        when(childType.asType()).thenReturn(childTypeMirror);
         when(elements.getTypeElement("com.example.Child")).thenReturn(childType);
-        when(types.isSubtype(childTypeMirror, parentTypeMirror)).thenReturn(true);
+
+        // findImmediateEntityParent(childType) 탐색: childType.superclass → parentType(@Entity)
+        DeclaredType childSuper1 = mock(DeclaredType.class);
+        when(childSuper1.getKind()).thenReturn(TypeKind.DECLARED);
+        when(childSuper1.asElement()).thenReturn(parentType);
+        when(childType.getSuperclass()).thenReturn(childSuper1);
+        lenient().when(parentType.getAnnotation(Entity.class)).thenReturn(mock(Entity.class));
 
         // parent PK 1개 모킹
         when(context.findAllPrimaryKeyColumns(parent))
@@ -222,21 +228,23 @@ class InheritanceHandlerTest {
 
         // === TypeElement 명시적 모킹 ===
         TypeElement parentType = mock(TypeElement.class);
-        TypeMirror parentTypeMirror = mock(TypeMirror.class);
         Name parentName = mock(Name.class);
         lenient().when(parentName.toString()).thenReturn("com.example.Parent");
         lenient().when(parentType.getQualifiedName()).thenReturn(parentName);
-        when(parentType.asType()).thenReturn(parentTypeMirror);
         when(parentType.getAnnotation(Inheritance.class))
                 .thenReturn(AnnotationProxies.inheritance(InheritanceType.JOINED));
 
         TypeElement childType = mock(TypeElement.class);
-        TypeMirror childTypeMirror = mock(TypeMirror.class);
-        when(childType.asType()).thenReturn(childTypeMirror);
         when(elements.getTypeElement("com.example.Child")).thenReturn(childType);
-        when(types.isSubtype(childTypeMirror, parentTypeMirror)).thenReturn(true);
         when(childType.getAnnotation(PrimaryKeyJoinColumn.class)).thenReturn(null);
         when(childType.getAnnotation(PrimaryKeyJoinColumns.class)).thenReturn(null);
+
+        // findImmediateEntityParent(childType) 탐색: childType.superclass → parentType(@Entity)
+        DeclaredType childSuper2 = mock(DeclaredType.class);
+        when(childSuper2.getKind()).thenReturn(TypeKind.DECLARED);
+        when(childSuper2.asElement()).thenReturn(parentType);
+        when(childType.getSuperclass()).thenReturn(childSuper2);
+        lenient().when(parentType.getAnnotation(Entity.class)).thenReturn(mock(Entity.class));
 
         when(context.findAllPrimaryKeyColumns(parent))
                 .thenReturn(List.of(parent.findColumn("parent","id")));

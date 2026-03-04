@@ -223,13 +223,12 @@ public class EntityHandler {
         TypeMirror superclass = type.getSuperclass();
         if (superclass.getKind() != TypeKind.DECLARED) return;
 
-        Optional<TypeElement> parentElementOptional = findNearestJoinedParentEntity(type);
+        Optional<TypeElement> parentElementOptional = findJoinedDirectParent(type);
         if (parentElementOptional.isEmpty()) {
             return;
         }
         TypeElement parentType = parentElementOptional.get();
-        Inheritance parentInheritance = parentType.getAnnotation(Inheritance.class);
-        if (parentInheritance == null || parentInheritance.strategy() != InheritanceType.JOINED) return;
+        // @Inheritance check removed: findJoinedDirectParent already confirmed JOINED hierarchy
 
         // Lookup parent entity model/PK columns
         EntityModel parentEntity = context.getSchemaModel().getEntities()
@@ -279,17 +278,34 @@ public class EntityHandler {
         }
     }
 
-    // Utility to protect against multi-level inheritance
-    private Optional<TypeElement> findNearestJoinedParentEntity(TypeElement type) {
+    /**
+     * O(n) single-pass: walks up the class hierarchy once and returns the <em>direct</em>
+     * {@code @Entity} parent, confirming the hierarchy is JOINED along the way.
+     *
+     * <p>Algorithm:
+     * <ol>
+     *   <li>First {@code @Entity} encountered → recorded as {@code directParent}.</li>
+     *   <li>Continue walking up.</li>
+     *   <li>When an ancestor with {@code @Inheritance(JOINED)} is found → hierarchy confirmed,
+     *       return {@code directParent} (not the root).</li>
+     *   <li>If a conflicting strategy (SINGLE_TABLE / TABLE_PER_CLASS) is found → error.</li>
+     *   <li>If no JOINED root is found → not a JOINED child, return empty.</li>
+     * </ol>
+     *
+     * <p>Previously this method was named {@code findNearestJoinedParentEntity} and mistakenly
+     * returned the JOINED <em>root</em> instead of the direct parent, causing all 3+ level
+     * children to create FK directly to the root table (Bug 3).
+     */
+    private Optional<TypeElement> findJoinedDirectParent(TypeElement type) {
         Set<String> seen = new java.util.HashSet<>();
         TypeMirror sup = type.getSuperclass();
+        TypeElement directParent = null;
 
         while (sup.getKind() == TypeKind.DECLARED) {
             TypeElement p = (TypeElement) ((DeclaredType) sup).asElement();
             String qn = p.getQualifiedName().toString();
 
             if (!seen.add(qn)) {
-                // Log warning and stop
                 context.getMessager().printMessage(
                         javax.tools.Diagnostic.Kind.WARNING,
                         "Detected inheritance cycle near: " + qn + " while scanning for JOINED parent of " +
@@ -298,36 +314,33 @@ public class EntityHandler {
                 break;
             }
 
-            // Continue upward if not an entity
-            if (p.getAnnotation(jakarta.persistence.Entity.class) == null) {
-                sup = p.getSuperclass();
-                continue;
+            if (p.getAnnotation(jakarta.persistence.Entity.class) != null) {
+                if (directParent == null) {
+                    directParent = p;  // first @Entity ancestor = direct parent
+                }
+                jakarta.persistence.Inheritance inh = p.getAnnotation(jakarta.persistence.Inheritance.class);
+                if (inh != null) {
+                    switch (inh.strategy()) {
+                        case JOINED:
+                            // JOINED root found → hierarchy confirmed, return direct parent
+                            return Optional.of(directParent);
+                        case SINGLE_TABLE:
+                        case TABLE_PER_CLASS:
+                            context.getMessager().printMessage(
+                                    javax.tools.Diagnostic.Kind.ERROR,
+                                    "Found explicit inheritance strategy '" + inh.strategy() +
+                                            "' at '" + qn + "' while searching for a JOINED parent of '" +
+                                            type.getQualifiedName() + "'. Mixed strategies in the same hierarchy are not supported.",
+                                    p
+                            );
+                            return Optional.empty();
+                        default:
+                            break;
+                    }
+                }
+                // @Entity without @Inheritance → intermediate child, keep walking up
             }
 
-            // Check inheritance strategy if it's an entity
-            jakarta.persistence.Inheritance inh = p.getAnnotation(jakarta.persistence.Inheritance.class);
-            if (inh != null) {
-                switch (inh.strategy()) {
-                    case JOINED:
-                        // Return nearest JOINED parent
-                        return Optional.of(p);
-                    case SINGLE_TABLE:
-                    case TABLE_PER_CLASS:
-                        // Conflict with JOINED search → error and terminate
-                        context.getMessager().printMessage(
-                                javax.tools.Diagnostic.Kind.ERROR,
-                                "Found explicit inheritance strategy '" + inh.strategy() +
-                                        "' at '" + qn + "' while searching for a JOINED parent of '" +
-                                        type.getQualifiedName() + "'. Mixed strategies in the same hierarchy are not supported.",
-                                p
-                        );
-                        return Optional.empty();
-                    default:
-                        // For future expansion: just continue
-                        break;
-                }
-            }
-            // Continue upward if no explicit @Inheritance
             sup = p.getSuperclass();
         }
         return Optional.empty();

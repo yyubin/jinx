@@ -105,35 +105,37 @@ class EntityHandlerInheritanceTest {
     // === 테스트 시나리오 ===
 
     @Test
-    @DisplayName("중간 부모가 @Inheritance 미지정이어도 상위에서 JOINED를 찾아 FK 생성")
-    void joinedParent_found_through_intermediate() {
-        // 체인: Child -> Mid(entity, @Inheritance 없음) -> Root(entity, @Inheritance JOINED) -> (없음)
+    @DisplayName("다단계 JOINED 계층에서 FK는 루트가 아닌 직계 부모를 참조해야 함 (Bug 3)")
+    void joinedChild_referencesDirectParent_notRoot() {
+        // 체인: Child -> Mid(entity, @Inheritance 없음) -> Root(entity, @Inheritance JOINED)
+        // 수정 전: FK → root_tbl (루트)
+        // 수정 후: FK → mid_tbl  (직계 부모)
         TypeElement root = mockTypeElement("com.ex.Root", "Root");
         when(root.getAnnotation(Entity.class)).thenReturn(AnnotationProxies.of(Entity.class, Map.of()));
         Inheritance inhJoined = AnnotationProxies.of(Inheritance.class, Map.of("strategy", InheritanceType.JOINED));
         when(root.getAnnotation(Inheritance.class)).thenReturn(inhJoined);
-        TypeMirror none = noneSuper();
-        when(root.getSuperclass()).thenReturn(none);
+        TypeMirror rootSuper = noneSuper();
+        when(root.getSuperclass()).thenReturn(rootSuper);
 
         TypeElement mid = mockTypeElement("com.ex.Mid", "Mid");
         when(mid.getAnnotation(Entity.class)).thenReturn(AnnotationProxies.of(Entity.class, Map.of()));
-        when(mid.getAnnotation(Inheritance.class)).thenReturn(null); // 명시 X
-        DeclaredType dtMid = declaredOf(root);
-        when(mid.getSuperclass()).thenReturn(dtMid);
+        when(mid.getAnnotation(Inheritance.class)).thenReturn(null);
+        DeclaredType midSuper = declaredOf(root);
+        when(mid.getSuperclass()).thenReturn(midSuper);
 
         TypeElement child = mockTypeElement("com.ex.Child", "child");
-        DeclaredType dtChild = declaredOf(mid);
-        when(child.getSuperclass()).thenReturn(dtChild);
+        DeclaredType childSuper = declaredOf(mid);
+        when(child.getSuperclass()).thenReturn(childSuper);
 
-        // 스키마: Root 엔티티는 이미 존재하며 PK가 준비되어 있어야 함
-        EntityModel rootEntity = EntityModelMother.javaEntityWithPkIdLong("com.ex.Root", "root_tbl");
-        when(entitiesMap.get("com.ex.Root")).thenReturn(rootEntity);
+        // 스키마: 직계 부모인 Mid 엔티티가 PK와 함께 존재해야 함
+        EntityModel midEntity = EntityModelMother.javaEntityWithPkIdLong("com.ex.Mid", "mid_tbl");
+        when(entitiesMap.get("com.ex.Mid")).thenReturn(midEntity);
         when(entitiesMap.containsKey("com.ex.Child")).thenReturn(false);
 
-        // 부모 PK 메타 제공
-        when(context.findAllPrimaryKeyColumns(rootEntity))
+        when(context.findAllPrimaryKeyColumns(midEntity))
                 .thenReturn(List.of(
-                        ColumnModel.builder().columnName("id").tableName("root_tbl").javaType("java.lang.Long").isPrimaryKey(true).build()
+                        ColumnModel.builder().columnName("id").tableName("mid_tbl")
+                                .javaType("java.lang.Long").isPrimaryKey(true).build()
                 ));
 
         // Act
@@ -143,20 +145,20 @@ class EntityHandlerInheritanceTest {
         EntityModel childModel = SchemaCapture.capturePutIfAbsent(entitiesMap, "com.ex.Child");
         assertEquals("child", childModel.getTableName());
 
-        // JOINED 상속 FK가 child 테이블에 생성되어 있어야 함
+        // FK는 루트(root_tbl)가 아닌 직계 부모(mid_tbl)를 참조해야 함
         RelationshipModel rel = childModel.getRelationships().values().stream()
                 .filter(r -> r.getType() == RelationshipType.JOINED_INHERITANCE)
                 .findFirst()
                 .orElseThrow();
 
-        assertEquals("child", rel.getTableName());         // FK가 걸리는 곳 = 자식 테이블
-        assertEquals("root_tbl", rel.getReferencedTable()); // 참조 = 루트(부모) 테이블
-        assertEquals(List.of("id"), rel.getColumns());     // 부모 PK 컬럼과 동일명 매핑
+        assertEquals("child", rel.getTableName());
+        assertEquals("mid_tbl", rel.getReferencedTable()); // Bug 3 수정: 루트 아닌 직계 부모
+        assertEquals(List.of("id"), rel.getColumns());
 
         RelationshipAssertions.assertFkByStructure(
                 childModel,
-                "child",     List.of("id"),
-                "root_tbl",  List.of("id"),
+                "child",    List.of("id"),
+                "mid_tbl",  List.of("id"),
                 RelationshipType.JOINED_INHERITANCE
         );
     }

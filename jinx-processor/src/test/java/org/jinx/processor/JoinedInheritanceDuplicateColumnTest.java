@@ -157,16 +157,22 @@ class JoinedInheritanceDuplicateColumnTest extends AbstractProcessorTest {
     }
 
     @Test
-    void deepChild_shouldHaveForeignKeyToJoinedRoot() {
-        // jinx의 현재 구현: findNearestJoinedParentEntity()는 @Inheritance(JOINED)가 붙은 가장
-        // 가까운 조상을 탐색한다. Car에는 @Inheritance가 없으므로 SportsCar의 FK는 루트인
-        // vehicles를 직접 가리킨다.
+    void deepChild_shouldHaveForeignKeyToDirectParent() {
+        // Bug 3 수정 후: findJoinedDirectParent()가 직계 @Entity 부모(Car)를 반환하므로
+        // SportsCar의 FK는 루트(vehicles)가 아닌 직계 부모(cars)를 가리켜야 한다.
         EntityModel sportsCar = schema.getEntities().get("entities.joined.SportsCar");
-        boolean hasFkToJoinedRoot = sportsCar.getRelationships().values().stream()
-                .anyMatch(rel -> "vehicles".equals(rel.getReferencedTable()));
-        assertThat(hasFkToJoinedRoot)
-                .as("SportsCar must have a FK relationship pointing to the JOINED root 'vehicles'")
+        boolean hasFkToCars = sportsCar.getRelationships().values().stream()
+                .anyMatch(rel -> "cars".equals(rel.getReferencedTable()));
+        assertThat(hasFkToCars)
+                .as("SportsCar must have a FK pointing to its direct parent 'cars', not to the root 'vehicles' (Bug 3)")
                 .isTrue();
+
+        // 루트(vehicles)를 직접 가리키는 잘못된 FK가 없어야 함
+        boolean hasSpuriousFkToRoot = sportsCar.getRelationships().values().stream()
+                .anyMatch(rel -> "vehicles".equals(rel.getReferencedTable()));
+        assertThat(hasSpuriousFkToRoot)
+                .as("SportsCar must NOT have a spurious FK directly to the root 'vehicles'")
+                .isFalse();
     }
 
     // ══════════════════════════════════════════════════════════
