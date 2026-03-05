@@ -198,25 +198,51 @@ public class InheritanceHandler {
                     String fqcn = childEntity.getFqcn();
                     TypeElement childType = (fqcn == null || fqcn.isBlank()) ? null : context.getElementUtils().getTypeElement(fqcn);
                     if (childType == null) {
-                        // Skip if type cannot be resolved (logging the reason is optional).
                         context.getMessager().printMessage(
                                 Diagnostic.Kind.NOTE,
                                 "Skip inheritance child: cannot resolve TypeElement for " + fqcn);
                         return;
                     }
-                    if (context.getTypeUtils().isSubtype(childType.asType(), parentType.asType())) {
-                        try {
-                            processSingleJoinedChild(childEntity, parentEntity, childType);
-                            checkIdentityStrategy(childType, childEntity);
-                        } catch (IllegalStateException ex) {
-                            // If already logged as ERROR/NOTE, swallow here to proceed.
-                            childEntity.setValid(false);
-                        }
+                    // Only process DIRECT children of this root (immediate @Entity parent == parentType).
+                    // Grandchildren and deeper descendants are handled by EntityHandler.processInheritanceJoin(),
+                    // which uses findJoinedDirectParent() to create FK to the correct immediate parent.
+                    // Processing all isSubtype() matches here would cause every descendant to create a FK
+                    // directly to the root, overwriting the correct FK set by EntityHandler (Bug 3).
+                    TypeElement immediateEntityParent = findImmediateEntityParent(childType);
+                    if (immediateEntityParent == null ||
+                            !immediateEntityParent.getQualifiedName().toString()
+                                    .equals(parentType.getQualifiedName().toString())) {
+                        return;
+                    }
+                    try {
+                        processSingleJoinedChild(childEntity, parentEntity, childType);
+                        checkIdentityStrategy(childType, childEntity);
+                    } catch (IllegalStateException ex) {
+                        childEntity.setValid(false);
                     }
                 });
     }
 
     public record JoinPair(ColumnModel parent, String childName) {}
+
+    /**
+     * Walks up the class hierarchy and returns the first {@code @Entity} superclass,
+     * skipping non-JPA intermediate classes (plain Java base classes).
+     * Returns {@code null} if no {@code @Entity} ancestor is found before {@code Object}.
+     *
+     * <p>Used by {@link #findAndProcessJoinedChildren} to restrict processing to direct
+     * children only, preventing grandchildren from being incorrectly linked to the root.
+     */
+    private TypeElement findImmediateEntityParent(TypeElement type) {
+        javax.lang.model.type.TypeMirror sup = type.getSuperclass();
+        while (sup != null && sup.getKind() == javax.lang.model.type.TypeKind.DECLARED) {
+            TypeElement p = (TypeElement) ((javax.lang.model.type.DeclaredType) sup).asElement();
+            if ("java.lang.Object".equals(p.getQualifiedName().toString())) return null;
+            if (p.getAnnotation(jakarta.persistence.Entity.class) != null) return p;
+            sup = p.getSuperclass();
+        }
+        return null;
+    }
     
     /**
      * Normalizes a Java type name for comparison.
