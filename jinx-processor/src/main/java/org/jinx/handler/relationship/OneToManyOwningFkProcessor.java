@@ -73,6 +73,16 @@ public final class OneToManyOwningFkProcessor implements RelationshipProcessor {
 
         List<ColumnModel> ownerPks = context.findAllPrimaryKeyColumns(ownerEntity);
         if (ownerPks.isEmpty()) {
+            if (ownerEntity.isValid()) {
+                // ownerEntity가 JOINED 계층 자식으로 PK가 아직 복사되지 않은 타이밍 문제(Bug 6).
+                // deferred 재처리 패스에서 PK가 확보된 이후 재시도한다.
+                String ownerEntityName = ownerEntity.getEntityName();
+                if (!context.getDeferredNames().contains(ownerEntityName)) {
+                    context.getDeferredEntities().offer(ownerEntity);
+                    context.getDeferredNames().add(ownerEntityName);
+                }
+                return;
+            }
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Entity " + ownerEntity.getEntityName() + " must have a primary key for @OneToMany relationship.", attr.elementForDiagnostics());
             ownerEntity.setValid(false);
