@@ -102,6 +102,19 @@ public class ColumnModel {
     @Builder.Default
     private String conversionClass = null;
 
+    /**
+     * {@code @Convert} 어노테이션이 붙은 필드에서 {@code AttributeConverter<X, Y>}의
+     * Y 타입(실제 DB 저장 타입)의 FQCN을 저장한다.
+     * <p>
+     * 예) {@code MoneyConverter implements AttributeConverter<Money, String>} → {@code "java.lang.String"}
+     * <p>
+     * DDL/Liquibase 타입 결정 시 {@code conversionClass}(컨버터 클래스명) 대신 이 값을 사용함으로써
+     * {@code MySqlJavaTypeMapper}가 컨버터 클래스명을 인식하지 못해 {@code TEXT}가 생성되는 버그를 수정한다.
+     * diff 추적 기준이 아닌 타입 결정용 메타데이터이므로 {@code getAttributeHash()} 에는 포함하지 않는다.
+     */
+    @Builder.Default
+    private String converterOutputType = null;
+
     @Builder.Default
     private TemporalType temporalType = null;
 
