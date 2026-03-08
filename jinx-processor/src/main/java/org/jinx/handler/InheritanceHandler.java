@@ -519,8 +519,11 @@ public class InheritanceHandler {
     /**
      * Convenience overload returning {@code true} when
      * {@link #findEquivalentJoinedInheritanceFkEntry} finds a match.
-     * Used by {@link org.jinx.handler.EntityHandler#processJoinTable} where only presence
-     * matters and no merge is needed.
+     *
+     * <p>Used internally by {@link #processSingleJoinedChild} where only presence matters
+     * and no merge is needed. Note that {@link org.jinx.handler.EntityHandler} performs
+     * an equivalent semantic check via its own inline logic in {@code processJoinTable}
+     * (it cannot call this private method directly).
      */
     private boolean hasEquivalentJoinedInheritanceFk(
             EntityModel entity,
