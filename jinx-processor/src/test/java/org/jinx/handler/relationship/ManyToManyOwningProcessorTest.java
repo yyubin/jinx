@@ -263,6 +263,8 @@ class ManyToManyOwningProcessorTest {
     void process_error_when_any_side_pks_empty() {
         when(attr.getAnnotation(JoinTable.class)).thenReturn(null);
         when(context.findAllPrimaryKeyColumns(owner)).thenReturn(List.of()); // owner pk 없음
+        // invalid 엔티티일 때만 즉시 에러를 emit한다 (Bug 6-2: valid 엔티티는 deferred 처리)
+        owner.setValid(false);
 
         processor.process(attr, owner);
 
