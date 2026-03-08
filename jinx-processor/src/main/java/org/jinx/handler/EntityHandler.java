@@ -141,6 +141,12 @@ public class EntityHandler {
                 continue;
             }
 
+            // poll()로 큐에서 제거했지만 deferredNames에는 아직 남아 있다.
+            // processInheritanceJoin 내부의 "이미 deferred 상태이면 재큐잉 없이 return" 가드(line 265)가
+            // 이 엔티티의 재큐잉을 막지 않도록, processInheritanceJoin 호출 전에 미리 이름을 제거한다.
+            // processInheritanceJoin이 재큐잉해야 하는 경우 직접 names와 entities 양쪽에 추가한다.
+            context.getDeferredNames().remove(childName);
+
             // Process JOINED inheritance
             processInheritanceJoin(te, child);
 
@@ -158,10 +164,12 @@ public class EntityHandler {
                             .filter(d -> d.hasAnnotation(ElementCollection.class))
                             .forEach(d -> elementCollectionHandler.processElementCollection(d, child));
                     deferredElementCollectionEntities.remove(childName);
+                } else if (child.isValid() && !context.getDeferredNames().contains(childName)) {
+                    // PK가 아직 없고 processInheritanceJoin도 이 엔티티를 재큐잉하지 않은 경우
+                    // (부모 미처리로 조용히 return된 경우 등), 직접 재큐잉하여 다음 패스에서 재시도한다.
+                    context.getDeferredEntities().offer(child);
+                    context.getDeferredNames().add(childName);
                 }
-                // PK가 여전히 없으면 이번 패스에서는 처리하지 않는다.
-                // processInheritanceJoin이 실패(부모 미처리)한 경우 해당 메서드가 entity를
-                // 이미 deferred queue에 재추가하므로 다음 패스에서 재시도된다.
             }
 
             // Process @MapsId attributes if any
@@ -173,22 +181,15 @@ public class EntityHandler {
                     relationshipHandler.processMapsIdAttributes(te, child);
                 }
 
-                // 이번 라운드에서는 일단 제거 (성공/실패 관계없이)
-                context.getDeferredNames().remove(childName);
-
-                // 재시도가 필요하고 아직 유효한 엔티티라면 다시 큐에 추가
-                if (needsRetry && child.isValid()) {
+                // deferredNames는 위에서 이미 pre-remove로 제거했으므로,
+                // 재시도가 필요하고 아직 유효한 엔티티라면 다시 추가
+                if (needsRetry && child.isValid() && !context.getDeferredNames().contains(childName)) {
                     context.getDeferredEntities().offer(child);
                     context.getDeferredNames().add(childName);
                 }
-            } else {
-                // If it was in the queue but not for @MapsId, it must be for another reason
-                // (like JOINED or ToOne relationship) which should have been handled already. We can remove it.
-                context.getDeferredNames().remove(childName);
             }
-
-            // 부모가 여전히 없으면 processInheritanceJoin 내부에서 다시 enqueue
-            // 하지만 여기서는 '이번 라운드' 스냅샷만 처리해서 무한루프 방지
+            // non-@MapsId 엔티티: deferredNames는 위에서 pre-remove로 이미 제거됨.
+            // processInheritanceJoin이 재큐잉했다면 이미 names에 다시 추가되어 있으므로 추가 작업 없음.
         }
     }
 
@@ -279,6 +280,17 @@ public class EntityHandler {
 
         List<ColumnModel> parentPkCols = context.findAllPrimaryKeyColumns(parentEntity);
         if (parentPkCols.isEmpty()) {
+            if (parentEntity.isValid()) {
+                // 부모가 valid 상태에서 PK가 없는 것은 타이밍 문제다 (예: 3단계 이상 JOINED 계층에서
+                // 조부모 PK가 아직 부모에 복사되지 않은 경우). 자식 엔티티를 deferred queue에 추가해
+                // 다음 패스에서 부모 PK 확보 후 재시도한다.
+                if (!context.getDeferredNames().contains(childName)) {
+                    context.getDeferredNames().add(childName);
+                    context.getDeferredEntities().add(childEntity);
+                }
+                return;
+            }
+            // 부모가 invalid 상태 — 복구 불가능한 에러이므로 즉시 emit
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Parent entity '" + parentType.getQualifiedName() + "' must have a primary key for JOINED inheritance.",
                     type);
