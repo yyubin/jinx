@@ -80,6 +80,24 @@ public final class ToOneRelationshipProcessor implements RelationshipProcessor {
 
         List<ColumnModel> refPkList = context.findAllPrimaryKeyColumns(referencedEntity);
         if (refPkList.isEmpty()) {
+            if (referencedEntity.isValid()) {
+                // 참조 대상 엔티티가 schema에 등록되어 있지만 PK가 아직 없는 경우.
+                // JOINED 계층에서 부모 PK는 processInheritanceJoin 실행 이후에 복사되므로
+                // 처리 순서에 따라 이 시점에 PK가 없을 수 있다(Bug 6 동일 원인).
+                // referencedEntity == null 케이스와 동일하게 deferred queue에 추가하여 재시도한다.
+                context.getMessager().printMessage(Diagnostic.Kind.NOTE,
+                        "Deferring @" + (manyToOne != null ? "ManyToOne" : "OneToOne") +
+                        " FK generation: referenced entity '" + referencedEntity.getEntityName() +
+                        "' has no primary key yet (likely JOINED inheritance child). Will retry in deferred pass.",
+                        descriptor.elementForDiagnostics());
+                String ownerEntityName = ownerEntity.getEntityName();
+                if (!context.getDeferredNames().contains(ownerEntityName)) {
+                    context.getDeferredEntities().offer(ownerEntity);
+                    context.getDeferredNames().add(ownerEntityName);
+                }
+                return;
+            }
+            // 참조 대상 엔티티가 invalid 상태 — 복구 불가능한 에러이므로 즉시 emit
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Entity " + referencedEntity.getEntityName() + " must have a primary key to be referenced.", descriptor.elementForDiagnostics());
             ownerEntity.setValid(false);

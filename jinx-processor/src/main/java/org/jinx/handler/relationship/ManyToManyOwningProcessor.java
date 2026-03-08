@@ -73,7 +73,19 @@ public final class ManyToManyOwningProcessor implements RelationshipProcessor {
         List<ColumnModel> ownerPks = context.findAllPrimaryKeyColumns(ownerEntity);
         List<ColumnModel> referencedPks = context.findAllPrimaryKeyColumns(referencedEntity);
 
+        // JOINED 계층 자식 엔티티는 processInheritanceJoin 실행 이후에 PK가 복사된다(Bug 6 동일 원인).
+        // owner 또는 referenced 엔티티가 valid 상태에서 PK만 없으면 타이밍 문제이므로 deferred 처리한다.
         if (ownerPks.isEmpty() || referencedPks.isEmpty()) {
+            boolean ownerValid = ownerPks.isEmpty() && ownerEntity.isValid();
+            boolean refValid = referencedPks.isEmpty() && referencedEntity.isValid();
+            if (ownerValid || refValid) {
+                String ownerEntityName = ownerEntity.getEntityName();
+                if (!context.getDeferredNames().contains(ownerEntityName)) {
+                    context.getDeferredEntities().offer(ownerEntity);
+                    context.getDeferredNames().add(ownerEntityName);
+                }
+                return;
+            }
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Entities in a @ManyToMany relationship must have a primary key.", attr.elementForDiagnostics());
             return;

@@ -27,6 +27,17 @@ public class EntityHandler {
     private final RelationshipHandler relationshipHandler;
     private final RelationshipSupport relationshipSupport;
 
+    /**
+     * Phase 2(@ElementCollection 처리) 시점에 ownerEntity PK가 아직 없어 처리를 보류한
+     * 엔티티 이름(FQN) 집합.
+     * <p>
+     * JOINED 계층에서 부모 PK는 {@code processInheritanceJoin}이 실행되어야 자식 엔티티에
+     * 복사되는데, {@code processInheritanceJoin}은 Phase 2 이후에 호출된다.
+     * 이 때문에 3단계 이상 JOINED 계층에서 {@code @ElementCollection}이 PK를 찾지 못하는
+     * 타이밍 버그가 발생한다(Bug 6). deferred queue 재처리 시 이 집합으로 재시도 대상을 식별한다.
+     */
+    private final Set<String> deferredElementCollectionEntities = new LinkedHashSet<>();
+
     public EntityHandler(ProcessingContext context, ColumnHandler columnHandler, EmbeddedHandler embeddedHandler,
                          ConstraintHandler constraintHandler, SequenceHandler sequenceHandler,
                          ElementCollectionHandler elementCollectionHandler, TableGeneratorHandler tableGeneratorHandler,
@@ -130,12 +141,36 @@ public class EntityHandler {
                 continue;
             }
 
+            // poll()로 큐에서 제거했지만 deferredNames에는 아직 남아 있다.
+            // processInheritanceJoin 내부의 "이미 deferred 상태이면 재큐잉 없이 return" 가드(line 265)가
+            // 이 엔티티의 재큐잉을 막지 않도록, processInheritanceJoin 호출 전에 미리 이름을 제거한다.
+            // processInheritanceJoin이 재큐잉해야 하는 경우 직접 names와 entities 양쪽에 추가한다.
+            context.getDeferredNames().remove(childName);
+
             // Process JOINED inheritance
             processInheritanceJoin(te, child);
 
             // Re-process relationships for entities that were deferred due to missing referenced entities
             // This handles @ManyToOne/@OneToOne relationships where the target entity wasn't processed yet
             relationshipHandler.resolveRelationships(te, child);
+
+            // Bug 6 수정: deferred @ElementCollection 재처리
+            // processInheritanceJoin이 완료된 뒤 PK가 확보되면 보류했던 @ElementCollection을 처리한다.
+            // 3단계 이상 JOINED 계층에서 Phase 2(@ElementCollection) 시점에 부모 PK가 아직
+            // 자식 엔티티에 복사되지 않아 발생하던 타이밍 버그(Bug 6)를 수정한다.
+            if (deferredElementCollectionEntities.contains(childName)) {
+                if (!context.findAllPrimaryKeyColumns(child).isEmpty()) {
+                    context.getCachedDescriptors(te).stream()
+                            .filter(d -> d.hasAnnotation(ElementCollection.class))
+                            .forEach(d -> elementCollectionHandler.processElementCollection(d, child));
+                    deferredElementCollectionEntities.remove(childName);
+                } else if (child.isValid() && !context.getDeferredNames().contains(childName)) {
+                    // PK가 아직 없고 processInheritanceJoin도 이 엔티티를 재큐잉하지 않은 경우
+                    // (부모 미처리로 조용히 return된 경우 등), 직접 재큐잉하여 다음 패스에서 재시도한다.
+                    context.getDeferredEntities().offer(child);
+                    context.getDeferredNames().add(childName);
+                }
+            }
 
             // Process @MapsId attributes if any
             if (hasMapsIdAttributes(te, child)) {
@@ -146,22 +181,15 @@ public class EntityHandler {
                     relationshipHandler.processMapsIdAttributes(te, child);
                 }
 
-                // 이번 라운드에서는 일단 제거 (성공/실패 관계없이)
-                context.getDeferredNames().remove(childName);
-
-                // 재시도가 필요하고 아직 유효한 엔티티라면 다시 큐에 추가
-                if (needsRetry && child.isValid()) {
+                // deferredNames는 위에서 이미 pre-remove로 제거했으므로,
+                // 재시도가 필요하고 아직 유효한 엔티티라면 다시 추가
+                if (needsRetry && child.isValid() && !context.getDeferredNames().contains(childName)) {
                     context.getDeferredEntities().offer(child);
                     context.getDeferredNames().add(childName);
                 }
-            } else {
-                // If it was in the queue but not for @MapsId, it must be for another reason
-                // (like JOINED or ToOne relationship) which should have been handled already. We can remove it.
-                context.getDeferredNames().remove(childName);
             }
-
-            // 부모가 여전히 없으면 processInheritanceJoin 내부에서 다시 enqueue
-            // 하지만 여기서는 '이번 라운드' 스냅샷만 처리해서 무한루프 방지
+            // non-@MapsId 엔티티: deferredNames는 위에서 pre-remove로 이미 제거됨.
+            // processInheritanceJoin이 재큐잉했다면 이미 names에 다시 추가되어 있으므로 추가 작업 없음.
         }
     }
 
@@ -252,6 +280,21 @@ public class EntityHandler {
 
         List<ColumnModel> parentPkCols = context.findAllPrimaryKeyColumns(parentEntity);
         if (parentPkCols.isEmpty()) {
+            // 부모 PK가 없을 때, defer vs 즉시 에러를 구분하는 기준:
+            // 부모 자신도 JOINED 계층의 자식(findJoinedDirectParent 결과 비어 있지 않음)인 경우에만
+            // 타이밍 문제로 간주하여 자식 엔티티를 deferred queue에 추가한다.
+            // 부모가 JOINED 루트이거나 일반 엔티티라면 handle() 완료 후에도 PK가 없는 것은
+            // 영구적 에러이므로 즉시 진단 메시지를 emit한다. isValid()만으로 판단하면
+            // 실제로 @Id가 없는 부모도 deadlock 경로로 흘러가 정확한 진단을 잃게 된다.
+            if (parentEntity.isValid() && findJoinedDirectParent(parentType).isPresent()) {
+                // 부모가 JOINED 자식 — 조부모 PK가 아직 복사되지 않은 타이밍 문제 → defer
+                if (!context.getDeferredNames().contains(childName)) {
+                    context.getDeferredNames().add(childName);
+                    context.getDeferredEntities().add(childEntity);
+                }
+                return;
+            }
+            // 부모가 JOINED 루트(또는 invalid) — 부모 스스로 @Id를 제공해야 하는데 없는 진짜 에러
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Parent entity '" + parentType.getQualifiedName() + "' must have a primary key for JOINED inheritance.",
                     type);
@@ -514,14 +557,37 @@ public class EntityHandler {
             if (descriptor.hasAnnotation(Id.class) || descriptor.hasAnnotation(EmbeddedId.class)) {
                 continue;
             }
-            processAttributeDescriptor(descriptor, entity, tableMappings);
+            processAttributeDescriptor(descriptor, entity, tableMappings, typeElement);
         }
     }
 
-    private void processAttributeDescriptor(AttributeDescriptor descriptor, EntityModel entity, Map<String, SecondaryTable> tableMappings) {
+    private void processAttributeDescriptor(AttributeDescriptor descriptor, EntityModel entity,
+                                             Map<String, SecondaryTable> tableMappings, TypeElement typeElement) {
         if (descriptor.hasAnnotation(ElementCollection.class)) {
-            // Use new AttributeDescriptor-based overload
-            elementCollectionHandler.processElementCollection(descriptor, entity);
+            if (context.findAllPrimaryKeyColumns(entity).isEmpty()) {
+                // Bug 6 수정: PK가 아직 없을 때 즉시 에러를 내지 않고 deferred queue에 등록할 수 있으나,
+                // defer는 "나중에 PK를 얻을 수 있는 엔티티"로만 제한해야 한다.
+                // — JOINED 계층 자식: processInheritanceJoin 이후 부모 PK가 복사된다.
+                // — @MapsId: processMapsIdAttributes 이후 PK가 승격된다.
+                // 그 외(일반 엔티티)는 Phase 2 시점에 PK가 없으면 이미 영구적 에러이므로
+                // ElementCollectionHandler가 정확한 진단을 emit하도록 즉시 위임한다.
+                boolean willGetPkLater = findJoinedDirectParent(typeElement).isPresent()
+                        || hasMapsIdAttributes(typeElement, entity);
+                if (willGetPkLater) {
+                    String entityName = entity.getFqcn() != null ? entity.getFqcn() : entity.getEntityName();
+                    deferredElementCollectionEntities.add(entityName);
+                    if (!context.getDeferredNames().contains(entityName)) {
+                        context.getDeferredEntities().offer(entity);
+                        context.getDeferredNames().add(entityName);
+                    }
+                } else {
+                    // PK를 나중에 얻을 경로가 없는 엔티티 — ElementCollectionHandler의 정확한 진단에 위임
+                    elementCollectionHandler.processElementCollection(descriptor, entity);
+                }
+            } else {
+                // Use new AttributeDescriptor-based overload
+                elementCollectionHandler.processElementCollection(descriptor, entity);
+            }
         } else if (descriptor.hasAnnotation(Embedded.class)) {
             // Use new AttributeDescriptor-based overload
             embeddedHandler.processEmbedded(descriptor, entity, new HashSet<>());

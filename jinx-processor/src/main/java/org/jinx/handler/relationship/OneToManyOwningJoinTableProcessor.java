@@ -76,11 +76,31 @@ public final class OneToManyOwningJoinTableProcessor implements RelationshipProc
         List<ColumnModel> targetPks = context.findAllPrimaryKeyColumns(targetEntity);
 
         if (ownerPks.isEmpty()) {
+            if (ownerEntity.isValid()) {
+                // ownerEntity가 JOINED 계층 자식으로 PK가 아직 복사되지 않은 타이밍 문제(Bug 6).
+                // deferred 재처리 패스에서 PK가 확보된 이후 재시도한다.
+                String ownerEntityName = ownerEntity.getEntityName();
+                if (!context.getDeferredNames().contains(ownerEntityName)) {
+                    context.getDeferredEntities().offer(ownerEntity);
+                    context.getDeferredNames().add(ownerEntityName);
+                }
+                return;
+            }
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Owner entity requires a primary key for @OneToMany with JoinTable.", attr.elementForDiagnostics());
             return;
         }
         if (targetPks.isEmpty()) {
+            if (targetEntity.isValid()) {
+                // targetEntity가 JOINED 계층 자식으로 PK가 아직 복사되지 않은 타이밍 문제(Bug 6).
+                // deferred 재처리 패스에서 PK가 확보된 이후 재시도한다.
+                String ownerEntityName = ownerEntity.getEntityName();
+                if (!context.getDeferredNames().contains(ownerEntityName)) {
+                    context.getDeferredEntities().offer(ownerEntity);
+                    context.getDeferredNames().add(ownerEntityName);
+                }
+                return;
+            }
             context.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Target entity requires a primary key for @OneToMany with JoinTable.", attr.elementForDiagnostics());
             return;

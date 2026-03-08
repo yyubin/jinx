@@ -283,6 +283,8 @@ class OneToManyOwningJoinTableProcessorTest {
     @Test
     void process_error_when_owner_pks_empty() {
         when(context.findAllPrimaryKeyColumns(owner)).thenReturn(List.of());
+        // invalid 엔티티일 때만 즉시 에러를 emit한다 (Bug 6-2: valid 엔티티는 deferred 처리)
+        owner.setValid(false);
 
         processor.process(attr, owner);
 
@@ -294,6 +296,8 @@ class OneToManyOwningJoinTableProcessorTest {
     @Test
     void process_error_when_target_pks_empty() {
         when(context.findAllPrimaryKeyColumns(target)).thenReturn(List.of());
+        // invalid 엔티티일 때만 즉시 에러를 emit한다 (Bug 6-2: valid 엔티티는 deferred 처리)
+        target.setValid(false);
 
         processor.process(attr, owner);
 
