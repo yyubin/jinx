@@ -27,6 +27,17 @@ public class EntityHandler {
     private final RelationshipHandler relationshipHandler;
     private final RelationshipSupport relationshipSupport;
 
+    /**
+     * Phase 2(@ElementCollection 처리) 시점에 ownerEntity PK가 아직 없어 처리를 보류한
+     * 엔티티 이름(FQN) 집합.
+     * <p>
+     * JOINED 계층에서 부모 PK는 {@code processInheritanceJoin}이 실행되어야 자식 엔티티에
+     * 복사되는데, {@code processInheritanceJoin}은 Phase 2 이후에 호출된다.
+     * 이 때문에 3단계 이상 JOINED 계층에서 {@code @ElementCollection}이 PK를 찾지 못하는
+     * 타이밍 버그가 발생한다(Bug 6). deferred queue 재처리 시 이 집합으로 재시도 대상을 식별한다.
+     */
+    private final Set<String> deferredElementCollectionEntities = new LinkedHashSet<>();
+
     public EntityHandler(ProcessingContext context, ColumnHandler columnHandler, EmbeddedHandler embeddedHandler,
                          ConstraintHandler constraintHandler, SequenceHandler sequenceHandler,
                          ElementCollectionHandler elementCollectionHandler, TableGeneratorHandler tableGeneratorHandler,
@@ -136,6 +147,22 @@ public class EntityHandler {
             // Re-process relationships for entities that were deferred due to missing referenced entities
             // This handles @ManyToOne/@OneToOne relationships where the target entity wasn't processed yet
             relationshipHandler.resolveRelationships(te, child);
+
+            // Bug 6 수정: deferred @ElementCollection 재처리
+            // processInheritanceJoin이 완료된 뒤 PK가 확보되면 보류했던 @ElementCollection을 처리한다.
+            // 3단계 이상 JOINED 계층에서 Phase 2(@ElementCollection) 시점에 부모 PK가 아직
+            // 자식 엔티티에 복사되지 않아 발생하던 타이밍 버그(Bug 6)를 수정한다.
+            if (deferredElementCollectionEntities.contains(childName)) {
+                if (!context.findAllPrimaryKeyColumns(child).isEmpty()) {
+                    context.getCachedDescriptors(te).stream()
+                            .filter(d -> d.hasAnnotation(ElementCollection.class))
+                            .forEach(d -> elementCollectionHandler.processElementCollection(d, child));
+                    deferredElementCollectionEntities.remove(childName);
+                }
+                // PK가 여전히 없으면 이번 패스에서는 처리하지 않는다.
+                // processInheritanceJoin이 실패(부모 미처리)한 경우 해당 메서드가 entity를
+                // 이미 deferred queue에 재추가하므로 다음 패스에서 재시도된다.
+            }
 
             // Process @MapsId attributes if any
             if (hasMapsIdAttributes(te, child)) {
@@ -520,8 +547,21 @@ public class EntityHandler {
 
     private void processAttributeDescriptor(AttributeDescriptor descriptor, EntityModel entity, Map<String, SecondaryTable> tableMappings) {
         if (descriptor.hasAnnotation(ElementCollection.class)) {
-            // Use new AttributeDescriptor-based overload
-            elementCollectionHandler.processElementCollection(descriptor, entity);
+            if (context.findAllPrimaryKeyColumns(entity).isEmpty()) {
+                // Bug 6 수정: PK가 아직 없을 때 즉시 에러를 내지 않고 deferred queue에 등록한다.
+                // JOINED 계층에서 부모 PK는 processInheritanceJoin(Phase 2 이후)이 실행되어야
+                // 자식 엔티티에 복사된다. 따라서 Phase 2 시점에 ownerEntity PK가 비어 있으면
+                // 타이밍 문제이므로, deferred 재처리 패스에서 재시도한다.
+                String entityName = entity.getFqcn() != null ? entity.getFqcn() : entity.getEntityName();
+                deferredElementCollectionEntities.add(entityName);
+                if (!context.getDeferredNames().contains(entityName)) {
+                    context.getDeferredEntities().offer(entity);
+                    context.getDeferredNames().add(entityName);
+                }
+            } else {
+                // Use new AttributeDescriptor-based overload
+                elementCollectionHandler.processElementCollection(descriptor, entity);
+            }
         } else if (descriptor.hasAnnotation(Embedded.class)) {
             // Use new AttributeDescriptor-based overload
             embeddedHandler.processEmbedded(descriptor, entity, new HashSet<>());
