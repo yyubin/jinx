@@ -170,8 +170,13 @@ public class MySqlDialect extends AbstractDialect
 
     @Override
     public String getColumnDefinitionSql(ColumnModel c) {
-        String javaType = c.getConversionClass() != null ? c.getConversionClass() : c.getJavaType();
-        JavaTypeMapper.JavaType javaTypeMapped = javaTypeMapper.map(javaType);
+        // converter 출력 타입(Y)이 있으면 우선 사용하고, 없으면 원본 javaType으로 폴백한다.
+        // conversionClass(컨버터 클래스명)는 MySqlJavaTypeMapper가 인식하지 못해 UNKNOWN_TYPE → TEXT가
+        // 생성되는 버그를 유발하므로 타입 결정에서 제외한다.
+        String typeKey = c.getConverterOutputType() != null
+                ? c.getConverterOutputType()
+                : c.getJavaType();
+        JavaTypeMapper.JavaType javaTypeMapped = javaTypeMapper.map(typeKey);
 
         boolean overrideContainsIdentity = false;
         boolean overrideContainsNotNull = false;
@@ -522,8 +527,12 @@ public class MySqlDialect extends AbstractDialect
         if (column.getSqlTypeOverride() != null && !column.getSqlTypeOverride().trim().isEmpty()) {
             return column.getSqlTypeOverride().trim();
         }
-        
-        String javaType = column.getJavaType();
+
+        // converter 출력 타입(Y)이 있으면 우선 사용하고, 없으면 원본 javaType으로 폴백한다.
+        // 이를 통해 @Convert + @Column(length=N) 조합에서 올바른 타입을 생성한다.
+        String javaType = column.getConverterOutputType() != null
+                ? column.getConverterOutputType()
+                : column.getJavaType();
         int length = column.getLength();
         int precision = column.getPrecision();
         int scale = column.getScale();

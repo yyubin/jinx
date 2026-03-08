@@ -54,8 +54,17 @@ public class EntityFieldResolver extends AbstractColumnResolver {
             } catch (javax.lang.model.type.MirroredTypeException mte) {
                 TypeMirror typeMirror = mte.getTypeMirror();
                 builder.conversionClass(typeMirror.toString());
+                // AttributeConverter<X, Y>의 Y 타입(DB 저장 타입)을 추출해 저장한다.
+                // DDL/Liquibase 타입 결정 시 컨버터 클래스명 대신 이 값을 사용하여
+                // UNKNOWN_TYPE → TEXT 생성 버그를 수정한다.
+                String outputType = ColumnBuilderFactory.extractConverterOutputType(typeMirror);
+                if (outputType != null) {
+                    builder.converterOutputType(outputType);
+                }
             }
         } else {
+            // 주의: autoApply 경로는 TypeMirror가 없으므로 converterOutputType 추출 불가.
+            // 해당 케이스는 미처리 케이스로 남기며 기존 동작을 유지한다.
             String autoApplyConverter = context.getAutoApplyConverters().get(field.asType().toString());
             if (autoApplyConverter != null) {
                 builder.conversionClass(autoApplyConverter);

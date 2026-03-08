@@ -637,8 +637,10 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
                 .map(lb -> lb.getLiquibaseTypeName(c))
                 .orElseGet(() -> {
                     var ddl = dialectBundle.ddl();
+                    // converter 출력 타입(Y)이 있으면 우선 사용하고, 없으면 원본 javaType으로 폴백한다.
+                    // conversionClass(컨버터 클래스명)는 JavaTypeMapper가 인식하지 못하므로 제외한다.
                     var jt = ddl.getJavaTypeMapper().map(
-                            c.getConversionClass() != null ? c.getConversionClass() : c.getJavaType());
+                            c.getConverterOutputType() != null ? c.getConverterOutputType() : c.getJavaType());
                     return jt.getSqlType(c.getLength(), c.getPrecision(), c.getScale());
                 });
     }
