@@ -392,7 +392,31 @@ public class EntityHandler {
                 .referencedColumns(refCols)
                 .constraintName(fkName)
                 .build();
-        entity.getRelationships().put(rel.getConstraintName(), rel);
+        // Semantic duplicate guard for JOINED_INHERITANCE: InheritanceHandler may have already
+        // registered this FK (if the parent entity was processed before this child). Skip the put
+        // but still run idempotent side-effects (column ensure + index).
+        if (relType == RelationshipType.JOINED_INHERITANCE) {
+            List<String> ncols = childCols.stream()
+                    .map(s -> s.toLowerCase(java.util.Locale.ROOT)).sorted().toList();
+            List<String> nrcols = refCols.stream()
+                    .map(s -> s.toLowerCase(java.util.Locale.ROOT)).sorted().toList();
+            boolean alreadyExists = entity.getRelationships().values().stream()
+                    .filter(r -> r.getType() == RelationshipType.JOINED_INHERITANCE)
+                    .anyMatch(r -> {
+                        List<String> ec = r.getColumns().stream()
+                                .map(s -> s.toLowerCase(java.util.Locale.ROOT)).sorted().toList();
+                        List<String> erc = r.getReferencedColumns().stream()
+                                .map(s -> s.toLowerCase(java.util.Locale.ROOT)).sorted().toList();
+                        return ec.equals(ncols)
+                                && r.getReferencedTable().equalsIgnoreCase(referencedTableName)
+                                && erc.equals(nrcols);
+                    });
+            if (!alreadyExists) {
+                entity.getRelationships().put(rel.getConstraintName(), rel);
+            }
+        } else {
+            entity.getRelationships().put(rel.getConstraintName(), rel);
+        }
 
         // For secondary tables, typically need to create columns on child (secondary) table side
         ensureChildPkColumnsExist(entity, tableName, childCols, parentPkCols);

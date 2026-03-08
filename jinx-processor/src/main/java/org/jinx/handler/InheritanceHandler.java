@@ -344,6 +344,18 @@ public class InheritanceHandler {
 
         pendingAdds.forEach(childEntity::putColumn);
 
+        // Semantic duplicate guard: EntityHandler.processJoinTable() may have already registered
+        // this FK (if the child entity was processed after the parent). Skip FK creation but still
+        // update inheritance metadata so the entity is fully configured.
+        List<String> candidateCols    = joinPairs.stream().map(JoinPair::childName).toList();
+        List<String> candidateRefCols = joinPairs.stream().map(j -> j.parent().getColumnName()).toList();
+        if (hasEquivalentJoinedInheritanceFk(childEntity, candidateCols,
+                parentEntity.getTableName(), candidateRefCols)) {
+            childEntity.setParentEntity(parentEntity.getEntityName());
+            childEntity.setInheritance(InheritanceType.JOINED);
+            return;
+        }
+
         // Process @ForeignKey annotation.
         ForeignKeyInfo fkInfo = extractForeignKeyInfo(childType);
 
@@ -420,6 +432,45 @@ public class InheritanceHandler {
         }
 
         return candidate;
+    }
+
+    /**
+     * Returns {@code true} if a {@link RelationshipType#JOINED_INHERITANCE} FK with semantically
+     * identical content already exists on {@code entity}.
+     *
+     * <p>Comparison is performed on the <em>content</em> of the FK — the child column list,
+     * the referenced table, and the referenced column list — rather than on the constraint name.
+     * Both lists are normalised to lower-case and sorted before comparison so that column order
+     * differences do not produce false negatives.
+     *
+     * <p>This guard prevents the {@code _1}-suffix duplication that occurs when
+     * {@link org.jinx.handler.EntityHandler#processJoinTable} and
+     * {@link #processSingleJoinedChild} both run for the same direct child entity.
+     */
+    private boolean hasEquivalentJoinedInheritanceFk(
+            EntityModel entity,
+            List<String> columns,
+            String referencedTable,
+            List<String> referencedColumns) {
+
+        List<String> sortedCols    = columns.stream()
+                .map(s -> s.toLowerCase(Locale.ROOT)).sorted().toList();
+        List<String> sortedRefCols = referencedColumns.stream()
+                .map(s -> s.toLowerCase(Locale.ROOT)).sorted().toList();
+        String normRefTable = referencedTable.toLowerCase(Locale.ROOT);
+
+        return entity.getRelationships().values().stream()
+                .filter(r -> r.getType() == RelationshipType.JOINED_INHERITANCE)
+                .anyMatch(r -> {
+                    List<String> existCols = r.getColumns().stream()
+                            .map(s -> s.toLowerCase(Locale.ROOT)).sorted().toList();
+                    List<String> existRefCols = r.getReferencedColumns().stream()
+                            .map(s -> s.toLowerCase(Locale.ROOT)).sorted().toList();
+                    String existRefTable = r.getReferencedTable().toLowerCase(Locale.ROOT);
+                    return existCols.equals(sortedCols)
+                            && existRefTable.equals(normRefTable)
+                            && existRefCols.equals(sortedRefCols);
+                });
     }
 
     /**
