@@ -8,6 +8,8 @@ import org.jinx.model.SchemaModel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import org.jinx.model.RelationshipType;
+
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -173,6 +175,32 @@ class JoinedInheritanceDuplicateColumnTest extends AbstractProcessorTest {
         assertThat(hasSpuriousFkToRoot)
                 .as("SportsCar must NOT have a spurious FK directly to the root 'vehicles'")
                 .isFalse();
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // FK 중복 방지 검증 (Bug: _1 suffix 중복 생성)
+    // ══════════════════════════════════════════════════════════
+
+    @Test
+    void directChild_shouldHaveExactlyOneJoinedInheritanceFk() {
+        EntityModel car = schema.getEntities().get("entities.joined.Car");
+        long fkCount = car.getRelationships().values().stream()
+                .filter(r -> r.getType() == RelationshipType.JOINED_INHERITANCE)
+                .count();
+        assertThat(fkCount)
+                .as("Car must have exactly one JOINED_INHERITANCE FK — duplicate (_1 suffix) must not be generated")
+                .isEqualTo(1);
+    }
+
+    @Test
+    void deepChild_shouldHaveExactlyOneJoinedInheritanceFk() {
+        EntityModel sportsCar = schema.getEntities().get("entities.joined.SportsCar");
+        long fkCount = sportsCar.getRelationships().values().stream()
+                .filter(r -> r.getType() == RelationshipType.JOINED_INHERITANCE)
+                .count();
+        assertThat(fkCount)
+                .as("SportsCar must have exactly one JOINED_INHERITANCE FK — duplicate (_1 suffix) must not be generated")
+                .isEqualTo(1);
     }
 
     // ══════════════════════════════════════════════════════════
