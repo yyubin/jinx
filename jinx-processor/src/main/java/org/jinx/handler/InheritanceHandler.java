@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -344,20 +345,59 @@ public class InheritanceHandler {
 
         pendingAdds.forEach(childEntity::putColumn);
 
+        // Read @ForeignKey annotation BEFORE the duplicate guard so that explicit settings
+        // (name / noConstraint) can be merged into a FK already registered by
+        // EntityHandler.processJoinTable(), which does not read @ForeignKey itself.
+        ForeignKeyInfo fkInfo = extractForeignKeyInfo(childType);
+
         // Semantic duplicate guard: EntityHandler.processJoinTable() may have already registered
-        // this FK (if the child entity was processed after the parent). Skip FK creation but still
-        // update inheritance metadata so the entity is fully configured.
+        // this FK (if the child entity was processed after the parent). If a semantically
+        // equivalent FK exists, merge any @ForeignKey settings declared on this child type
+        // into that existing entry, then update inheritance metadata and return.
         List<String> candidateCols    = joinPairs.stream().map(JoinPair::childName).toList();
         List<String> candidateRefCols = joinPairs.stream().map(j -> j.parent().getColumnName()).toList();
-        if (hasEquivalentJoinedInheritanceFk(childEntity, candidateCols,
-                parentEntity.getTableName(), candidateRefCols)) {
+        Optional<Map.Entry<String, RelationshipModel>> existingEntry =
+                findEquivalentJoinedInheritanceFkEntry(childEntity, candidateCols,
+                        parentEntity.getTableName(), candidateRefCols);
+
+        if (existingEntry.isPresent()) {
+            // Merge @ForeignKey settings when either noConstraint is requested or an explicit
+            // constraint name was declared; otherwise the auto-generated entry is fine as-is.
+            boolean hasExplicitName = fkInfo.explicitName != null && !fkInfo.explicitName.isEmpty();
+            if (fkInfo.noConstraint || hasExplicitName) {
+                RelationshipModel old = existingEntry.get().getValue();
+                String mergedName = hasExplicitName ? fkInfo.explicitName : old.getConstraintName();
+
+                // Check whether the desired merged name would collide with a *different* FK.
+                boolean nameConflict = childEntity.getRelationships().entrySet().stream()
+                        .filter(e -> !e.getKey().equalsIgnoreCase(old.getConstraintName()))
+                        .anyMatch(e -> e.getKey().equalsIgnoreCase(mergedName));
+                if (nameConflict) {
+                    context.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "Cannot rename JOINED inheritance FK to '" + mergedName
+                                    + "': a different constraint with that name already exists on '"
+                                    + childEntity.getEntityName() + "'.",
+                            childType);
+                    childEntity.setValid(false);
+                    return;
+                }
+
+                RelationshipModel merged = RelationshipModel.builder()
+                        .type(old.getType())
+                        .tableName(old.getTableName())
+                        .columns(old.getColumns())
+                        .referencedTable(old.getReferencedTable())
+                        .referencedColumns(old.getReferencedColumns())
+                        .constraintName(mergedName)
+                        .noConstraint(fkInfo.noConstraint)
+                        .build();
+                childEntity.getRelationships().remove(existingEntry.get().getKey());
+                childEntity.getRelationships().put(mergedName, merged);
+            }
             childEntity.setParentEntity(parentEntity.getEntityName());
             childEntity.setInheritance(InheritanceType.JOINED);
             return;
         }
-
-        // Process @ForeignKey annotation.
-        ForeignKeyInfo fkInfo = extractForeignKeyInfo(childType);
 
         // Determine FK constraint name.
         String constraintName;
@@ -435,19 +475,20 @@ public class InheritanceHandler {
     }
 
     /**
-     * Returns {@code true} if a {@link RelationshipType#JOINED_INHERITANCE} FK with semantically
-     * identical content already exists on {@code entity}.
+     * Returns the map entry of an existing {@link RelationshipType#JOINED_INHERITANCE} FK whose
+     * content (child columns, referenced table, referenced columns) is semantically identical to
+     * the supplied parameters, or {@link java.util.Optional#empty()} if none is found.
      *
-     * <p>Comparison is performed on the <em>content</em> of the FK — the child column list,
-     * the referenced table, and the referenced column list — rather than on the constraint name.
-     * Both lists are normalised to lower-case and sorted before comparison so that column order
-     * differences do not produce false negatives.
+     * <p>Comparison is performed on the <em>content</em> of the FK — not on the constraint name —
+     * so that a FK registered by {@link org.jinx.handler.EntityHandler#processJoinTable} (which
+     * generates an auto-name and does not read {@code @ForeignKey}) can be located and patched
+     * later by {@link #processSingleJoinedChild} with any explicit name / {@code noConstraint}
+     * flag declared on the annotation.
      *
-     * <p>This guard prevents the {@code _1}-suffix duplication that occurs when
-     * {@link org.jinx.handler.EntityHandler#processJoinTable} and
-     * {@link #processSingleJoinedChild} both run for the same direct child entity.
+     * <p>Both column lists are normalised to lower-case and sorted before comparison so that
+     * column order differences do not produce false negatives.
      */
-    private boolean hasEquivalentJoinedInheritanceFk(
+    private Optional<Map.Entry<String, RelationshipModel>> findEquivalentJoinedInheritanceFkEntry(
             EntityModel entity,
             List<String> columns,
             String referencedTable,
@@ -459,9 +500,10 @@ public class InheritanceHandler {
                 .map(s -> s.toLowerCase(Locale.ROOT)).sorted().toList();
         String normRefTable = referencedTable.toLowerCase(Locale.ROOT);
 
-        return entity.getRelationships().values().stream()
-                .filter(r -> r.getType() == RelationshipType.JOINED_INHERITANCE)
-                .anyMatch(r -> {
+        return entity.getRelationships().entrySet().stream()
+                .filter(e -> e.getValue().getType() == RelationshipType.JOINED_INHERITANCE)
+                .filter(e -> {
+                    RelationshipModel r = e.getValue();
                     List<String> existCols = r.getColumns().stream()
                             .map(s -> s.toLowerCase(Locale.ROOT)).sorted().toList();
                     List<String> existRefCols = r.getReferencedColumns().stream()
@@ -470,7 +512,23 @@ public class InheritanceHandler {
                     return existCols.equals(sortedCols)
                             && existRefTable.equals(normRefTable)
                             && existRefCols.equals(sortedRefCols);
-                });
+                })
+                .findFirst();
+    }
+
+    /**
+     * Convenience overload returning {@code true} when
+     * {@link #findEquivalentJoinedInheritanceFkEntry} finds a match.
+     * Used by {@link org.jinx.handler.EntityHandler#processJoinTable} where only presence
+     * matters and no merge is needed.
+     */
+    private boolean hasEquivalentJoinedInheritanceFk(
+            EntityModel entity,
+            List<String> columns,
+            String referencedTable,
+            List<String> referencedColumns) {
+        return findEquivalentJoinedInheritanceFkEntry(entity, columns, referencedTable, referencedColumns)
+                .isPresent();
     }
 
     /**
