@@ -1,6 +1,6 @@
 ## 📝 CHANGELOG
 
-### [Released - 0.0.22]
+### [Released - 0.1.0]
 
 #### 🐛 Fixed
 
