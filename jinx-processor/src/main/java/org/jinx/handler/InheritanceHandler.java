@@ -485,8 +485,11 @@ public class InheritanceHandler {
      * later by {@link #processSingleJoinedChild} with any explicit name / {@code noConstraint}
      * flag declared on the annotation.
      *
-     * <p>Both column lists are normalised to lower-case and sorted before comparison so that
-     * column order differences do not produce false negatives.
+     * <p>Column pairs ({@code childCol->referencedCol}) are normalised to lower-case and sorted
+     * together so that pair ordering differences do not produce false negatives while preserving
+     * the mapping relationship. Sorting individual column lists independently (as was done
+     * previously) would break the child↔referenced pairing and cause two composite FKs with
+     * swapped referenced columns to be incorrectly treated as identical.
      */
     private Optional<Map.Entry<String, RelationshipModel>> findEquivalentJoinedInheritanceFkEntry(
             EntityModel entity,
@@ -494,26 +497,41 @@ public class InheritanceHandler {
             String referencedTable,
             List<String> referencedColumns) {
 
-        List<String> sortedCols    = columns.stream()
-                .map(s -> s.toLowerCase(Locale.ROOT)).sorted().toList();
-        List<String> sortedRefCols = referencedColumns.stream()
-                .map(s -> s.toLowerCase(Locale.ROOT)).sorted().toList();
+        List<String> normalizedPairs = normalizeColumnPairs(columns, referencedColumns);
         String normRefTable = referencedTable.toLowerCase(Locale.ROOT);
 
         return entity.getRelationships().entrySet().stream()
                 .filter(e -> e.getValue().getType() == RelationshipType.JOINED_INHERITANCE)
                 .filter(e -> {
                     RelationshipModel r = e.getValue();
-                    List<String> existCols = r.getColumns().stream()
-                            .map(s -> s.toLowerCase(Locale.ROOT)).sorted().toList();
-                    List<String> existRefCols = r.getReferencedColumns().stream()
-                            .map(s -> s.toLowerCase(Locale.ROOT)).sorted().toList();
+                    List<String> existingPairs = normalizeColumnPairs(
+                            r.getColumns(), r.getReferencedColumns());
                     String existRefTable = r.getReferencedTable().toLowerCase(Locale.ROOT);
-                    return existCols.equals(sortedCols)
-                            && existRefTable.equals(normRefTable)
-                            && existRefCols.equals(sortedRefCols);
+                    return existingPairs.equals(normalizedPairs)
+                            && existRefTable.equals(normRefTable);
                 })
                 .findFirst();
+    }
+
+    /**
+     * Normalises a list of (childColumn, referencedColumn) pairs into a sorted list of
+     * {@code "childcol->refcol"} strings.
+     *
+     * <p>Sorting the <em>pairs</em> (rather than the two lists independently) preserves the
+     * child↔referenced column mapping. Two composite FKs that differ only in the order their
+     * column pairs are declared will compare as equal, while FKs whose pairs target different
+     * referenced columns will correctly compare as not equal.
+     *
+     * @param columns           child-table column names, must be the same length as {@code referencedColumns}
+     * @param referencedColumns parent-table column names, parallel to {@code columns}
+     * @return sorted list of lower-cased {@code "child->ref"} pair strings
+     */
+    private List<String> normalizeColumnPairs(List<String> columns, List<String> referencedColumns) {
+        return java.util.stream.IntStream.range(0, columns.size())
+                .mapToObj(i -> columns.get(i).toLowerCase(Locale.ROOT)
+                        + "->" + referencedColumns.get(i).toLowerCase(Locale.ROOT))
+                .sorted()
+                .toList();
     }
 
     /**

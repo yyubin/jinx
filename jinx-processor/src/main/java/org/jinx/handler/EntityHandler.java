@@ -396,20 +396,17 @@ public class EntityHandler {
         // registered this FK (if the parent entity was processed before this child). Skip the put
         // but still run idempotent side-effects (column ensure + index).
         if (relType == RelationshipType.JOINED_INHERITANCE) {
-            List<String> ncols = childCols.stream()
-                    .map(s -> s.toLowerCase(java.util.Locale.ROOT)).sorted().toList();
-            List<String> nrcols = refCols.stream()
-                    .map(s -> s.toLowerCase(java.util.Locale.ROOT)).sorted().toList();
+            // Build sorted "childCol->refCol" pairs to preserve the column mapping relationship.
+            // Sorting individual column lists independently would break the child↔referenced
+            // pairing and misidentify composite FKs with swapped referenced columns as duplicates.
+            List<String> newPairs = normalizeColumnPairs(childCols, refCols);
             boolean alreadyExists = entity.getRelationships().values().stream()
                     .filter(r -> r.getType() == RelationshipType.JOINED_INHERITANCE)
                     .anyMatch(r -> {
-                        List<String> ec = r.getColumns().stream()
-                                .map(s -> s.toLowerCase(java.util.Locale.ROOT)).sorted().toList();
-                        List<String> erc = r.getReferencedColumns().stream()
-                                .map(s -> s.toLowerCase(java.util.Locale.ROOT)).sorted().toList();
-                        return ec.equals(ncols)
-                                && r.getReferencedTable().equalsIgnoreCase(referencedTableName)
-                                && erc.equals(nrcols);
+                        List<String> existPairs = normalizeColumnPairs(
+                                r.getColumns(), r.getReferencedColumns());
+                        return existPairs.equals(newPairs)
+                                && r.getReferencedTable().equalsIgnoreCase(referencedTableName);
                     });
             if (!alreadyExists) {
                 entity.getRelationships().put(rel.getConstraintName(), rel);
@@ -425,6 +422,21 @@ public class EntityHandler {
         relationshipSupport.addForeignKeyIndex(entity, childCols, tableName);
 
         return true;
+    }
+
+    /**
+     * Normalises a list of (childColumn, referencedColumn) pairs into a sorted list of
+     * {@code "childcol->refcol"} strings.
+     *
+     * <p>Sorting the <em>pairs</em> preserves the child↔referenced column mapping, unlike
+     * sorting the two lists independently which would break the pairing for composite FKs.
+     */
+    private static List<String> normalizeColumnPairs(List<String> columns, List<String> referencedColumns) {
+        return java.util.stream.IntStream.range(0, columns.size())
+                .mapToObj(i -> columns.get(i).toLowerCase(java.util.Locale.ROOT)
+                        + "->" + referencedColumns.get(i).toLowerCase(java.util.Locale.ROOT))
+                .sorted()
+                .toList();
     }
 
     // Existing private methods (unchanged)
