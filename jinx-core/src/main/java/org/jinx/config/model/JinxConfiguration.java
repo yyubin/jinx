@@ -40,6 +40,9 @@ public class JinxConfiguration {
 
         @JsonProperty("maxLength")
         private Integer maxLength;
+
+        @JsonProperty("strategy")
+        private String strategy;
     }
 
     /**

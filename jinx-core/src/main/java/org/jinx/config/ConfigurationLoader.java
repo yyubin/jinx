@@ -104,9 +104,15 @@ public class ConfigurationLoader {
         var configMap = new HashMap<>(createDefaultConfiguration());
 
         // naming 설정 적용
-        if (profileConfig.getNaming() != null && profileConfig.getNaming().getMaxLength() != null) {
-            configMap.put(JinxOptions.Naming.MAX_LENGTH_KEY,
-                         String.valueOf(profileConfig.getNaming().getMaxLength()));
+        if (profileConfig.getNaming() != null) {
+            if (profileConfig.getNaming().getMaxLength() != null) {
+                configMap.put(JinxOptions.Naming.MAX_LENGTH_KEY,
+                             String.valueOf(profileConfig.getNaming().getMaxLength()));
+            }
+            if (profileConfig.getNaming().getStrategy() != null) {
+                configMap.put(JinxOptions.Naming.STRATEGY_KEY,
+                             profileConfig.getNaming().getStrategy());
+            }
         }
 
         // 향후 database, output 설정들도 여기에 추가
