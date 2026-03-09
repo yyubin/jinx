@@ -1,51 +1,91 @@
-## 📝 CHANGELOG
+# Changelog
 
-### [Released - 0.1.1]
-
-#### 🐛 Fixed
-
-* 컬럼 리네임 시 인덱스, 제약조건, 외래키 SQL 생성 순서가 잘못되어
-  **존재하지 않는 컬럼을 참조하는 인덱스가 먼저 생성되던 문제 수정**
-* MySQL 마이그레이션에서 `ModifyContributor`가
-  `DROP + CREATE`를 한 번에 수행하던 구조로 인해 발생하던
-  **컬럼 의존성 순서 오류 해결**
-
-#### 🛠 Changed
-
-* 인덱스 / 제약조건 / 외래키 수정 로직을
-  `ModifyContributor` 방식에서 **Drop + Add Contributor 분리 방식**으로 변경
-* priority 체계에 맞게 다음 순서가 보장되도록 개선:
-
-  ```
-  DROP (Index / Constraint / FK)
-  → COLUMN DROP / ADD
-  → ADD (Index / Constraint / FK)
-  ```
-
-#### 🧩 Internal
-
-* `MySqlMigrationVisitor`에서 다음 메서드 동작 변경:
-
-  * `visitModifiedIndex`
-  * `visitModifiedConstraint`
-  * `visitModifiedRelationship`
-* 내부적으로 더 이상 사용되지 않는 Contributor 클래스 발생:
-
-  * `IndexModifyContributor`
-  * `ConstraintModifyContributor`
-  * `RelationshipModifyContributor`
-    (추후 제거 가능)
+All notable changes to this project will be documented in this file.
 
 ---
 
-### 🔍 영향 범위
+## [0.1.2] - 2026-03-09
 
-* 컬럼 리네임과 함께 인덱스 / 제약조건 / 외래키가 변경되는 모든 MySQL 마이그레이션 시나리오
-* 기존 마이그레이션 SQL의 **실행 안정성 및 순서 보장성 향상**
+### Added
+
+- `naming.strategy` can now be configured via `jinx.yaml` (previously only supported through Gradle DSL or `-A` compiler options)
+
+### Changed
+
+- All annotation processor option parsing (`maxLength`, `strategy`) is now consolidated in `JpaSqlGeneratorProcessor.init()`. `ProcessingContext` no longer reads from `jinx.yaml` directly.
 
 ---
 
-### ✅ 검증
+## [0.1.1] - 2026-03-08
 
-* 컬럼 리네임 + 인덱스 변경 시나리오에서 SQL 생성 순서 확인
-* 실제 MySQL 환경에서 마이그레이션 SQL 정상 실행 확인
+### Fixed
+
+- Fixed SQL generation order bug on column rename: indexes referencing the renamed column were generated before the column existed
+- Resolved `ModifyContributor` dependency ordering issue in MySQL migrations by splitting modify operations into separate Drop and Add contributors
+
+### Changed
+
+- Index, constraint, and foreign key modify operations now follow explicit Drop → Column change → Add ordering
+
+---
+
+## [0.1.0] - 2025-03-07
+
+### Fixed
+
+- Fixed duplicate FK generation in JOINED inheritance hierarchies
+- Fixed FK mismatch in multi-level JOINED inheritance
+- Fixed `AttributeDescriptorFactory` incorrectly recursing into `@Entity` superclasses
+- Fixed `TEXT` type being generated for `AttributeConverter` output types — now correctly resolves the converter's DB-side type (`Y` in `AttributeConverter<X, Y>`)
+- Fixed deferred PK validation timing for JOINED hierarchies and `@ElementCollection`
+
+---
+
+## [0.0.22] - 2025-12-03
+
+### Fixed
+
+- Fixed constraint and index position bug in DDL generation
+- Fixed duplicate column generation for boolean fields
+
+### Changed
+
+- Deprecated `IndexModifyContributor`, `ConstraintModifyContributor`, `RelationshipModifyContributor`
+
+---
+
+## [0.0.17]
+
+### Added
+
+- `NamingStrategy` SPI — `SNAKE_CASE` and `NO_OP` strategies included
+
+---
+
+## [0.0.14]
+
+### Changed
+
+- Deferred FK processing now uses dynamic retry count with progress detection to handle complex circular references
+
+---
+
+## [0.0.13]
+
+### Added
+
+- FK post-create phase separation for circular reference support
+
+### Fixed
+
+- `OneToOne` missing UNIQUE constraint on inverse side
+- `ToOne` FK missing when processed before referenced entity
+
+---
+
+## [0.0.9]
+
+### Fixed
+
+- MySQL `ENUM` literal generation for `EnumType.STRING`
+- Primitive and enum field SQL type mapping errors
