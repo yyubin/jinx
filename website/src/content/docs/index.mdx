@@ -1,0 +1,33 @@
+---
+title: Jinx
+description: Compile-time JPA schema analysis and DDL migration generator.
+template: splash
+hero:
+  tagline: Analyze JPA annotations at compile time. Generate DDL SQL and Liquibase YAML. No reflection. No runtime database required.
+  actions:
+    - text: Get Started
+      link: /jinx/getting-started/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/yyubin/jinx
+      icon: external
+      variant: minimal
+---
+
+import { CardGrid, Card } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+  <Card title="Compile-time Analysis" icon="magnifier">
+    Jinx uses annotation processing at compile time. No runtime reflection, no live database connection needed.
+  </Card>
+  <Card title="Plain SQL Output" icon="document">
+    Generates plain DDL SQL files that can be reviewed, committed to Git, and deployed like any other code artifact.
+  </Card>
+  <Card title="Liquibase Support" icon="setting">
+    Outputs Liquibase YAML as a secondary dialect for teams already using Liquibase for execution and tracking.
+  </Card>
+  <Card title="Extensible via SPI" icon="puzzle">
+    New database dialects can be added through the SPI interface. MySQL is included out of the box.
+  </Card>
+</CardGrid>
