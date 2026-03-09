@@ -11,7 +11,7 @@ Jinx는 **컴파일 타임에 JPA 애노테이션을 분석**하여
 Liquibase YAML도 **출력 포맷 중 하나**로 지원하지만,  
 **SQL이 주력이며 가장 많이 검증된 출력 결과**입니다.
 
-**MySQL 우선 지원** | **JDK 21+ 필요** | **최신 버전: 0.1.1** | **JPA 3.2.0 지원**
+**MySQL 우선 지원** | **JDK 21+ 필요** | **최신 버전: 0.1.2** | **JPA 3.2.0 지원**
 
 ---
 
@@ -98,8 +98,8 @@ Liquibase는 핵심 모델이 아니라
 
 ```gradle
 dependencies {
-    annotationProcessor("io.github.yyubin:jinx-processor:0.1.1")
-    implementation("io.github.yyubin:jinx-core:0.1.1")
+    annotationProcessor("io.github.yyubin:jinx-processor:0.1.2")
+    implementation("io.github.yyubin:jinx-core:0.1.2")
 }
 ````
 
@@ -155,7 +155,7 @@ jinx db migrate \
 
 ```kotlin
 plugins {
-    id("io.github.yyubin.jinx") version "0.1.1"
+    id("io.github.yyubin.jinx") version "0.1.2"
 }
 ```
 
@@ -182,6 +182,102 @@ jinx {
     }
 }
 ```
+
+---
+
+## 설정
+
+### 우선순위
+
+설정은 다음 순서로 적용됩니다 (위가 더 높은 우선순위):
+
+```
+Gradle DSL / -A 컴파일러 옵션  >  jinx.yaml  >  기본값
+```
+
+---
+
+### jinx.yaml
+
+프로젝트 루트에 `jinx.yaml`을 생성합니다. 작업 디렉토리에서 상위 디렉토리로 순차 탐색하므로, 저장소 루트에 두면 모든 서브프로젝트에 적용됩니다.
+
+```yaml
+profiles:
+  dev:
+    naming:
+      maxLength: 30
+      strategy: NO_OP
+
+  prod:
+    naming:
+      maxLength: 63
+      strategy: SNAKE_CASE
+```
+
+**프로파일 활성화** (우선순위 순):
+1. Gradle DSL: `profile.set("prod")`
+2. 환경변수: `JINX_PROFILE=prod`
+3. 기본값: `dev`
+
+---
+
+### 설정 항목
+
+#### `naming.maxLength`
+
+제약 조건·인덱스명 생성 시 적용할 최대 길이입니다.
+
+| 기본값 | 권장값 |
+|--------|--------|
+| `30`   | PostgreSQL: `63` / MySQL: `64` |
+
+#### `naming.strategy`
+
+Java 필드명·클래스명을 DB 물리 컬럼명으로 변환하는 방식을 지정합니다.
+
+| 값 | 동작 | 예시 |
+|----|------|------|
+| `NO_OP` | 변환 없이 그대로 사용 (기본값) | `myColumn` → `myColumn` |
+| `SNAKE_CASE` | camelCase → snake_case 변환 | `myColumn` → `my_column` |
+
+---
+
+### Gradle DSL
+
+```kotlin
+jinx {
+    profile.set("prod")
+
+    naming {
+        maxLength.set(63)
+        strategy.set("SNAKE_CASE")
+    }
+}
+```
+
+Gradle DSL 값은 `jinx.yaml`보다 우선 적용됩니다. 플러그인이 `-A` 컴파일러 인자로 자동 변환해 전달합니다.
+
+---
+
+### Annotation Processor 직접 옵션 (`-A`)
+
+Gradle 플러그인 없이 Annotation Processor를 직접 사용하는 경우:
+
+```gradle
+compileJava {
+    options.compilerArgs += [
+        '-Ajinx.naming.maxLength=63',
+        '-Ajinx.naming.strategy=SNAKE_CASE',
+        '-Ajinx.profile=prod'
+    ]
+}
+```
+
+| 키 | 설명 |
+|----|------|
+| `jinx.naming.maxLength` | 제약 조건·인덱스명 최대 길이 |
+| `jinx.naming.strategy`  | 네이밍 전략 (`NO_OP` 또는 `SNAKE_CASE`) |
+| `jinx.profile`          | `jinx.yaml` 프로파일 지정 |
 
 ---
 

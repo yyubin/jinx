@@ -8,7 +8,7 @@ Jinx analyzes your **JPA annotations at compile time**, generates **schema snaps
 
 Liquibase YAML is supported as an **output dialect**, but **SQL is the primary and most thoroughly validated output format**.
 
-**MySQL First** | **JDK 21+ Required** | **Latest Version: 0.1.1** | **JPA 3.2.0 Supported**
+**MySQL First** | **JDK 21+ Required** | **Latest Version: 0.1.2** | **JPA 3.2.0 Supported**
 
 ---
 
@@ -86,8 +86,8 @@ Liquibase support is **not the core model**, but a translation layer on top of S
 
 ```gradle
 dependencies {
-    annotationProcessor("io.github.yyubin:jinx-processor:0.1.1")
-    implementation("io.github.yyubin:jinx-core:0.1.1")
+    annotationProcessor("io.github.yyubin:jinx-processor:0.1.2")
+    implementation("io.github.yyubin:jinx-core:0.1.2")
 }
 ```
 
@@ -176,7 +176,7 @@ CREATE INDEX `ix_bird__zoo_id` ON `Bird` (`zoo_id`);
 
 ```kotlin
 plugins {
-    id("io.github.yyubin.jinx") version "0.1.1"
+    id("io.github.yyubin.jinx") version "0.1.2"
 }
 ```
 
@@ -203,6 +203,102 @@ jinx {
     }
 }
 ```
+
+---
+
+## Configuration
+
+### Priority Order
+
+Settings are applied in this order (higher overrides lower):
+
+```
+Gradle DSL / -A compiler options  >  jinx.yaml  >  defaults
+```
+
+---
+
+### jinx.yaml
+
+Create `jinx.yaml` in your project root. Jinx searches upward from the working directory, so a file at the repository root covers all subprojects.
+
+```yaml
+profiles:
+  dev:
+    naming:
+      maxLength: 30
+      strategy: NO_OP
+
+  prod:
+    naming:
+      maxLength: 63
+      strategy: SNAKE_CASE
+```
+
+**Activate a profile** (in order of precedence):
+1. Gradle DSL: `profile.set("prod")`
+2. Environment variable: `JINX_PROFILE=prod`
+3. Default: `dev`
+
+---
+
+### Configuration Options
+
+#### `naming.maxLength`
+
+Maximum length for generated constraint and index names.
+
+| Default | Recommended values |
+|---------|--------------------|
+| `30`    | PostgreSQL: `63` / MySQL: `64` |
+
+#### `naming.strategy`
+
+Controls how logical names (Java field/class names) are converted to physical column names.
+
+| Value | Behavior | Example |
+|-------|----------|---------|
+| `NO_OP` | No conversion (default) | `myColumn` → `myColumn` |
+| `SNAKE_CASE` | camelCase → snake_case | `myColumn` → `my_column` |
+
+---
+
+### Gradle DSL
+
+```kotlin
+jinx {
+    profile.set("prod")
+
+    naming {
+        maxLength.set(63)
+        strategy.set("SNAKE_CASE")
+    }
+}
+```
+
+Gradle DSL values override `jinx.yaml`. The plugin translates them into `-A` compiler arguments automatically.
+
+---
+
+### Direct Annotation Processor Options (`-A`)
+
+When using the annotation processor without the Gradle plugin:
+
+```gradle
+compileJava {
+    options.compilerArgs += [
+        '-Ajinx.naming.maxLength=63',
+        '-Ajinx.naming.strategy=SNAKE_CASE',
+        '-Ajinx.profile=prod'
+    ]
+}
+```
+
+| Key | Description |
+|-----|-------------|
+| `jinx.naming.maxLength` | Maximum constraint/index name length |
+| `jinx.naming.strategy`  | Naming strategy (`NO_OP` or `SNAKE_CASE`) |
+| `jinx.profile`          | Active profile for `jinx.yaml` lookup |
 
 ---
 
