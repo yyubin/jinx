@@ -9,8 +9,6 @@ import org.jinx.model.EntityModel;
 import org.jinx.model.SchemaModel;
 import org.jinx.naming.DefaultNaming;
 import org.jinx.naming.Naming;
-import org.jinx.options.JinxOptions;
-import org.jinx.config.ConfigurationLoader;
 import org.jinx.processor.JpaSqlGeneratorProcessor;
 import org.jinx.spi.naming.JinxNamingStrategy;
 import org.jinx.spi.naming.impl.NoOpNamingStrategy;
@@ -64,72 +62,28 @@ public class ProcessingContext {
     private final Map<String, Map<String, List<String>>> pkAttributeToColumnMap = new HashMap<>();
 
     /**
-     * 기본 생성자 (하위 호환성 유지)
-     * namingStrategy는 NoOpNamingStrategy로 초기화됩니다.
+     * 기본 생성자 (테스트용)
+     * namingStrategy는 NoOpNamingStrategy, maxLength는 기본값(30)으로 초기화됩니다.
      */
     public ProcessingContext(ProcessingEnvironment processingEnv, SchemaModel schemaModel) {
-        this(processingEnv, schemaModel, new NoOpNamingStrategy());
+        this(processingEnv, schemaModel, new NoOpNamingStrategy(), 30);
     }
 
     /**
-     * 네이밍 전략을 지정하는 생성자
+     * 네이밍 전략과 maxLength를 지정하는 생성자.
+     * 옵션 읽기는 {@link org.jinx.processor.JpaSqlGeneratorProcessor}에서 처리 후 전달합니다.
      *
      * @param processingEnv 어노테이션 프로세싱 환경
      * @param schemaModel 스키마 모델
      * @param namingStrategy 네이밍 전략 (null인 경우 NoOpNamingStrategy 사용)
+     * @param maxLength 제약조건/인덱스명 최대 길이
      */
-    public ProcessingContext(ProcessingEnvironment processingEnv, SchemaModel schemaModel, JinxNamingStrategy namingStrategy) {
+    public ProcessingContext(ProcessingEnvironment processingEnv, SchemaModel schemaModel, JinxNamingStrategy namingStrategy, int maxLength) {
         this.processingEnv = processingEnv;
         this.schemaModel = schemaModel;
         this.namingStrategy = namingStrategy != null ? namingStrategy : new NoOpNamingStrategy();
-
-        // Load configuration (with profile support).
-        Map<String, String> config = loadConfiguration(processingEnv);
-        int maxLength = parseMaxLength(config);
-
         this.naming = new DefaultNaming(maxLength);
         this.attributeDescriptorFactory = new AttributeDescriptorFactory(processingEnv.getTypeUtils(), processingEnv.getElementUtils(), this);
-    }
-
-    /**
-     * Loads configuration, considering profiles.
-     * Priority: -A options > configuration file > default values.
-     */
-    private Map<String, String> loadConfiguration(ProcessingEnvironment processingEnv) {
-        // Determine profile: -Ajinx.profile > JINX_PROFILE environment variable > dev.
-        String profile = processingEnv.getOptions().get(JinxOptions.Profile.PROCESSOR_KEY);
-
-        ConfigurationLoader loader = new ConfigurationLoader();
-        Map<String, String> config = loader.loadConfiguration(profile);
-
-        // If values are explicitly specified with -A options, they override the config file.
-        String explicitMaxLength = processingEnv.getOptions().get(JinxOptions.Naming.MAX_LENGTH_KEY);
-        if (explicitMaxLength != null) {
-            Map<String, String> mutableConfig = new HashMap<>(config);
-            mutableConfig.put(JinxOptions.Naming.MAX_LENGTH_KEY, explicitMaxLength);
-            return mutableConfig;
-        }
-
-        return config;
-    }
-
-    /**
-     * Parses the maxLength value from the configuration.
-     */
-    private int parseMaxLength(Map<String, String> config) {
-        String maxLenOpt = config.get(JinxOptions.Naming.MAX_LENGTH_KEY);
-        int maxLength = JinxOptions.Naming.MAX_LENGTH_DEFAULT;
-
-        if (maxLenOpt != null) {
-            try {
-                maxLength = Integer.parseInt(maxLenOpt);
-            } catch (NumberFormatException e) {
-                getMessager().printMessage(Diagnostic.Kind.WARNING,
-                        "Invalid " + JinxOptions.Naming.MAX_LENGTH_KEY + ": " + maxLenOpt + " (use default " + maxLength + ")");
-            }
-        }
-
-        return maxLength;
     }
 
 

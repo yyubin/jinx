@@ -57,9 +57,10 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
                 .version(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")))
                 .build();
 
-        // Create naming strategy based on annotation processor options
+        // Read all options here and pass to ProcessingContext
         JinxNamingStrategy namingStrategy = createNamingStrategy(processingEnv);
-        this.context = new ProcessingContext(processingEnv, schemaModel, namingStrategy);
+        int maxLength = parseMaxLength(processingEnv);
+        this.context = new ProcessingContext(processingEnv, schemaModel, namingStrategy, maxLength);
 
         this.sequenceHandler = new SequenceHandler(context);
         ColumnHandler columnHandler = new ColumnHandler(context, sequenceHandler);
@@ -73,7 +74,29 @@ public class JpaSqlGeneratorProcessor extends AbstractProcessor {
     }
 
     /**
-     * Create naming strategy based on annotation processor options
+     * Parse maxLength from annotation processor options.
+     * Priority: -Ajinx.naming.maxLength > default (30)
+     */
+    private int parseMaxLength(ProcessingEnvironment processingEnv) {
+        String value = processingEnv.getOptions().get(JinxOptions.Naming.MAX_LENGTH_KEY);
+        if (value == null || value.isBlank()) {
+            return JinxOptions.Naming.MAX_LENGTH_DEFAULT;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            processingEnv.getMessager().printMessage(
+                    Diagnostic.Kind.WARNING,
+                    "Invalid " + JinxOptions.Naming.MAX_LENGTH_KEY + ": " + value
+                    + ". Using default " + JinxOptions.Naming.MAX_LENGTH_DEFAULT + "."
+            );
+            return JinxOptions.Naming.MAX_LENGTH_DEFAULT;
+        }
+    }
+
+    /**
+     * Create naming strategy based on annotation processor options.
+     * Priority: -Ajinx.naming.strategy > default (NO_OP)
      */
     private JinxNamingStrategy createNamingStrategy(ProcessingEnvironment processingEnv) {
         String strategyOption = processingEnv.getOptions().get(JinxOptions.Naming.STRATEGY_KEY);
