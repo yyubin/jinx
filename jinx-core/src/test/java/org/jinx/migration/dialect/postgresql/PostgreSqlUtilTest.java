@@ -37,6 +37,11 @@ class PostgreSqlUtilTest {
             assertTrue(PostgreSqlUtil.isKeyword("LATERAL"));
             assertTrue(PostgreSqlUtil.isKeyword("VARIADIC"));
         }
+
+        @Test @DisplayName("null 입력 시 NPE 없이 false 반환 (escapeKeyword와 일관된 동작)")
+        void null_returnsFalse_noNpe() {
+            assertDoesNotThrow(() -> assertFalse(PostgreSqlUtil.isKeyword(null)));
+        }
     }
 
     @Nested

@@ -77,7 +77,7 @@ public final class MySqlUtil {
     }
 
     public static boolean isKeyword(String name) {
-        return MYSQL_KEYWORDS.contains(name.toUpperCase(Locale.ROOT));
+        return name != null && MYSQL_KEYWORDS.contains(name.toUpperCase(Locale.ROOT));
     }
 
     // Mysql pk 정렬 전용 유틸 메서드

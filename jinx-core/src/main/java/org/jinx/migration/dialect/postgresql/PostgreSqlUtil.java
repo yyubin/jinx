@@ -54,7 +54,7 @@ public final class PostgreSqlUtil {
     ).map(s -> s.toUpperCase(Locale.ROOT)).collect(Collectors.toSet());
 
     public static boolean isKeyword(String name) {
-        return PG_KEYWORDS.contains(name.toUpperCase(Locale.ROOT));
+        return name != null && PG_KEYWORDS.contains(name.toUpperCase(Locale.ROOT));
     }
 
     public static String escapeKeyword(String name) {

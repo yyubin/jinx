@@ -23,6 +23,12 @@ class MySqlUtilTest {
             assertThat(MySqlUtil.isKeyword("myTable")).isFalse();
             assertThat(MySqlUtil.isKeyword("foo_bar")).isFalse();
         }
+
+        @Test @DisplayName("null 입력 시 NPE 없이 false 반환")
+        void nullInput_returnsFalse_noNpe() {
+            assertThatCode(() -> assertThat(MySqlUtil.isKeyword(null)).isFalse())
+                    .doesNotThrowAnyException();
+        }
     }
 
     @Nested @DisplayName("escapeKeyword()")
