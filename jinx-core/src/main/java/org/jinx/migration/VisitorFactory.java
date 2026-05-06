@@ -2,6 +2,7 @@ package org.jinx.migration;
 
 import java.util.Objects;
 import org.jinx.migration.dialect.mysql.MySqlVisitorProvider;
+import org.jinx.migration.dialect.postgresql.PostgreSqlVisitorProvider;
 import org.jinx.migration.spi.VisitorProvider;
 import org.jinx.model.DialectBundle;
 import org.jinx.model.VisitorProviders;
@@ -10,7 +11,8 @@ import java.util.List;
 
 public final class VisitorFactory {
     private static final List<VisitorProvider> PROVIDERS = List.of(
-            new MySqlVisitorProvider()
+            new MySqlVisitorProvider(),
+            new PostgreSqlVisitorProvider()
     );
 
     public static VisitorProviders forBundle(DialectBundle bundle) {

@@ -54,6 +54,7 @@ private-docs
 
 ### Docusaurus ###
 website/node_modules/
+website/dist/
 website/.docusaurus/
 website/.cache-loader/
 website/build/
