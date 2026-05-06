@@ -823,6 +823,108 @@ class PostgreSqlDialectTest {
 
             assertEquals("DROP TABLE IF EXISTS \"seq_table\";\n", d.getDropTableGeneratorSql(tg));
         }
+
+        @Test @DisplayName("ALTER — 변경 없으면 빈 문자열")
+        void alterTableGenerator_noChange_empty() {
+            PostgreSqlDialect d = newDialect();
+            TableGeneratorModel tg = tg("seq_table", "k", "v", "ORDER_SEQ", 1L);
+
+            assertTrue(d.getAlterTableGeneratorSql(tg, tg).isBlank());
+        }
+
+        @Test @DisplayName("ALTER — 테이블 이름 변경 → DROP + CREATE 재생성")
+        void alterTableGenerator_tableNameChanged_dropCreate() {
+            PostgreSqlDialect d = newDialect();
+            TableGeneratorModel oldTg = tg("old_seq", "k", "v", "SEQ", 1L);
+            TableGeneratorModel newTg = tg("new_seq", "k", "v", "SEQ", 1L);
+
+            String sql = d.getAlterTableGeneratorSql(newTg, oldTg);
+            assertTrue(sql.contains("DROP TABLE IF EXISTS \"old_seq\""), "이전 테이블 DROP");
+            assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS \"new_seq\""), "새 테이블 CREATE");
+        }
+
+        @Test @DisplayName("ALTER — pkColumnName 변경 → RENAME COLUMN")
+        void alterTableGenerator_pkColumnNameChanged() {
+            PostgreSqlDialect d = newDialect();
+            TableGeneratorModel oldTg = tg("seq_table", "old_pk", "v", "SEQ", 1L);
+            TableGeneratorModel newTg = tg("seq_table", "new_pk", "v", "SEQ", 1L);
+
+            String sql = d.getAlterTableGeneratorSql(newTg, oldTg);
+            assertTrue(sql.contains("RENAME COLUMN \"old_pk\" TO \"new_pk\""));
+            assertFalse(sql.contains("UPDATE"), "컬럼 이름 변경만이므로 UPDATE 불필요");
+        }
+
+        @Test @DisplayName("ALTER — valueColumnName 변경 → RENAME COLUMN")
+        void alterTableGenerator_valueColumnNameChanged() {
+            PostgreSqlDialect d = newDialect();
+            TableGeneratorModel oldTg = tg("seq_table", "k", "old_val", "SEQ", 1L);
+            TableGeneratorModel newTg = tg("seq_table", "k", "new_val", "SEQ", 1L);
+
+            String sql = d.getAlterTableGeneratorSql(newTg, oldTg);
+            assertTrue(sql.contains("RENAME COLUMN \"old_val\" TO \"new_val\""));
+        }
+
+        @Test @DisplayName("ALTER — pkColumnValue 변경 → UPDATE row key")
+        void alterTableGenerator_pkColumnValueChanged() {
+            PostgreSqlDialect d = newDialect();
+            TableGeneratorModel oldTg = tg("seq_table", "k", "v", "OLD_SEQ", 1L);
+            TableGeneratorModel newTg = tg("seq_table", "k", "v", "NEW_SEQ", 1L);
+
+            String sql = d.getAlterTableGeneratorSql(newTg, oldTg);
+            assertTrue(sql.contains("UPDATE \"seq_table\""));
+            assertTrue(sql.contains("SET \"k\" = 'NEW_SEQ'"));
+            assertTrue(sql.contains("WHERE \"k\" = 'OLD_SEQ'"));
+        }
+
+        @Test @DisplayName("ALTER — initialValue 변경 → UPDATE row value")
+        void alterTableGenerator_initialValueChanged() {
+            PostgreSqlDialect d = newDialect();
+            TableGeneratorModel oldTg = tg("seq_table", "k", "v", "SEQ", 1L);
+            TableGeneratorModel newTg = tg("seq_table", "k", "v", "SEQ", 100L);
+
+            String sql = d.getAlterTableGeneratorSql(newTg, oldTg);
+            assertTrue(sql.contains("UPDATE \"seq_table\""));
+            assertTrue(sql.contains("SET \"v\" = 100"));
+            assertTrue(sql.contains("WHERE \"k\" = 'SEQ'"));
+        }
+
+        @Test @DisplayName("ALTER — allocationSize만 변경 → SQL 없음 (애플리케이션 레벨)")
+        void alterTableGenerator_allocationSizeOnly_noSql() {
+            PostgreSqlDialect d = newDialect();
+            TableGeneratorModel oldTg = tg("seq_table", "k", "v", "SEQ", 1L);
+            TableGeneratorModel newTg = TableGeneratorModel.builder()
+                    .table("seq_table").pkColumnName("k").valueColumnName("v")
+                    .pkColumnValue("SEQ").initialValue(1L).allocationSize(100).build();
+
+            assertTrue(d.getAlterTableGeneratorSql(newTg, oldTg).isBlank(),
+                    "allocationSize 변경은 SQL 불필요");
+        }
+
+        @Test @DisplayName("ALTER — 복수 변경: 컬럼 이름 + pkValue + initialValue 동시 처리")
+        void alterTableGenerator_multipleChanges_correctOrder() {
+            PostgreSqlDialect d = newDialect();
+            TableGeneratorModel oldTg = tg("seq_table", "old_pk", "old_val", "OLD", 1L);
+            TableGeneratorModel newTg = tg("seq_table", "new_pk", "new_val", "NEW", 50L);
+
+            String sql = d.getAlterTableGeneratorSql(newTg, oldTg);
+
+            // RENAME COLUMN이 UPDATE보다 먼저 (UPDATE는 new 컬럼명 사용)
+            int renameIdx  = sql.indexOf("RENAME COLUMN");
+            int updateIdx  = sql.indexOf("UPDATE");
+            assertTrue(renameIdx >= 0 && updateIdx >= 0);
+            assertTrue(renameIdx < updateIdx, "RENAME이 UPDATE보다 먼저 실행");
+
+            // UPDATE는 이미 변경된 new 컬럼명 기준으로 작성
+            assertTrue(sql.contains("\"new_pk\""), "UPDATE에 new 컬럼명 사용");
+            assertTrue(sql.contains("\"new_val\""), "UPDATE에 new 값 컬럼명 사용");
+        }
+
+        private TableGeneratorModel tg(String table, String pkCol, String valCol,
+                                       String pkVal, long initVal) {
+            return TableGeneratorModel.builder()
+                    .table(table).pkColumnName(pkCol).valueColumnName(valCol)
+                    .pkColumnValue(pkVal).initialValue(initVal).build();
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════════════

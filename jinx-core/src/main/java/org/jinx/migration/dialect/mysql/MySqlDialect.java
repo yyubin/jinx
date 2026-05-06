@@ -16,6 +16,7 @@ import org.jinx.migration.spi.visitor.SqlGeneratingVisitor;
 import org.jinx.model.*;
 
 import java.util.Collection;
+import java.util.Objects;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -491,9 +492,57 @@ public class MySqlDialect extends AbstractDialect
         return "DROP TABLE IF EXISTS " + quoteIdentifier(tg.getTable()) + ";\n";
     }
 
+    /**
+     * 테이블 제너레이터 변경 마이그레이션을 생성합니다.
+     *
+     * <ul>
+     *   <li>테이블 이름 변경 → DROP old + CREATE new
+     *   <li>pkColumnName / valueColumnName 변경 → RENAME COLUMN (MySQL 8.0+)
+     *   <li>pkColumnValue 변경 → UPDATE row key
+     *   <li>initialValue 변경 → UPDATE row value
+     *   <li>allocationSize 변경 → SQL 불필요 (애플리케이션 레벨 배치 크기)
+     * </ul>
+     */
     @Override
     public String getAlterTableGeneratorSql(TableGeneratorModel newTg, TableGeneratorModel oldTg) {
-        return "";
+        if (!Objects.equals(newTg.getTable(), oldTg.getTable())) {
+            return getDropTableGeneratorSql(oldTg) + getCreateTableGeneratorSql(newTg);
+        }
+
+        StringBuilder sb = new StringBuilder();
+        String table      = quoteIdentifier(newTg.getTable());
+        var    stringType = getJavaTypeMapper().map("java.lang.String");
+
+        if (!Objects.equals(newTg.getPkColumnName(), oldTg.getPkColumnName())) {
+            sb.append("ALTER TABLE ").append(table)
+              .append(" RENAME COLUMN ").append(quoteIdentifier(oldTg.getPkColumnName()))
+              .append(" TO ").append(quoteIdentifier(newTg.getPkColumnName())).append(";\n");
+        }
+        if (!Objects.equals(newTg.getValueColumnName(), oldTg.getValueColumnName())) {
+            sb.append("ALTER TABLE ").append(table)
+              .append(" RENAME COLUMN ").append(quoteIdentifier(oldTg.getValueColumnName()))
+              .append(" TO ").append(quoteIdentifier(newTg.getValueColumnName())).append(";\n");
+        }
+
+        if (!Objects.equals(newTg.getPkColumnValue(), oldTg.getPkColumnValue())) {
+            sb.append("UPDATE ").append(table)
+              .append(" SET ").append(quoteIdentifier(newTg.getPkColumnName()))
+              .append(" = ").append(valueTransformer.quote(newTg.getPkColumnValue(), stringType))
+              .append(" WHERE ").append(quoteIdentifier(newTg.getPkColumnName()))
+              .append(" = ").append(valueTransformer.quote(oldTg.getPkColumnValue(), stringType))
+              .append(";\n");
+        }
+
+        if (newTg.getInitialValue() != oldTg.getInitialValue()) {
+            sb.append("UPDATE ").append(table)
+              .append(" SET ").append(quoteIdentifier(newTg.getValueColumnName()))
+              .append(" = ").append(newTg.getInitialValue())
+              .append(" WHERE ").append(quoteIdentifier(newTg.getPkColumnName()))
+              .append(" = ").append(valueTransformer.quote(newTg.getPkColumnValue(), stringType))
+              .append(";\n");
+        }
+
+        return sb.toString();
     }
 
     @Override

@@ -535,9 +535,61 @@ public class PostgreSqlDialect extends AbstractDialect
         return "DROP TABLE IF EXISTS " + quoteIdentifier(tg.getTable()) + ";\n";
     }
 
+    /**
+     * 테이블 제너레이터 변경 마이그레이션을 생성합니다.
+     *
+     * <ul>
+     *   <li>테이블 이름 변경 → DROP old + CREATE new (구조 재생성)
+     *   <li>pkColumnName / valueColumnName 변경 → RENAME COLUMN
+     *   <li>pkColumnValue 변경 → UPDATE row key
+     *   <li>initialValue 변경 → UPDATE row value (애플리케이션이 아직 카운터를 증가시키지 않았을 때만 안전)
+     *   <li>allocationSize 변경 → SQL 불필요 (애플리케이션 레벨 배치 크기)
+     * </ul>
+     */
     @Override
     public String getAlterTableGeneratorSql(TableGeneratorModel newTg, TableGeneratorModel oldTg) {
-        return "";
+        // 테이블 이름이 바뀌면 구조 전체가 달라지므로 재생성
+        if (!Objects.equals(newTg.getTable(), oldTg.getTable())) {
+            return getDropTableGeneratorSql(oldTg) + getCreateTableGeneratorSql(newTg);
+        }
+
+        StringBuilder sb = new StringBuilder();
+        String table     = quoteIdentifier(newTg.getTable());
+        var    stringType = getJavaTypeMapper().map("java.lang.String");
+
+        // 컬럼 이름 변경은 데이터 UPDATE보다 먼저 실행 (이후 UPDATE는 new 컬럼명 사용)
+        if (!Objects.equals(newTg.getPkColumnName(), oldTg.getPkColumnName())) {
+            sb.append("ALTER TABLE ").append(table)
+              .append(" RENAME COLUMN ").append(quoteIdentifier(oldTg.getPkColumnName()))
+              .append(" TO ").append(quoteIdentifier(newTg.getPkColumnName())).append(";\n");
+        }
+        if (!Objects.equals(newTg.getValueColumnName(), oldTg.getValueColumnName())) {
+            sb.append("ALTER TABLE ").append(table)
+              .append(" RENAME COLUMN ").append(quoteIdentifier(oldTg.getValueColumnName()))
+              .append(" TO ").append(quoteIdentifier(newTg.getValueColumnName())).append(";\n");
+        }
+
+        // 식별 키 값 변경 (RENAME COLUMN 이후이므로 new pkColumnName 사용)
+        if (!Objects.equals(newTg.getPkColumnValue(), oldTg.getPkColumnValue())) {
+            sb.append("UPDATE ").append(table)
+              .append(" SET ").append(quoteIdentifier(newTg.getPkColumnName()))
+              .append(" = ").append(valueTransformer.quote(newTg.getPkColumnValue(), stringType))
+              .append(" WHERE ").append(quoteIdentifier(newTg.getPkColumnName()))
+              .append(" = ").append(valueTransformer.quote(oldTg.getPkColumnValue(), stringType))
+              .append(";\n");
+        }
+
+        // 초기값 변경 (new pkColumnValue와 new pkColumnName 기준으로 갱신)
+        if (newTg.getInitialValue() != oldTg.getInitialValue()) {
+            sb.append("UPDATE ").append(table)
+              .append(" SET ").append(quoteIdentifier(newTg.getValueColumnName()))
+              .append(" = ").append(newTg.getInitialValue())
+              .append(" WHERE ").append(quoteIdentifier(newTg.getPkColumnName()))
+              .append(" = ").append(valueTransformer.quote(newTg.getPkColumnValue(), stringType))
+              .append(";\n");
+        }
+
+        return sb.toString();
     }
 
     // ── LiquibaseDialect ─────────────────────────────────────────────────────
