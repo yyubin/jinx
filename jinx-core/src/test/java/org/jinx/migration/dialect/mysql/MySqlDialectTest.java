@@ -424,6 +424,65 @@ class MySqlDialectTest {
         assertTrue(def.contains("NOT NULL"), "Expected NOT NULL but got: " + def);
     }
 
+    // ── getLiquibaseTypeName length/precision guard ──────────────────────────
+
+    @Test @DisplayName("getLiquibaseTypeName — String length=0 → VARCHAR(255) fallback")
+    void liquibase_string_zeroLength_fallsBack255() {
+        MySqlDialect d = newDialect();
+        ColumnModel c = liquibaseCol("java.lang.String");
+        when(c.getLength()).thenReturn(0);
+        assertEquals("VARCHAR(255)", d.getLiquibaseTypeName(c));
+    }
+
+    @Test @DisplayName("getLiquibaseTypeName — String length>0 → VARCHAR(n) 그대로")
+    void liquibase_string_positiveLength() {
+        MySqlDialect d = newDialect();
+        ColumnModel c = liquibaseCol("java.lang.String");
+        when(c.getLength()).thenReturn(100);
+        assertEquals("VARCHAR(100)", d.getLiquibaseTypeName(c));
+    }
+
+    @Test @DisplayName("getLiquibaseTypeName — BigDecimal precision=0 → DECIMAL(10,2) fallback")
+    void liquibase_bigDecimal_zeroPrecision_default() {
+        MySqlDialect d = newDialect();
+        ColumnModel c = liquibaseCol("java.math.BigDecimal");
+        when(c.getPrecision()).thenReturn(0);
+        assertEquals("DECIMAL(10,2)", d.getLiquibaseTypeName(c));
+    }
+
+    @Test @DisplayName("getLiquibaseTypeName — BigDecimal precision>0 → DECIMAL(p,s)")
+    void liquibase_bigDecimal_positivePrecision() {
+        MySqlDialect d = newDialect();
+        ColumnModel c = liquibaseCol("java.math.BigDecimal");
+        when(c.getPrecision()).thenReturn(18);
+        when(c.getScale()).thenReturn(4);
+        assertEquals("DECIMAL(18,4)", d.getLiquibaseTypeName(c));
+    }
+
+    @Test @DisplayName("getLiquibaseTypeName — enum string length=0 → VARCHAR(255) fallback")
+    void liquibase_enumString_zeroLength_fallsBack255() {
+        MySqlDialect d = newDialect();
+        ColumnModel c = liquibaseCol("com.example.Status");
+        when(c.getEnumValues()).thenReturn(new String[]{"A", "B"});
+        when(c.isEnumStringMapping()).thenReturn(true);
+        when(c.getLength()).thenReturn(0);
+        assertEquals("VARCHAR(255)", d.getLiquibaseTypeName(c));
+    }
+
+    private ColumnModel liquibaseCol(String javaType) {
+        ColumnModel c = mock(ColumnModel.class);
+        when(c.getJavaType()).thenReturn(javaType);
+        when(c.getConverterOutputType()).thenReturn(null);
+        when(c.getSqlTypeOverride()).thenReturn(null);
+        when(c.getLength()).thenReturn(255);
+        when(c.getPrecision()).thenReturn(0);
+        when(c.getScale()).thenReturn(0);
+        when(c.isLob()).thenReturn(false);
+        when(c.getEnumValues()).thenReturn(new String[]{});
+        when(c.getTemporalType()).thenReturn(null);
+        return c;
+    }
+
     // --- helpers ---
     private ColumnModel col(String name, String javaType) {
         ColumnModel c = mock(ColumnModel.class);

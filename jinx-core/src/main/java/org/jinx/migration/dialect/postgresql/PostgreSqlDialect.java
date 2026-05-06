@@ -612,16 +612,20 @@ public class PostgreSqlDialect extends AbstractDialect
         }
 
         if (column.getEnumValues() != null && column.getEnumValues().length > 0) {
-            return column.isEnumStringMapping() ? "VARCHAR(" + length + ")" : "INTEGER";
+            int len = length > 0 ? length : 255;
+            return column.isEnumStringMapping() ? "VARCHAR(" + len + ")" : "INTEGER";
         }
 
         return switch (javaType) {
-            case "java.lang.String"   -> "VARCHAR(" + length + ")";
+            case "java.lang.String"   -> "VARCHAR(" + (length > 0 ? length : 255) + ")";
             case "int", "java.lang.Integer" -> "INTEGER";
             case "long", "java.lang.Long"   -> "BIGINT";
             case "double", "java.lang.Double" -> "DOUBLE PRECISION";
             case "float",  "java.lang.Float"  -> "REAL";
-            case "java.math.BigDecimal" -> "NUMERIC(" + precision + "," + scale + ")";
+            // precision=0이면 NUMERIC(0,0)은 PG 거부 → 인수 없는 NUMERIC(임의 정밀도)으로 fallback
+            case "java.math.BigDecimal" -> precision > 0
+                    ? "NUMERIC(" + precision + "," + scale + ")"
+                    : "NUMERIC";
             case "java.math.BigInteger" -> "BIGINT";
             case "boolean", "java.lang.Boolean" -> "BOOLEAN";
             case "java.time.LocalDate"     -> "DATE";
@@ -634,7 +638,7 @@ public class PostgreSqlDialect extends AbstractDialect
             }
             case "byte[]"       -> "BYTEA";
             case "java.util.UUID" -> "uuid";
-            default             -> "VARCHAR(" + length + ")";
+            default             -> "VARCHAR(" + (length > 0 ? length : 255) + ")";
         };
     }
 

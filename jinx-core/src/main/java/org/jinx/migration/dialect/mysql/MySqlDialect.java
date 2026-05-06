@@ -593,17 +593,21 @@ public class MySqlDialect extends AbstractDialect
 
         // Enum 타입 처리 (getEnumValues 길이 기반)
         if (column.getEnumValues() != null && column.getEnumValues().length > 0) {
-            return column.isEnumStringMapping() ? "VARCHAR(" + length + ")" : "INT";
+            int len = length > 0 ? length : 255;
+            return column.isEnumStringMapping() ? "VARCHAR(" + len + ")" : "INT";
         }
-        
+
         return switch (javaType) {
-            case "java.lang.String" -> "VARCHAR(" + length + ")";
+            case "java.lang.String" -> "VARCHAR(" + (length > 0 ? length : 255) + ")";
             case "int", "java.lang.Integer" -> "INT";
             case "long", "java.lang.Long" -> "BIGINT";
             case "double", "java.lang.Double" -> "DOUBLE";
             case "float", "java.lang.Float" -> "FLOAT";
-            case "java.math.BigDecimal" -> "DECIMAL(" + precision + "," + scale + ")";
-            case "java.math.BigInteger" -> "NUMERIC(" + precision + ")";
+            // precision=0이면 DECIMAL(0,0)은 MySQL 거부 → 표준 기본값(10,2)으로 fallback
+            case "java.math.BigDecimal" -> precision > 0
+                    ? "DECIMAL(" + precision + "," + scale + ")"
+                    : "DECIMAL(10,2)";
+            case "java.math.BigInteger" -> precision > 0 ? "NUMERIC(" + precision + ")" : "BIGINT";
             case "boolean", "java.lang.Boolean" -> "BOOLEAN";
             case "java.time.LocalDate" -> "DATE";
             case "java.time.LocalDateTime" -> "DATETIME";
@@ -613,9 +617,9 @@ public class MySqlDialect extends AbstractDialect
                 if (column.getTemporalType() == TemporalType.TIME) yield "TIME";
                 yield "DATETIME";
             }
-            case "byte[]" -> "VARBINARY(" + length + ")";
+            case "byte[]" -> "VARBINARY(" + (length > 0 ? length : 255) + ")";
             case "java.util.UUID" -> "CHAR(36)";
-            default -> "VARCHAR(" + length + ")";
+            default -> "VARCHAR(" + (length > 0 ? length : 255) + ")";
         };
     }
 }

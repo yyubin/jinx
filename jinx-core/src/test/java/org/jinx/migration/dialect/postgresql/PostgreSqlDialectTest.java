@@ -973,6 +973,56 @@ class PostgreSqlDialectTest {
             assertEquals("CITEXT", newDialect().getLiquibaseTypeName(c));
         }
 
+        @Nested
+        @DisplayName("length/precision=0 fallback — PG는 VARCHAR(0)/NUMERIC(0,0) 거부")
+        class LengthGuards {
+
+            @Test @DisplayName("String length=0 → VARCHAR(255) fallback")
+            void string_zeroLength_fallsBack255() {
+                ColumnModel c = colModel("java.lang.String");
+                when(c.getLength()).thenReturn(0);
+                assertEquals("VARCHAR(255)", newDialect().getLiquibaseTypeName(c));
+            }
+
+            @Test @DisplayName("String length>0 → VARCHAR(n) 그대로")
+            void string_positiveLength_usedDirectly() {
+                ColumnModel c = colModel("java.lang.String");
+                when(c.getLength()).thenReturn(100);
+                assertEquals("VARCHAR(100)", newDialect().getLiquibaseTypeName(c));
+            }
+
+            @Test @DisplayName("BigDecimal precision=0 → NUMERIC (임의 정밀도, PG 유효)")
+            void bigDecimal_zeroPrecision_numericNoArgs() {
+                ColumnModel c = colModel("java.math.BigDecimal");
+                when(c.getPrecision()).thenReturn(0);
+                assertEquals("NUMERIC", newDialect().getLiquibaseTypeName(c));
+            }
+
+            @Test @DisplayName("BigDecimal precision>0 → NUMERIC(p,s)")
+            void bigDecimal_positivePrecision_withArgs() {
+                ColumnModel c = colModel("java.math.BigDecimal");
+                when(c.getPrecision()).thenReturn(18);
+                when(c.getScale()).thenReturn(4);
+                assertEquals("NUMERIC(18,4)", newDialect().getLiquibaseTypeName(c));
+            }
+
+            @Test @DisplayName("enum string mapping length=0 → VARCHAR(255) fallback")
+            void enumString_zeroLength_fallsBack255() {
+                ColumnModel c = colModel("com.example.Status");
+                when(c.getEnumValues()).thenReturn(new String[]{"A", "B"});
+                when(c.isEnumStringMapping()).thenReturn(true);
+                when(c.getLength()).thenReturn(0);
+                assertEquals("VARCHAR(255)", newDialect().getLiquibaseTypeName(c));
+            }
+
+            @Test @DisplayName("unknown type length=0 → VARCHAR(255) fallback")
+            void unknownType_zeroLength_fallsBack255() {
+                ColumnModel c = colModel("com.example.Custom");
+                when(c.getLength()).thenReturn(0);
+                assertEquals("VARCHAR(255)", newDialect().getLiquibaseTypeName(c));
+            }
+        }
+
         private ColumnModel colModel(String javaType) {
             ColumnModel c = mock(ColumnModel.class);
             when(c.getJavaType()).thenReturn(javaType);
