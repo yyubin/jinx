@@ -56,7 +56,8 @@ public class PostgreSqlDialect extends AbstractDialect
 
     @Override
     public String quoteIdentifier(String raw) {
-        return "\"" + raw + "\"";
+        // PG quoted identifier rule: internal " must be doubled ("")
+        return "\"" + raw.replace("\"", "\"\"") + "\"";
     }
 
     // ── DdlDialect · Table ───────────────────────────────────────────────────

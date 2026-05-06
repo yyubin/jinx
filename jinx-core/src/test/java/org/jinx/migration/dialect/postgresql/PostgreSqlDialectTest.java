@@ -76,6 +76,12 @@ class PostgreSqlDialectTest {
         void usesDoubleQuote() {
             assertEquals("\"users\"", newDialect().quoteIdentifier("users"));
         }
+
+        @Test @DisplayName("식별자 내부 double-quote는 \"\"로 이스케이프 (SQL injection 방지)")
+        void escapesInternalDoubleQuote() {
+            assertEquals("\"my\"\"table\"", newDialect().quoteIdentifier("my\"table"));
+            assertEquals("\"col\"\"name\"", newDialect().quoteIdentifier("col\"name"));
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════════════

@@ -20,6 +20,12 @@ class PostgreSqlIdentifierPolicyTest {
         assertEquals("\"order\"", policy.quote("order"));
     }
 
+    @Test @DisplayName("식별자 내부 double-quote는 \"\"로 이스케이프")
+    void quote_escapesInternalDoubleQuote() {
+        assertEquals("\"my\"\"table\"", policy.quote("my\"table"));
+        assertEquals("\"a\"\"b\"\"c\"", policy.quote("a\"b\"c"));
+    }
+
     @Test @DisplayName("normalizeCase는 소문자로 변환")
     void normalizeCase_toLowercase() {
         assertEquals("username", policy.normalizeCase("UserName"));
