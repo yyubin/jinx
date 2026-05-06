@@ -1,5 +1,6 @@
 package org.jinx.migration.dialect.postgresql;
 
+import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -50,10 +51,10 @@ public final class PostgreSqlUtil {
             "EXECUTE", "DEALLOCATE", "EXPLAIN", "BEGIN", "START", "END",
             "TRANSACTION", "ISOLATION", "LEVEL", "READ", "WRITE", "ONLY",
             "SERIALIZABLE", "REPEATABLE", "COMMITTED", "UNCOMMITTED"
-    ).map(String::toUpperCase).collect(Collectors.toSet());
+    ).map(s -> s.toUpperCase(Locale.ROOT)).collect(Collectors.toSet());
 
     public static boolean isKeyword(String name) {
-        return PG_KEYWORDS.contains(name.toUpperCase());
+        return PG_KEYWORDS.contains(name.toUpperCase(Locale.ROOT));
     }
 
     public static String escapeKeyword(String name) {

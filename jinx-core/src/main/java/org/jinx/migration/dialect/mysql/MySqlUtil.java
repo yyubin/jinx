@@ -4,6 +4,7 @@ import org.jinx.model.GenerationStrategy;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -61,7 +62,7 @@ public final class MySqlUtil {
             "VALUES", "VARBINARY", "VARCHAR", "VARCHARACTER", "VARYING", "WHEN",
             "WHERE", "WHILE", "WINDOW", "WITH", "WRITE", "XOR", "YEAR_MONTH",
             "ZEROFILL"
-    ).map(String::toUpperCase).collect(Collectors.toSet());
+    ).map(s -> s.toUpperCase(Locale.ROOT)).collect(Collectors.toSet());
 
     /**
      * 주어진 이름이 MySQL 예약어인지 확인하고, 예약어일 경우 끝에 '_'를 붙여 반환합니다.
@@ -69,14 +70,14 @@ public final class MySqlUtil {
      * @return 예약어가 아닐 경우 원래 이름, 예약어일 경우 수정된 이름
      */
     public static String escapeKeyword(String name) {
-        if (name != null && MYSQL_KEYWORDS.contains(name.toUpperCase())) {
+        if (name != null && MYSQL_KEYWORDS.contains(name.toUpperCase(Locale.ROOT))) {
             return name + "_";
         }
         return name;
     }
 
     public static boolean isKeyword(String name) {
-        return MYSQL_KEYWORDS.contains(name.toUpperCase());
+        return MYSQL_KEYWORDS.contains(name.toUpperCase(Locale.ROOT));
     }
 
     // Mysql pk 정렬 전용 유틸 메서드
