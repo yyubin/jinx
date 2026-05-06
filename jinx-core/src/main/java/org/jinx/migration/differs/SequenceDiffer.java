@@ -32,30 +32,30 @@ public class SequenceDiffer implements Differ {
     }
 
     private boolean isSequenceEqual(SequenceModel oldSeq, SequenceModel newSeq) {
-        return oldSeq.getInitialValue() == newSeq.getInitialValue() &&
-                oldSeq.getAllocationSize() == newSeq.getAllocationSize() &&
-                oldSeq.getCache() == newSeq.getCache() &&
-                oldSeq.getMinValue() == newSeq.getMinValue() &&
-                oldSeq.getMaxValue() == newSeq.getMaxValue() &&
+        return Objects.equals(oldSeq.getInitialValue(),   newSeq.getInitialValue()) &&
+                Objects.equals(oldSeq.getAllocationSize(), newSeq.getAllocationSize()) &&
+                Objects.equals(oldSeq.getCache(),         newSeq.getCache()) &&
+                Objects.equals(oldSeq.getMinValue(),      newSeq.getMinValue()) &&
+                Objects.equals(oldSeq.getMaxValue(),      newSeq.getMaxValue()) &&
                 Optional.ofNullable(oldSeq.getSchema()).equals(Optional.ofNullable(newSeq.getSchema())) &&
                 Optional.ofNullable(oldSeq.getCatalog()).equals(Optional.ofNullable(newSeq.getCatalog()));
     }
 
     private String getSequenceChangeDetail(SequenceModel oldSeq, SequenceModel newSeq) {
         StringBuilder detail = new StringBuilder();
-        if (oldSeq.getInitialValue() != newSeq.getInitialValue()) {
+        if (!Objects.equals(oldSeq.getInitialValue(), newSeq.getInitialValue())) {
             detail.append("initialValue changed from ").append(oldSeq.getInitialValue()).append(" to ").append(newSeq.getInitialValue()).append("; ");
         }
-        if (oldSeq.getAllocationSize() != newSeq.getAllocationSize()) {
+        if (!Objects.equals(oldSeq.getAllocationSize(), newSeq.getAllocationSize())) {
             detail.append("allocationSize changed from ").append(oldSeq.getAllocationSize()).append(" to ").append(newSeq.getAllocationSize()).append("; ");
         }
-        if (oldSeq.getCache() != newSeq.getCache()) {
+        if (!Objects.equals(oldSeq.getCache(), newSeq.getCache())) {
             detail.append("cache changed from ").append(oldSeq.getCache()).append(" to ").append(newSeq.getCache()).append("; ");
         }
-        if (oldSeq.getMinValue() != newSeq.getMinValue()) {
+        if (!Objects.equals(oldSeq.getMinValue(), newSeq.getMinValue())) {
             detail.append("minValue changed from ").append(oldSeq.getMinValue()).append(" to ").append(newSeq.getMinValue()).append("; ");
         }
-        if (oldSeq.getMaxValue() != newSeq.getMaxValue()) {
+        if (!Objects.equals(oldSeq.getMaxValue(), newSeq.getMaxValue())) {
             detail.append("maxValue changed from ").append(oldSeq.getMaxValue()).append(" to ").append(newSeq.getMaxValue()).append("; ");
         }
         if (!Objects.equals(oldSeq.getSchema(), newSeq.getSchema())) {

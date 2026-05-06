@@ -155,8 +155,8 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
             CreateSequenceChange createSequence = CreateSequenceChange.builder()
                     .config(CreateSequenceConfig.builder()
                             .sequenceName(sequence.getName())
-                            .startValue(String.valueOf(sequence.getInitialValue()))
-                            .incrementBy(String.valueOf(sequence.getAllocationSize()))
+                            .startValue(sequence.getInitialValue() != null ? String.valueOf(sequence.getInitialValue()) : null)
+                            .incrementBy(sequence.getAllocationSize() != null ? String.valueOf(sequence.getAllocationSize()) : null)
                             .build())
                     .build();
             changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(createSequence)));
@@ -186,8 +186,8 @@ public class LiquibaseVisitor implements TableVisitor, TableContentVisitor, Sequ
             CreateSequenceChange createSequence = CreateSequenceChange.builder()
                     .config(CreateSequenceConfig.builder()
                             .sequenceName(newSequence.getName())
-                            .startValue(String.valueOf(newSequence.getInitialValue()))
-                            .incrementBy(String.valueOf(newSequence.getAllocationSize()))
+                            .startValue(newSequence.getInitialValue() != null ? String.valueOf(newSequence.getInitialValue()) : null)
+                            .incrementBy(newSequence.getAllocationSize() != null ? String.valueOf(newSequence.getAllocationSize()) : null)
                             .build())
                     .build();
             changeSets.add(createChangeSetWithHash(idGenerator.nextId(), List.of(dropSequence)));

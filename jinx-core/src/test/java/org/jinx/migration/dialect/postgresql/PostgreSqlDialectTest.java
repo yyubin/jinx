@@ -594,12 +594,12 @@ class PostgreSqlDialectTest {
     @DisplayName("Sequence DDL")
     class SequenceDdl {
 
-        @Test @DisplayName("시퀀스 생성 — START/INCREMENT/CACHE 포함")
-        void createSequence() {
+        @Test @DisplayName("시퀀스 생성 — non-null 필드만 DDL에 포함, PG 문서 순서 준수")
+        void createSequence_nonNullFieldsIncluded() {
             PostgreSqlDialect d = newDialect();
             SequenceModel seq = SequenceModel.builder()
                     .name("order_seq")
-                    .initialValue(1)
+                    .initialValue(1L)
                     .allocationSize(50)
                     .cache(10)
                     .build();
@@ -609,6 +609,70 @@ class PostgreSqlDialectTest {
             assertTrue(sql.contains("START WITH 1"));
             assertTrue(sql.contains("INCREMENT BY 50"));
             assertTrue(sql.contains("CACHE 10"));
+            assertFalse(sql.contains("MINVALUE"), "minValue가 null이면 미포함");
+            assertFalse(sql.contains("MAXVALUE"), "maxValue가 null이면 미포함");
+
+            // PG 문서 순서: INCREMENT → MINVALUE → MAXVALUE → START WITH → CACHE
+            int incIdx   = sql.indexOf("INCREMENT BY");
+            int startIdx = sql.indexOf("START WITH");
+            int cacheIdx = sql.indexOf("CACHE");
+            assertTrue(incIdx < startIdx, "INCREMENT BY가 START WITH 앞에 위치해야 함");
+            assertTrue(startIdx < cacheIdx, "START WITH가 CACHE 앞에 위치해야 함");
+        }
+
+        @Test @DisplayName("시퀀스 생성 — 모든 필드 null이면 이름만 출력 (DB 기본값 사용)")
+        void createSequence_allNullFields_onlyName() {
+            PostgreSqlDialect d = newDialect();
+            SequenceModel seq = SequenceModel.builder().name("bare_seq").build();
+
+            String sql = d.getCreateSequenceSql(seq);
+            assertTrue(sql.startsWith("CREATE SEQUENCE IF NOT EXISTS \"bare_seq\""));
+            assertFalse(sql.contains("START WITH"),   "null initialValue → START WITH 미포함");
+            assertFalse(sql.contains("INCREMENT BY"), "null allocationSize → INCREMENT BY 미포함");
+            assertFalse(sql.contains("CACHE"),        "null cache → CACHE 미포함");
+            assertFalse(sql.contains("MINVALUE"),     "null minValue → MINVALUE 미포함");
+            assertFalse(sql.contains("MAXVALUE"),     "null maxValue → MAXVALUE 미포함");
+        }
+
+        @Test @DisplayName("시퀀스 생성 — START WITH 0 지원 (> 0 조건으로 silent 무시되지 않음)")
+        void createSequence_startWithZero() {
+            PostgreSqlDialect d = newDialect();
+            SequenceModel seq = SequenceModel.builder()
+                    .name("seq")
+                    .initialValue(0L)
+                    .build();
+
+            assertTrue(d.getCreateSequenceSql(seq).contains("START WITH 0"),
+                    "0은 유효한 START WITH 값 — null이 아니므로 포함되어야 함");
+        }
+
+        @Test @DisplayName("시퀀스 생성 — 내림차순 시퀀스 (INCREMENT BY -1, 음수 MINVALUE)")
+        void createSequence_descendingSequence() {
+            PostgreSqlDialect d = newDialect();
+            SequenceModel seq = SequenceModel.builder()
+                    .name("desc_seq")
+                    .initialValue(100L)
+                    .allocationSize(-1)
+                    .minValue(-999999L)
+                    .maxValue(100L)
+                    .build();
+
+            String sql = d.getCreateSequenceSql(seq);
+            assertTrue(sql.contains("INCREMENT BY -1"),   "음수 increment 지원");
+            assertTrue(sql.contains("MINVALUE -999999"),  "음수 minValue 지원");
+            assertTrue(sql.contains("MAXVALUE 100"),      "양수 maxValue 포함");
+        }
+
+        @Test @DisplayName("시퀀스 생성 — CACHE 0 지원 (캐시 비활성화)")
+        void createSequence_cacheZero() {
+            PostgreSqlDialect d = newDialect();
+            SequenceModel seq = SequenceModel.builder()
+                    .name("nocache_seq")
+                    .cache(0)
+                    .build();
+
+            assertTrue(d.getCreateSequenceSql(seq).contains("CACHE 0"),
+                    "CACHE 0은 유효 — null이 아니므로 포함되어야 함");
         }
 
         @Test @DisplayName("시퀀스 생성 — schema 지정 시 schema.name 형식")
@@ -617,12 +681,11 @@ class PostgreSqlDialectTest {
             SequenceModel seq = SequenceModel.builder()
                     .name("order_seq")
                     .schema("public")
-                    .initialValue(1)
+                    .initialValue(1L)
                     .allocationSize(1)
                     .build();
 
-            String sql = d.getCreateSequenceSql(seq);
-            assertTrue(sql.contains("\"public\".\"order_seq\""));
+            assertTrue(d.getCreateSequenceSql(seq).contains("\"public\".\"order_seq\""));
         }
 
         @Test @DisplayName("시퀀스 드랍 — IF EXISTS 포함")
@@ -632,7 +695,7 @@ class PostgreSqlDialectTest {
             assertEquals("DROP SEQUENCE IF EXISTS \"order_seq\";\n", d.getDropSequenceSql(seq));
         }
 
-        @Test @DisplayName("시퀀스 ALTER — INCREMENT 변경됨")
+        @Test @DisplayName("시퀀스 ALTER — INCREMENT BY 변경")
         void alterSequence_incrementChanged() {
             PostgreSqlDialect d = newDialect();
             SequenceModel oldSeq = SequenceModel.builder().name("seq").allocationSize(50).build();
@@ -641,6 +704,85 @@ class PostgreSqlDialectTest {
             String sql = d.getAlterSequenceSql(newSeq, oldSeq);
             assertTrue(sql.contains("ALTER SEQUENCE \"seq\""));
             assertTrue(sql.contains("INCREMENT BY 100"));
+        }
+
+        @Test @DisplayName("시퀀스 ALTER — 음수 INCREMENT (내림차순 전환)")
+        void alterSequence_negativeIncrement() {
+            PostgreSqlDialect d = newDialect();
+            SequenceModel oldSeq = SequenceModel.builder().name("seq").allocationSize(50).build();
+            SequenceModel newSeq = SequenceModel.builder().name("seq").allocationSize(-1).build();
+
+            String sql = d.getAlterSequenceSql(newSeq, oldSeq);
+            assertTrue(sql.contains("INCREMENT BY -1"), "음수 increment ALTER 지원");
+        }
+
+        @Test @DisplayName("시퀀스 ALTER — MINVALUE 추가/변경/제거")
+        void alterSequence_minValueChanges() {
+            PostgreSqlDialect d = newDialect();
+
+            // null → 값: MINVALUE 추가
+            SequenceModel noMin = SequenceModel.builder().name("seq").build();
+            SequenceModel withMin = SequenceModel.builder().name("seq").minValue(1L).build();
+            assertTrue(d.getAlterSequenceSql(withMin, noMin).contains("MINVALUE 1"));
+
+            // 값 변경
+            SequenceModel newMin = SequenceModel.builder().name("seq").minValue(-100L).build();
+            assertTrue(d.getAlterSequenceSql(newMin, withMin).contains("MINVALUE -100"), "음수 MINVALUE 지원");
+
+            // 값 → null: NO MINVALUE
+            String dropMin = d.getAlterSequenceSql(noMin, withMin);
+            assertTrue(dropMin.contains("NO MINVALUE"), "MINVALUE 제거 → NO MINVALUE");
+        }
+
+        @Test @DisplayName("시퀀스 ALTER — MAXVALUE 추가/변경/제거")
+        void alterSequence_maxValueChanges() {
+            PostgreSqlDialect d = newDialect();
+
+            SequenceModel noMax = SequenceModel.builder().name("seq").build();
+            SequenceModel withMax = SequenceModel.builder().name("seq").maxValue(9999L).build();
+            assertTrue(d.getAlterSequenceSql(withMax, noMax).contains("MAXVALUE 9999"));
+
+            String dropMax = d.getAlterSequenceSql(noMax, withMax);
+            assertTrue(dropMax.contains("NO MAXVALUE"), "MAXVALUE 제거 → NO MAXVALUE");
+        }
+
+        @Test @DisplayName("시퀀스 ALTER — RESTART WITH (initialValue 변경)")
+        void alterSequence_restartWith() {
+            PostgreSqlDialect d = newDialect();
+            SequenceModel oldSeq = SequenceModel.builder().name("seq").initialValue(1L).build();
+            SequenceModel newSeq = SequenceModel.builder().name("seq").initialValue(1000L).build();
+
+            String sql = d.getAlterSequenceSql(newSeq, oldSeq);
+            assertTrue(sql.contains("RESTART WITH 1000"), "initialValue 변경 → RESTART WITH");
+        }
+
+        @Test @DisplayName("시퀀스 ALTER — 복수 속성 동시 변경, 단일 구문, PG 문서 순서 준수")
+        void alterSequence_multipleChanges() {
+            PostgreSqlDialect d = newDialect();
+            SequenceModel oldSeq = SequenceModel.builder().name("seq")
+                    .allocationSize(50).cache(10).build();
+            SequenceModel newSeq = SequenceModel.builder().name("seq")
+                    .allocationSize(100).minValue(1L).maxValue(99999L).cache(20).initialValue(500L).build();
+
+            String sql = d.getAlterSequenceSql(newSeq, oldSeq);
+            assertTrue(sql.contains("INCREMENT BY 100"));
+            assertTrue(sql.contains("MINVALUE 1"));
+            assertTrue(sql.contains("MAXVALUE 99999"));
+            assertTrue(sql.contains("RESTART WITH 500"));
+            assertTrue(sql.contains("CACHE 20"));
+            assertEquals(1, sql.lines().filter(l -> l.startsWith("ALTER SEQUENCE")).count(),
+                    "모든 변경이 단일 ALTER SEQUENCE 구문에 포함");
+
+            // PG 문서 순서: INCREMENT → MINVALUE → MAXVALUE → RESTART → CACHE
+            int incIdx     = sql.indexOf("INCREMENT BY");
+            int minIdx     = sql.indexOf("MINVALUE");
+            int maxIdx     = sql.indexOf("MAXVALUE");
+            int restartIdx = sql.indexOf("RESTART WITH");
+            int cacheIdx   = sql.indexOf("CACHE");
+            assertTrue(incIdx < minIdx,     "INCREMENT BY → MINVALUE 순서");
+            assertTrue(minIdx < maxIdx,     "MINVALUE → MAXVALUE 순서");
+            assertTrue(maxIdx < restartIdx, "MAXVALUE → RESTART WITH 순서");
+            assertTrue(restartIdx < cacheIdx, "RESTART WITH → CACHE 순서");
         }
 
         @Test @DisplayName("시퀀스 ALTER — 변경 없으면 빈 문자열")
