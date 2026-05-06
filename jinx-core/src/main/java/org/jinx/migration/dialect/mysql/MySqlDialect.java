@@ -472,8 +472,8 @@ public class MySqlDialect extends AbstractDialect
         ddl.append("CREATE TABLE IF NOT EXISTS ")
                 .append(quoteIdentifier(tg.getTable()))
                 .append(" (")
-                .append(quoteIdentifier(tg.getPkColumnName())).append(" VARCHAR(255) NOT NULL PRIMARY KEY, ")
-                .append(quoteIdentifier(tg.getValueColumnName())).append(" BIGINT NOT NULL")
+                .append(quoteIdentifier(tg.getPkColumnName())).append(" ").append(getTableGeneratorPkColumnType()).append(" NOT NULL PRIMARY KEY, ")
+                .append(quoteIdentifier(tg.getValueColumnName())).append(" ").append(getTableGeneratorValueColumnType()).append(" NOT NULL")
                 .append(");\n");
         ddl.append("INSERT IGNORE INTO ")
                 .append(quoteIdentifier(tg.getTable()))

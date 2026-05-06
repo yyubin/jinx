@@ -518,8 +518,8 @@ public class PostgreSqlDialect extends AbstractDialect
         var stringType = getJavaTypeMapper().map("java.lang.String");
         return "CREATE TABLE IF NOT EXISTS " + quoteIdentifier(tg.getTable())
                 + " ("
-                + quoteIdentifier(tg.getPkColumnName()) + " VARCHAR(255) NOT NULL PRIMARY KEY, "
-                + quoteIdentifier(tg.getValueColumnName()) + " BIGINT NOT NULL"
+                + quoteIdentifier(tg.getPkColumnName()) + " " + getTableGeneratorPkColumnType() + " NOT NULL PRIMARY KEY, "
+                + quoteIdentifier(tg.getValueColumnName()) + " " + getTableGeneratorValueColumnType() + " NOT NULL"
                 + ");\n"
                 + "INSERT INTO " + quoteIdentifier(tg.getTable())
                 + " (" + quoteIdentifier(tg.getPkColumnName())
