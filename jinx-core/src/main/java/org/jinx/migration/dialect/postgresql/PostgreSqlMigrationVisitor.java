@@ -17,19 +17,27 @@ public class PostgreSqlMigrationVisitor extends AbstractMigrationVisitor
 
     private final Collection<ColumnModel> currentColumns;
     private final List<String> pkColumns;
+    /**
+     * 엔티티 메타데이터에서 추출한 PK 제약 이름.
+     * JPA가 명시적 이름을 붙이지 않은 경우 PostgreSQL 기본 규칙({table}_pkey)으로 fallback한다.
+     */
+    private final String pkConstraintName;
 
     public PostgreSqlMigrationVisitor(DiffResult.ModifiedEntity diff, DdlDialect ddlDialect) {
         super(ddlDialect, diff);
 
         if (diff != null) {
-            this.currentColumns = diff.getNewEntity().getColumns().values();
+            EntityModel entity = diff.getNewEntity();
+            this.currentColumns = entity.getColumns().values();
             this.pkColumns = currentColumns.stream()
                     .filter(ColumnModel::isPrimaryKey)
                     .map(ColumnModel::getColumnName)
                     .toList();
+            this.pkConstraintName = resolvePkConstraintName(entity);
         } else {
             this.currentColumns = List.of();
             this.pkColumns = List.of();
+            this.pkConstraintName = null;
         }
     }
 
@@ -42,10 +50,32 @@ public class PostgreSqlMigrationVisitor extends AbstractMigrationVisitor
                     .filter(ColumnModel::isPrimaryKey)
                     .map(ColumnModel::getColumnName)
                     .toList();
+            this.pkConstraintName = resolvePkConstraintName(entity);
         } else {
             this.currentColumns = List.of();
             this.pkColumns = List.of();
+            this.pkConstraintName = null;
         }
+    }
+
+    /**
+     * EntityModel의 constraints 맵에서 PRIMARY_KEY 제약 이름을 추출한다.
+     * 명시적 이름이 없으면 PostgreSQL 기본 명명 규칙({table}_pkey)을 사용한다.
+     */
+    private static String resolvePkConstraintName(EntityModel entity) {
+        return entity.getConstraints().values().stream()
+                .filter(c -> c.getType() == ConstraintType.PRIMARY_KEY)
+                .map(ConstraintModel::getName)
+                .filter(name -> name != null && !name.isBlank())
+                .findFirst()
+                .orElse(PostgreSqlUtil.defaultPkConstraintName(entity.getTableName()));
+    }
+
+    private PostgreSqlPrimaryKeyDropContributor pkDrop() {
+        String name = pkConstraintName != null
+                ? pkConstraintName
+                : PostgreSqlUtil.defaultPkConstraintName(alterBuilder.getTableName());
+        return new PostgreSqlPrimaryKeyDropContributor(alterBuilder.getTableName(), name);
     }
 
     @Override
@@ -68,8 +98,7 @@ public class PostgreSqlMigrationVisitor extends AbstractMigrationVisitor
     @Override
     public void visitModifiedColumn(ColumnModel newColumn, ColumnModel oldColumn) {
         if (oldColumn.isPrimaryKey() || newColumn.isPrimaryKey()) {
-            // PG: no AUTO_INCREMENT removal needed before dropping PK
-            alterBuilder.add(new PrimaryKeyDropContributor(alterBuilder.getTableName(), currentColumns));
+            alterBuilder.add(pkDrop());
             alterBuilder.add(new PrimaryKeyAddContributor(alterBuilder.getTableName(), pkColumns));
         }
         alterBuilder.add(new ColumnModifyContributor(alterBuilder.getTableName(), newColumn, oldColumn));
@@ -78,7 +107,7 @@ public class PostgreSqlMigrationVisitor extends AbstractMigrationVisitor
     @Override
     public void visitRenamedColumn(ColumnModel newColumn, ColumnModel oldColumn) {
         if (oldColumn.isPrimaryKey()) {
-            alterBuilder.add(new PrimaryKeyDropContributor(alterBuilder.getTableName(), currentColumns));
+            alterBuilder.add(pkDrop());
             alterBuilder.add(new ColumnRenameContributor(alterBuilder.getTableName(), newColumn, oldColumn));
             alterBuilder.add(new PrimaryKeyAddContributor(alterBuilder.getTableName(), pkColumns));
             return;
@@ -93,7 +122,7 @@ public class PostgreSqlMigrationVisitor extends AbstractMigrationVisitor
 
     @Override
     public void visitDroppedPrimaryKey() {
-        alterBuilder.add(new PrimaryKeyDropContributor(alterBuilder.getTableName(), currentColumns));
+        alterBuilder.add(pkDrop());
     }
 
     @Override

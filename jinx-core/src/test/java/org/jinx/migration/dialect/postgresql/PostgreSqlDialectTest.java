@@ -447,11 +447,25 @@ class PostgreSqlDialectTest {
             assertFalse(drop.contains("DROP CHECK"), "MySQL의 DROP CHECK 미사용");
         }
 
-        @Test @DisplayName("PRIMARY_KEY DROP — DROP CONSTRAINT {table}_pkey")
-        void pkConstraint_drop() {
+        @Test @DisplayName("PRIMARY_KEY DROP — cons.getName() 우선 사용")
+        void pkConstraint_drop_usesConstraintName() {
             PostgreSqlDialect d = newDialect();
             ConstraintModel pk = mock(ConstraintModel.class);
             when(pk.getType()).thenReturn(ConstraintType.PRIMARY_KEY);
+            when(pk.getName()).thenReturn("pk_users_custom");
+            when(pk.getColumns()).thenReturn(List.of("id"));
+            when(pk.getTableName()).thenReturn("users");
+
+            String drop = d.getDropConstraintSql("users", pk);
+            assertEquals("ALTER TABLE \"users\" DROP CONSTRAINT \"pk_users_custom\";\n", drop);
+        }
+
+        @Test @DisplayName("PRIMARY_KEY DROP — cons.getName() null이면 {table}_pkey fallback")
+        void pkConstraint_drop_fallbackToPkey() {
+            PostgreSqlDialect d = newDialect();
+            ConstraintModel pk = mock(ConstraintModel.class);
+            when(pk.getType()).thenReturn(ConstraintType.PRIMARY_KEY);
+            when(pk.getName()).thenReturn(null);
             when(pk.getColumns()).thenReturn(List.of("id"));
             when(pk.getTableName()).thenReturn("users");
 

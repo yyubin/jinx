@@ -123,9 +123,20 @@ public class PostgreSqlDialect extends AbstractDialect
                 + " ADD PRIMARY KEY (" + columns + ");\n";
     }
 
+    /**
+     * PK 제약을 DROP합니다.
+     *
+     * <p><b>제한사항:</b> 이 메서드는 PK 제약 이름을 알 수 없으므로
+     * PostgreSQL 기본 명명 규칙({@code {table}_pkey})으로 fallback합니다.
+     * 커스텀 PK 제약 이름({@code CONSTRAINT my_pk PRIMARY KEY})을 사용한 경우
+     * 이 구문은 실패합니다.
+     *
+     * <p>ALTER TABLE 경로(스키마 diff)에서는 {@link PostgreSqlMigrationVisitor}가
+     * EntityModel의 constraints 맵에서 실제 이름을 추출하여
+     * {@link PostgreSqlPrimaryKeyDropContributor}를 사용하므로 이 제한이 적용되지 않습니다.
+     */
     @Override
     public String getDropPrimaryKeySql(String table, Collection<ColumnModel> currentColumns) {
-        // PG: drop the named constraint; default convention is {table}_pkey
         String pkConstraint = PostgreSqlUtil.defaultPkConstraintName(table);
         return "ALTER TABLE " + quoteIdentifier(table)
                 + " DROP CONSTRAINT " + quoteIdentifier(pkConstraint) + ";\n";
@@ -323,8 +334,14 @@ public class PostgreSqlDialect extends AbstractDialect
                     + " DROP CONSTRAINT " + quoteIdentifier(cons.getName()) + ";\n";
             case CHECK -> "ALTER TABLE " + quoteIdentifier(table)
                     + " DROP CONSTRAINT " + quoteIdentifier(cons.getName()) + ";\n";
-            case PRIMARY_KEY -> "ALTER TABLE " + quoteIdentifier(table)
-                    + " DROP CONSTRAINT " + quoteIdentifier(PostgreSqlUtil.defaultPkConstraintName(table)) + ";\n";
+            // ConstraintModel은 이름을 갖고 있으므로 우선 사용, 없으면 {table}_pkey로 fallback
+            case PRIMARY_KEY -> {
+                String pkName = (cons.getName() != null && !cons.getName().isBlank())
+                        ? cons.getName()
+                        : PostgreSqlUtil.defaultPkConstraintName(table);
+                yield "ALTER TABLE " + quoteIdentifier(table)
+                        + " DROP CONSTRAINT " + quoteIdentifier(pkName) + ";\n";
+            }
             case INDEX -> getDropIndexSql(table, cons.getName());
             default -> "";
         };

@@ -114,6 +114,8 @@ class PostgreSqlMigrationVisitorTest {
         cols.put("name", nameCol);
         when(newEntity.getTableName()).thenReturn("t");
         when(newEntity.getColumns()).thenReturn((Map) cols);
+        // constraints 맵: 빈 맵 → {table}_pkey fallback 동작 검증
+        when(newEntity.getConstraints()).thenReturn(Map.of());
 
         diff = mock(DiffResult.ModifiedEntity.class);
         when(diff.getNewEntity()).thenReturn(newEntity);
@@ -187,8 +189,8 @@ class PostgreSqlMigrationVisitorTest {
         assertEquals(List.of(ColumnModifyContributor.class), rec.addedTypes);
     }
 
-    @Test @DisplayName("PK 컬럼 MODIFY → PrimaryKeyDropContributor + PrimaryKeyAddContributor + ColumnModifyContributor")
-    void visitModifiedColumn_pk_usesPrimaryKeyDropContributor() throws Exception {
+    @Test @DisplayName("PK 컬럼 MODIFY → PostgreSqlPrimaryKeyDropContributor + Add + Modify (Complex Drop 미사용)")
+    void visitModifiedColumn_pk_usesPgPrimaryKeyDropContributor() throws Exception {
         PostgreSqlMigrationVisitor v = newVisitorWithRecordingBuilder();
         RecordingAlterBuilder rec = (RecordingAlterBuilder) v.getAlterBuilder();
 
@@ -201,15 +203,17 @@ class PostgreSqlMigrationVisitorTest {
 
         v.visitModifiedColumn(newPk, oldNonPk);
 
-        assertEquals(PrimaryKeyDropContributor.class, rec.addedTypes.get(0),
-                "PG는 PrimaryKeyDropContributor 사용 (PrimaryKeyComplexDropContributor 아님)");
+        assertEquals(PostgreSqlPrimaryKeyDropContributor.class, rec.addedTypes.get(0),
+                "PG는 PostgreSqlPrimaryKeyDropContributor 사용");
         assertEquals(PrimaryKeyAddContributor.class, rec.addedTypes.get(1));
         assertEquals(ColumnModifyContributor.class, rec.addedTypes.get(2));
         assertFalse(rec.addedTypes.contains(PrimaryKeyComplexDropContributor.class),
-                "PG에서는 MySQL 전용 PrimaryKeyComplexDropContributor 미사용");
+                "MySQL 전용 PrimaryKeyComplexDropContributor 미사용");
+        assertFalse(rec.addedTypes.contains(PrimaryKeyDropContributor.class),
+                "기존 PrimaryKeyDropContributor도 미사용 (PG 전용 contributor 사용)");
     }
 
-    @Test @DisplayName("PK 컬럼 RENAME → PrimaryKeyDropContributor + ColumnRenameContributor + PrimaryKeyAddContributor")
+    @Test @DisplayName("PK 컬럼 RENAME → PostgreSqlPrimaryKeyDropContributor + Rename + Add")
     void visitRenamedColumn_pk() throws Exception {
         PostgreSqlMigrationVisitor v = newVisitorWithRecordingBuilder();
         RecordingAlterBuilder rec = (RecordingAlterBuilder) v.getAlterBuilder();
@@ -223,11 +227,9 @@ class PostgreSqlMigrationVisitorTest {
 
         v.visitRenamedColumn(newCol, oldPk);
 
-        assertEquals(PrimaryKeyDropContributor.class, rec.addedTypes.get(0));
+        assertEquals(PostgreSqlPrimaryKeyDropContributor.class, rec.addedTypes.get(0));
         assertEquals(ColumnRenameContributor.class, rec.addedTypes.get(1));
         assertEquals(PrimaryKeyAddContributor.class, rec.addedTypes.get(2));
-        assertFalse(rec.addedTypes.contains(PrimaryKeyComplexDropContributor.class),
-                "PG에서는 PrimaryKeyComplexDropContributor 미사용");
     }
 
     @Test @DisplayName("PK 추가/삭제/수정 contributor 순서 확인")
@@ -239,12 +241,50 @@ class PostgreSqlMigrationVisitorTest {
         assertEquals(PrimaryKeyAddContributor.class, rec.addedTypes.get(0));
 
         v.visitDroppedPrimaryKey();
-        assertEquals(PrimaryKeyDropContributor.class, rec.addedTypes.get(1),
-                "DROP은 PrimaryKeyDropContributor (Complex 아님)");
+        assertEquals(PostgreSqlPrimaryKeyDropContributor.class, rec.addedTypes.get(1),
+                "DROP은 PostgreSqlPrimaryKeyDropContributor 사용");
 
         v.visitModifiedPrimaryKey(List.of("id"), List.of("id"));
-        assertEquals(PrimaryKeyDropContributor.class, rec.addedTypes.get(2));
+        assertEquals(PostgreSqlPrimaryKeyDropContributor.class, rec.addedTypes.get(2));
         assertEquals(PrimaryKeyAddContributor.class, rec.addedTypes.get(3));
+    }
+
+    @Test @DisplayName("constraints에 커스텀 PK 이름이 있으면 그것을 사용 — fallback({table}_pkey) 미사용")
+    void customPkConstraintName_usedOverFallback() {
+        // 커스텀 이름을 가진 PK constraint 설정
+        ConstraintModel pkConstraint = mock(ConstraintModel.class);
+        when(pkConstraint.getType()).thenReturn(ConstraintType.PRIMARY_KEY);
+        when(pkConstraint.getName()).thenReturn("pk_users_custom");
+
+        EntityModel entity = mock(EntityModel.class);
+        when(entity.getTableName()).thenReturn("users");
+        when(entity.getColumns()).thenReturn(Map.of());
+        when(entity.getConstraints()).thenReturn(Map.of("pk_users_custom", pkConstraint));
+
+        PostgreSqlMigrationVisitor v = new PostgreSqlMigrationVisitor(entity, dialect);
+        v.visitDroppedPrimaryKey();
+
+        // alterBuilder에 추가된 contributor 확인
+        PostgreSqlPrimaryKeyDropContributor contributor =
+                (PostgreSqlPrimaryKeyDropContributor) v.getAlterBuilder().getUnits().get(0);
+        assertEquals("pk_users_custom", contributor.pkConstraintName(),
+                "커스텀 PK 제약 이름 사용");
+    }
+
+    @Test @DisplayName("constraints에 PK 이름 없으면 {table}_pkey fallback 사용")
+    void defaultPkConstraintName_whenNoExplicitConstraint() {
+        EntityModel entity = mock(EntityModel.class);
+        when(entity.getTableName()).thenReturn("orders");
+        when(entity.getColumns()).thenReturn(Map.of());
+        when(entity.getConstraints()).thenReturn(Map.of());
+
+        PostgreSqlMigrationVisitor v = new PostgreSqlMigrationVisitor(entity, dialect);
+        v.visitDroppedPrimaryKey();
+
+        PostgreSqlPrimaryKeyDropContributor contributor =
+                (PostgreSqlPrimaryKeyDropContributor) v.getAlterBuilder().getUnits().get(0);
+        assertEquals("orders_pkey", contributor.pkConstraintName(),
+                "fallback: {table}_pkey");
     }
 
     @Test @DisplayName("인덱스/제약/관계 추가/삭제/수정 contributor 순서 확인")
