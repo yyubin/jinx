@@ -44,17 +44,30 @@ public class PostgreSqlJavaTypeMapper implements JavaTypeMapper {
 
     private static final Map<String, PgJavaType> TYPE_MAP = Map.ofEntries(
             // Boxed types
-            entry("java.lang.Integer",  new PgJavaType("java.lang.Integer",  new SqlType("INTEGER",          false, false), false, null)),
-            entry("java.lang.Long",     new PgJavaType("java.lang.Long",     new SqlType("BIGINT",           false, false), false, null)),
-            entry("java.lang.String",   new PgJavaType("java.lang.String",   new SqlType("VARCHAR(%d)",      true,  false), true,  null)),
-            entry("java.lang.Double",   new PgJavaType("java.lang.Double",   new SqlType("DOUBLE PRECISION", false, false), false, null)),
-            entry("java.lang.Float",    new PgJavaType("java.lang.Float",    new SqlType("REAL",             false, false), false, null)),
-            entry("java.math.BigDecimal", new PgJavaType("java.math.BigDecimal", new SqlType("NUMERIC(%d,%d)", false, true), false, null)),
-            entry("java.math.BigInteger", new PgJavaType("java.math.BigInteger", new SqlType("BIGINT",       false, false), false, null)),
-            entry("java.lang.Boolean",  new PgJavaType("java.lang.Boolean",  new SqlType("BOOLEAN",         false, false), false, "false")),
-            entry("java.time.LocalDate",      new PgJavaType("java.time.LocalDate",      new SqlType("DATE",      false, false), true, null)),
-            entry("java.time.LocalDateTime",  new PgJavaType("java.time.LocalDateTime",  new SqlType("TIMESTAMP", false, false), true, null)),
-            entry("java.util.UUID",     new PgJavaType("java.util.UUID",     new SqlType("uuid",            false, false), false, null)),
+            entry("java.lang.Integer",    new PgJavaType("java.lang.Integer",    new SqlType("INTEGER",                  false, false), false, null)),
+            entry("java.lang.Long",       new PgJavaType("java.lang.Long",       new SqlType("BIGINT",                   false, false), false, null)),
+            entry("java.lang.String",     new PgJavaType("java.lang.String",     new SqlType("VARCHAR(%d)",              true,  false), true,  null)),
+            entry("java.lang.Double",     new PgJavaType("java.lang.Double",     new SqlType("DOUBLE PRECISION",         false, false), false, null)),
+            entry("java.lang.Float",      new PgJavaType("java.lang.Float",      new SqlType("REAL",                     false, false), false, null)),
+            entry("java.math.BigDecimal", new PgJavaType("java.math.BigDecimal", new SqlType("NUMERIC(%d,%d)",           false, true),  false, null)),
+            entry("java.math.BigInteger", new PgJavaType("java.math.BigInteger", new SqlType("BIGINT",                   false, false), false, null)),
+            entry("java.lang.Boolean",    new PgJavaType("java.lang.Boolean",    new SqlType("BOOLEAN",                  false, false), false, "false")),
+            // Date / time (java.time)
+            entry("java.time.LocalDate",        new PgJavaType("java.time.LocalDate",        new SqlType("DATE",                    false, false), true, null)),
+            entry("java.time.LocalDateTime",    new PgJavaType("java.time.LocalDateTime",    new SqlType("TIMESTAMP",               false, false), true, null)),
+            entry("java.time.LocalTime",        new PgJavaType("java.time.LocalTime",        new SqlType("TIME",                    false, false), true, null)),
+            entry("java.time.OffsetDateTime",   new PgJavaType("java.time.OffsetDateTime",   new SqlType("TIMESTAMP WITH TIME ZONE",false, false), true, null)),
+            entry("java.time.ZonedDateTime",    new PgJavaType("java.time.ZonedDateTime",    new SqlType("TIMESTAMP WITH TIME ZONE",false, false), true, null)),
+            entry("java.time.Instant",          new PgJavaType("java.time.Instant",          new SqlType("TIMESTAMP WITH TIME ZONE",false, false), true, null)),
+            // Legacy date/time
+            entry("java.util.Date",             new PgJavaType("java.util.Date",             new SqlType("TIMESTAMP",               false, false), true, null)),
+            entry("java.sql.Date",              new PgJavaType("java.sql.Date",              new SqlType("DATE",                    false, false), true, null)),
+            entry("java.sql.Time",              new PgJavaType("java.sql.Time",              new SqlType("TIME",                    false, false), true, null)),
+            entry("java.sql.Timestamp",         new PgJavaType("java.sql.Timestamp",         new SqlType("TIMESTAMP",               false, false), true, null)),
+            // Binary
+            entry("byte[]",               new PgJavaType("byte[]",               new SqlType("BYTEA",                    false, false), false, null)),
+            // UUID
+            entry("java.util.UUID",       new PgJavaType("java.util.UUID",       new SqlType("uuid",                     false, false), false, null)),
             // Primitive types
             entry("int",     new PgJavaType("int",     new SqlType("INTEGER",          false, false), false, null)),
             entry("long",    new PgJavaType("long",    new SqlType("BIGINT",           false, false), false, null)),

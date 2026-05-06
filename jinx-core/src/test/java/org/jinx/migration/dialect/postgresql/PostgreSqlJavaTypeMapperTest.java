@@ -108,6 +108,57 @@ class PostgreSqlJavaTypeMapperTest {
         }
     }
 
+    @Nested
+    @DisplayName("신규 추가 타입 — resolveColumnSqlType/getLiquibaseTypeName 불일치 해소")
+    class NewlyAddedTypes {
+
+        @Test @DisplayName("OffsetDateTime, ZonedDateTime, Instant → TIMESTAMP WITH TIME ZONE")
+        void tzAwareTimestamps() {
+            Assertions.assertThat(mapper.map("java.time.OffsetDateTime").getSqlType(0, 0, 0))
+                    .isEqualTo("TIMESTAMP WITH TIME ZONE");
+            Assertions.assertThat(mapper.map("java.time.ZonedDateTime").getSqlType(0, 0, 0))
+                    .isEqualTo("TIMESTAMP WITH TIME ZONE");
+            Assertions.assertThat(mapper.map("java.time.Instant").getSqlType(0, 0, 0))
+                    .isEqualTo("TIMESTAMP WITH TIME ZONE");
+        }
+
+        @Test @DisplayName("LocalTime → TIME")
+        void localTimeMapsToTime() {
+            Assertions.assertThat(mapper.map("java.time.LocalTime").getSqlType(0, 0, 0)).isEqualTo("TIME");
+        }
+
+        @Test @DisplayName("byte[] → BYTEA (비-LOB), needsQuotes=false")
+        void byteArrayMapsToBytea() {
+            JavaTypeMapper.JavaType t = mapper.map("byte[]");
+            Assertions.assertThat(t.getSqlType(0, 0, 0)).isEqualTo("BYTEA");
+            Assertions.assertThat(t.needsQuotes()).isFalse();
+        }
+
+        @Test @DisplayName("java.sql.Date/Time/Timestamp → DATE/TIME/TIMESTAMP")
+        void sqlDateTypes() {
+            Assertions.assertThat(mapper.map("java.sql.Date").getSqlType(0, 0, 0)).isEqualTo("DATE");
+            Assertions.assertThat(mapper.map("java.sql.Time").getSqlType(0, 0, 0)).isEqualTo("TIME");
+            Assertions.assertThat(mapper.map("java.sql.Timestamp").getSqlType(0, 0, 0)).isEqualTo("TIMESTAMP");
+        }
+
+        @Test @DisplayName("java.util.Date → TIMESTAMP (기본, @Temporal 없는 경우)")
+        void utilDateMapsToTimestamp() {
+            Assertions.assertThat(mapper.map("java.util.Date").getSqlType(0, 0, 0)).isEqualTo("TIMESTAMP");
+        }
+
+        @Test @DisplayName("날짜/시간 타입은 needsQuotes=true (SQL 리터럴 인용 필요)")
+        void dateTimeTypesNeedQuotes() {
+            for (String type : new String[]{
+                    "java.time.LocalTime", "java.time.OffsetDateTime", "java.time.ZonedDateTime",
+                    "java.time.Instant", "java.util.Date", "java.sql.Date",
+                    "java.sql.Time", "java.sql.Timestamp"}) {
+                Assertions.assertThat(mapper.map(type).needsQuotes())
+                        .as("needsQuotes for " + type)
+                        .isTrue();
+            }
+        }
+    }
+
     @Test @DisplayName("알 수 없는 타입은 TEXT + needsQuotes=true")
     void unknownTypeFallsBackToText() {
         JavaTypeMapper.JavaType unknown = mapper.map("com.example.CustomType");

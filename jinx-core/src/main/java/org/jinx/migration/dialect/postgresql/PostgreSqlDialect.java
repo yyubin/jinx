@@ -618,28 +618,33 @@ public class PostgreSqlDialect extends AbstractDialect
         }
 
         return switch (javaType) {
-            case "java.lang.String"   -> "VARCHAR(" + (length > 0 ? length : 255) + ")";
-            case "int", "java.lang.Integer" -> "INTEGER";
-            case "long", "java.lang.Long"   -> "BIGINT";
-            case "double", "java.lang.Double" -> "DOUBLE PRECISION";
-            case "float",  "java.lang.Float"  -> "REAL";
-            // precision=0이면 NUMERIC(0,0)은 PG 거부 → 인수 없는 NUMERIC(임의 정밀도)으로 fallback
-            case "java.math.BigDecimal" -> precision > 0
+            case "java.lang.String"               -> "VARCHAR(" + (length > 0 ? length : 255) + ")";
+            case "int",  "java.lang.Integer"      -> "INTEGER";
+            case "long", "java.lang.Long"         -> "BIGINT";
+            case "double", "java.lang.Double"     -> "DOUBLE PRECISION";
+            case "float",  "java.lang.Float"      -> "REAL";
+            case "java.math.BigDecimal"           -> precision > 0
                     ? "NUMERIC(" + precision + "," + scale + ")"
                     : "NUMERIC";
-            case "java.math.BigInteger" -> "BIGINT";
-            case "boolean", "java.lang.Boolean" -> "BOOLEAN";
-            case "java.time.LocalDate"     -> "DATE";
-            case "java.time.LocalDateTime" -> "TIMESTAMP";
-            case "java.time.OffsetDateTime", "java.time.ZonedDateTime" -> "TIMESTAMP WITH TIME ZONE";
+            case "java.math.BigInteger"           -> "BIGINT";
+            case "boolean", "java.lang.Boolean"  -> "BOOLEAN";
+            case "java.time.LocalDate"            -> "DATE";
+            case "java.time.LocalDateTime"        -> "TIMESTAMP";
+            case "java.time.LocalTime"            -> "TIME";
+            case "java.time.OffsetDateTime",
+                 "java.time.ZonedDateTime",
+                 "java.time.Instant"              -> "TIMESTAMP WITH TIME ZONE";
             case "java.util.Date" -> {
                 if (column.getTemporalType() == TemporalType.DATE) yield "DATE";
                 if (column.getTemporalType() == TemporalType.TIME) yield "TIME";
                 yield "TIMESTAMP";
             }
-            case "byte[]"       -> "BYTEA";
-            case "java.util.UUID" -> "uuid";
-            default             -> "VARCHAR(" + (length > 0 ? length : 255) + ")";
+            case "java.sql.Date"                  -> "DATE";
+            case "java.sql.Time"                  -> "TIME";
+            case "java.sql.Timestamp"             -> "TIMESTAMP";
+            case "byte[]"                         -> "BYTEA";
+            case "java.util.UUID"                 -> "uuid";
+            default                               -> "VARCHAR(" + (length > 0 ? length : 255) + ")";
         };
     }
 

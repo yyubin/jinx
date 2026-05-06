@@ -972,6 +972,33 @@ class PostgreSqlDialectTest {
                     newDialect().getLiquibaseTypeName(colModel("java.time.OffsetDateTime")));
         }
 
+        @Test @DisplayName("ZonedDateTime, Instant → TIMESTAMP WITH TIME ZONE")
+        void tzAwareTimestamps() {
+            PostgreSqlDialect d = new PostgreSqlDialect(); // 실제 mapper 사용
+            assertEquals("TIMESTAMP WITH TIME ZONE", d.getLiquibaseTypeName(colModel("java.time.ZonedDateTime")));
+            assertEquals("TIMESTAMP WITH TIME ZONE", d.getLiquibaseTypeName(colModel("java.time.Instant")));
+        }
+
+        @Test @DisplayName("LocalTime → TIME")
+        void localTimeLiquibaseType() {
+            PostgreSqlDialect d = new PostgreSqlDialect();
+            assertEquals("TIME", d.getLiquibaseTypeName(colModel("java.time.LocalTime")));
+        }
+
+        @Test @DisplayName("java.sql.Date/Time/Timestamp → DATE/TIME/TIMESTAMP")
+        void sqlLegacyTypes() {
+            PostgreSqlDialect d = new PostgreSqlDialect();
+            assertEquals("DATE",      d.getLiquibaseTypeName(colModel("java.sql.Date")));
+            assertEquals("TIME",      d.getLiquibaseTypeName(colModel("java.sql.Time")));
+            assertEquals("TIMESTAMP", d.getLiquibaseTypeName(colModel("java.sql.Timestamp")));
+        }
+
+        @Test @DisplayName("byte[] (non-LOB) → BYTEA")
+        void byteArrayLiquibaseType() {
+            PostgreSqlDialect d = new PostgreSqlDialect();
+            assertEquals("BYTEA", d.getLiquibaseTypeName(colModel("byte[]")));
+        }
+
         @Test @DisplayName("sqlTypeOverride가 있으면 그대로 반환")
         void sqlTypeOverride_usedDirectly() {
             ColumnModel c = colModel("java.lang.String");
