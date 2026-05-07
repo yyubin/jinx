@@ -57,13 +57,6 @@ public final class PostgreSqlUtil {
         return name != null && PG_KEYWORDS.contains(name.toUpperCase(Locale.ROOT));
     }
 
-    public static String escapeKeyword(String name) {
-        if (name != null && isKeyword(name)) {
-            return name + "_";
-        }
-        return name;
-    }
-
     /**
      * Returns the default PK constraint name PG uses when no name is specified.
      * Convention: {tableName}_pkey

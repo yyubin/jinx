@@ -38,30 +38,9 @@ class PostgreSqlUtilTest {
             assertTrue(PostgreSqlUtil.isKeyword("VARIADIC"));
         }
 
-        @Test @DisplayName("null 입력 시 NPE 없이 false 반환 (escapeKeyword와 일관된 동작)")
+        @Test @DisplayName("null 입력 시 NPE 없이 false 반환")
         void null_returnsFalse_noNpe() {
             assertDoesNotThrow(() -> assertFalse(PostgreSqlUtil.isKeyword(null)));
-        }
-    }
-
-    @Nested
-    @DisplayName("escapeKeyword")
-    class EscapeKeyword {
-
-        @Test @DisplayName("예약어에 _ 접미사 추가")
-        void escapesReservedWord() {
-            assertEquals("select_", PostgreSqlUtil.escapeKeyword("select"));
-            assertEquals("TABLE_", PostgreSqlUtil.escapeKeyword("TABLE"));
-        }
-
-        @Test @DisplayName("일반 이름은 그대로 반환")
-        void normalNameUnchanged() {
-            assertEquals("my_col", PostgreSqlUtil.escapeKeyword("my_col"));
-        }
-
-        @Test @DisplayName("null 입력 시 null 반환")
-        void nullInput_returnsNull() {
-            assertNull(PostgreSqlUtil.escapeKeyword(null));
         }
     }
 
