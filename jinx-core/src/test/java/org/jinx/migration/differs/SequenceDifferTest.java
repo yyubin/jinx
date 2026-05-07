@@ -95,13 +95,13 @@ class SequenceDifferTest {
     void shouldDetectChangesToCacheMinMaxValues() {
         SequenceModel oldSeq = createSequence("user_seq", 1, 50);
         oldSeq.setCache(20);
-        oldSeq.setMinValue(1);
-        oldSeq.setMaxValue(1000);
+        oldSeq.setMinValue(1L);
+        oldSeq.setMaxValue(1000L);
 
         SequenceModel newSeq = createSequence("user_seq", 1, 50);
         newSeq.setCache(30);           // 변경
-        newSeq.setMinValue(5);         // 변경
-        newSeq.setMaxValue(2000);      // 변경
+        newSeq.setMinValue(5L);        // 변경
+        newSeq.setMaxValue(2000L);     // 변경
 
         SchemaModel oldSchema = createSchema(oldSeq);
         SchemaModel newSchema = createSchema(newSeq);
@@ -179,7 +179,7 @@ class SequenceDifferTest {
         return schema;
     }
 
-    private SequenceModel createSequence(String name, int initialValue, int allocationSize) {
+    private SequenceModel createSequence(String name, long initialValue, int allocationSize) {
         SequenceModel seq = SequenceModel.builder().build();
         seq.setName(name);
         seq.setInitialValue(initialValue);

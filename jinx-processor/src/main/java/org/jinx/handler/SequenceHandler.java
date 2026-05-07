@@ -61,7 +61,7 @@ public class SequenceHandler {
         context.getSchemaModel().getSequences().computeIfAbsent(sg.name(), key ->
                 SequenceModel.builder()
                         .name(sg.sequenceName().isBlank() ? key : sg.sequenceName())
-                        .initialValue(sg.initialValue())
+                        .initialValue((long) sg.initialValue())
                         .schema(sg.schema().isEmpty() ? null : sg.schema())
                         .catalog(sg.catalog().isEmpty() ? null : sg.catalog())
                         .allocationSize(sg.allocationSize())

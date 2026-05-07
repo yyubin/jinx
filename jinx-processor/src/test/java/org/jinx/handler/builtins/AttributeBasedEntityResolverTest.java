@@ -92,7 +92,7 @@ class AttributeBasedEntityResolverTest {
     void schemaModelSequencesMapIsModifiable() {
         assertThat(schemaModel.getSequences()).isEmpty();
         schemaModel.getSequences().put("testSeq", org.jinx.model.SequenceModel.builder()
-            .name("testSeq").initialValue(1).build());
+            .name("testSeq").initialValue(1L).build());
         assertThat(schemaModel.getSequences()).hasSize(1);
     }
 

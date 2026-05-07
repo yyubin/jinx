@@ -23,25 +23,12 @@ class MySqlUtilTest {
             assertThat(MySqlUtil.isKeyword("myTable")).isFalse();
             assertThat(MySqlUtil.isKeyword("foo_bar")).isFalse();
         }
-    }
 
-    @Nested @DisplayName("escapeKeyword()")
-    class EscapeKeyword {
-
-        @Test @DisplayName("예약어면 뒤에 _ 를 붙여 준다")
-        void appendsUnderscoreForKeyword() {
-            assertThat(MySqlUtil.escapeKeyword("order")).isEqualTo("order_");
-            assertThat(MySqlUtil.escapeKeyword("ORDER")).isEqualTo("ORDER_");
-        }
-
-        @Test @DisplayName("예약어가 아니면 원본을 그대로 반환")
-        void returnsOriginalForNonKeyword() {
-            assertThat(MySqlUtil.escapeKeyword("employee")).isEqualTo("employee");
-        }
-
-        @Test @DisplayName("null 입력은 null 반환")
-        void nullInputReturnsNull() {
-            assertThat(MySqlUtil.escapeKeyword(null)).isNull();
+        @Test @DisplayName("null 입력 시 NPE 없이 false 반환")
+        void nullInput_returnsFalse_noNpe() {
+            assertThatCode(() -> assertThat(MySqlUtil.isKeyword(null)).isFalse())
+                    .doesNotThrowAnyException();
         }
     }
+
 }

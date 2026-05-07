@@ -299,6 +299,75 @@ class MySqlDialectTest {
         assertEquals("DROP TABLE IF EXISTS `seq_table`;\n", d.getDropTableGeneratorSql(tg));
     }
 
+    @Test @DisplayName("TableGenerator ALTER — 변경 없으면 빈 문자열")
+    void tableGenerator_alter_noChange_empty() {
+        MySqlDialect d = newDialect();
+        TableGeneratorModel tg = tg("seq_table", "k", "v", "SEQ", 1L);
+        assertTrue(d.getAlterTableGeneratorSql(tg, tg).isBlank());
+    }
+
+    @Test @DisplayName("TableGenerator ALTER — 테이블 이름 변경 → DROP + CREATE")
+    void tableGenerator_alter_tableNameChanged() {
+        MySqlDialect d = newDialect();
+        TableGeneratorModel oldTg = tg("old_seq", "k", "v", "SEQ", 1L);
+        TableGeneratorModel newTg = tg("new_seq", "k", "v", "SEQ", 1L);
+
+        String sql = d.getAlterTableGeneratorSql(newTg, oldTg);
+        assertTrue(sql.contains("DROP TABLE IF EXISTS `old_seq`"));
+        assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS `new_seq`"));
+    }
+
+    @Test @DisplayName("TableGenerator ALTER — 컬럼 이름 변경 → RENAME COLUMN (MySQL 8.0+)")
+    void tableGenerator_alter_columnRenamed() {
+        MySqlDialect d = newDialect();
+        TableGeneratorModel oldTg = tg("seq_table", "old_pk", "v", "SEQ", 1L);
+        TableGeneratorModel newTg = tg("seq_table", "new_pk", "v", "SEQ", 1L);
+
+        String sql = d.getAlterTableGeneratorSql(newTg, oldTg);
+        assertTrue(sql.contains("RENAME COLUMN `old_pk` TO `new_pk`"));
+    }
+
+    @Test @DisplayName("TableGenerator ALTER — pkColumnValue 변경 → UPDATE row key")
+    void tableGenerator_alter_pkColumnValueChanged() {
+        MySqlDialect d = newDialect();
+        TableGeneratorModel oldTg = tg("seq_table", "k", "v", "OLD", 1L);
+        TableGeneratorModel newTg = tg("seq_table", "k", "v", "NEW", 1L);
+
+        String sql = d.getAlterTableGeneratorSql(newTg, oldTg);
+        assertTrue(sql.contains("UPDATE `seq_table`"));
+        assertTrue(sql.contains("SET `k` = 'NEW'"));
+        assertTrue(sql.contains("WHERE `k` = 'OLD'"));
+    }
+
+    @Test @DisplayName("TableGenerator ALTER — initialValue 변경 → UPDATE row value")
+    void tableGenerator_alter_initialValueChanged() {
+        MySqlDialect d = newDialect();
+        TableGeneratorModel oldTg = tg("seq_table", "k", "v", "SEQ", 1L);
+        TableGeneratorModel newTg = tg("seq_table", "k", "v", "SEQ", 100L);
+
+        String sql = d.getAlterTableGeneratorSql(newTg, oldTg);
+        assertTrue(sql.contains("SET `v` = 100"));
+        assertTrue(sql.contains("WHERE `k` = 'SEQ'"));
+    }
+
+    @Test @DisplayName("TableGenerator ALTER — allocationSize만 변경 → SQL 없음")
+    void tableGenerator_alter_allocationSizeOnly_noSql() {
+        MySqlDialect d = newDialect();
+        TableGeneratorModel oldTg = tg("seq_table", "k", "v", "SEQ", 1L);
+        TableGeneratorModel newTg = TableGeneratorModel.builder()
+                .table("seq_table").pkColumnName("k").valueColumnName("v")
+                .pkColumnValue("SEQ").initialValue(1L).allocationSize(100).build();
+
+        assertTrue(d.getAlterTableGeneratorSql(newTg, oldTg).isBlank());
+    }
+
+    private TableGeneratorModel tg(String table, String pkCol, String valCol,
+                                    String pkVal, long initVal) {
+        return TableGeneratorModel.builder()
+                .table(table).pkColumnName(pkCol).valueColumnName(valCol)
+                .pkColumnValue(pkVal).initialValue(initVal).build();
+    }
+
     @Test
     @DisplayName("Enum 타입 처리: EnumType.STRING → VARCHAR(length)")
     void enumStringMapping() {
@@ -353,6 +422,65 @@ class MySqlDialectTest {
         String def = d.getColumnDefinitionSql(enumCol);
         assertTrue(def.contains("INT"), "Expected INT but got: " + def);
         assertTrue(def.contains("NOT NULL"), "Expected NOT NULL but got: " + def);
+    }
+
+    // ── getLiquibaseTypeName length/precision guard ──────────────────────────
+
+    @Test @DisplayName("getLiquibaseTypeName — String length=0 → VARCHAR(255) fallback")
+    void liquibase_string_zeroLength_fallsBack255() {
+        MySqlDialect d = newDialect();
+        ColumnModel c = liquibaseCol("java.lang.String");
+        when(c.getLength()).thenReturn(0);
+        assertEquals("VARCHAR(255)", d.getLiquibaseTypeName(c));
+    }
+
+    @Test @DisplayName("getLiquibaseTypeName — String length>0 → VARCHAR(n) 그대로")
+    void liquibase_string_positiveLength() {
+        MySqlDialect d = newDialect();
+        ColumnModel c = liquibaseCol("java.lang.String");
+        when(c.getLength()).thenReturn(100);
+        assertEquals("VARCHAR(100)", d.getLiquibaseTypeName(c));
+    }
+
+    @Test @DisplayName("getLiquibaseTypeName — BigDecimal precision=0 → DECIMAL(10,2) fallback")
+    void liquibase_bigDecimal_zeroPrecision_default() {
+        MySqlDialect d = newDialect();
+        ColumnModel c = liquibaseCol("java.math.BigDecimal");
+        when(c.getPrecision()).thenReturn(0);
+        assertEquals("DECIMAL(10,2)", d.getLiquibaseTypeName(c));
+    }
+
+    @Test @DisplayName("getLiquibaseTypeName — BigDecimal precision>0 → DECIMAL(p,s)")
+    void liquibase_bigDecimal_positivePrecision() {
+        MySqlDialect d = newDialect();
+        ColumnModel c = liquibaseCol("java.math.BigDecimal");
+        when(c.getPrecision()).thenReturn(18);
+        when(c.getScale()).thenReturn(4);
+        assertEquals("DECIMAL(18,4)", d.getLiquibaseTypeName(c));
+    }
+
+    @Test @DisplayName("getLiquibaseTypeName — enum string length=0 → VARCHAR(255) fallback")
+    void liquibase_enumString_zeroLength_fallsBack255() {
+        MySqlDialect d = newDialect();
+        ColumnModel c = liquibaseCol("com.example.Status");
+        when(c.getEnumValues()).thenReturn(new String[]{"A", "B"});
+        when(c.isEnumStringMapping()).thenReturn(true);
+        when(c.getLength()).thenReturn(0);
+        assertEquals("VARCHAR(255)", d.getLiquibaseTypeName(c));
+    }
+
+    private ColumnModel liquibaseCol(String javaType) {
+        ColumnModel c = mock(ColumnModel.class);
+        when(c.getJavaType()).thenReturn(javaType);
+        when(c.getConverterOutputType()).thenReturn(null);
+        when(c.getSqlTypeOverride()).thenReturn(null);
+        when(c.getLength()).thenReturn(255);
+        when(c.getPrecision()).thenReturn(0);
+        when(c.getScale()).thenReturn(0);
+        when(c.isLob()).thenReturn(false);
+        when(c.getEnumValues()).thenReturn(new String[]{});
+        when(c.getTemporalType()).thenReturn(null);
+        return c;
     }
 
     // --- helpers ---
