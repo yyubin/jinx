@@ -85,10 +85,11 @@ public final class DependencyResolver {
         }
 
         // Kahn's BFS: in-degree 0인 노드(의존성 없는 부모)부터 처리
+        // byName(LinkedHashMap) 삽입 순서로 초기화해 독립 테이블 간 출력 순서를 결정론적으로 유지
         Queue<String> queue = new ArrayDeque<>();
-        inDegree.forEach((name, deg) -> {
-            if (deg == 0) queue.add(name);
-        });
+        for (String name : byName.keySet()) {
+            if (inDegree.get(name) == 0) queue.add(name);
+        }
 
         List<EntityModel> sorted = new ArrayList<>(tables.size());
         while (!queue.isEmpty()) {
