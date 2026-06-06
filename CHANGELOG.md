@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.1.3] - 2026-06-06
+
+### Added
+
+- **PostgreSQL dialect** — full DDL support via `-d postgresql` (CLI), `dialect.set("postgresql")` (Gradle plugin), or `PostgreSqlDialect` (programmatic)
+  - Double-quoted identifiers
+  - `BIGSERIAL` / `SERIAL` / `SMALLSERIAL` for auto-increment columns
+  - Native `SEQUENCE` support (`@GeneratedValue(strategy = SEQUENCE)`)
+  - Type mappings: `BOOLEAN`, `uuid`, `BYTEA`, `DOUBLE PRECISION`, `REAL`, `NUMERIC(p,s)`, `TIMESTAMP WITH TIME ZONE`, `TEXT` (unknown-type fallback)
+  - Primary key constraint drop uses `{table}_pkey` naming convention
+- **FK dependency-based table ordering** (`DependencyResolver`) — `CREATE TABLE` and `DROP TABLE` statements are now automatically ordered using a topological sort over foreign key relationships; no manual ordering required regardless of entity declaration order
+  - Supported topologies: linear chains, diamond shapes, join tables, multiple independent trees
+  - `noConstraint = true` relationships are excluded from the dependency graph
+  - Circular FK detection: logs a warning to `stderr` and falls back to the original order safely
+- **Renamed table handling** — tables detected as renamed are now generated as `DROP TABLE` + `CREATE TABLE` instead of `RENAME TABLE`, consistent with the intended production behaviour
+
+### Fixed
+
+- `toLowerCase()` in `DependencyResolver` now uses `Locale.ROOT` to prevent incorrect FK matching under locale-sensitive JVM environments (e.g. Turkish locale `I` → `ı`)
+- BFS queue initialisation in `DependencyResolver` now uses `LinkedHashMap` insertion order for deterministic output when no FK dependency exists between independent tables
+
+---
+
 ## [0.1.2] - 2026-03-09
 
 ### Added
