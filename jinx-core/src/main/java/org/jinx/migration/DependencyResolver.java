@@ -43,7 +43,7 @@ public final class DependencyResolver {
         Map<String, EntityModel> byName = new LinkedHashMap<>();
         for (EntityModel entity : tables) {
             if (entity.getTableName() != null) {
-                byName.put(entity.getTableName().toLowerCase(), entity);
+                byName.put(entity.getTableName().toLowerCase(Locale.ROOT), entity);
             }
         }
 
@@ -66,14 +66,14 @@ public final class DependencyResolver {
 
         for (EntityModel entity : tables) {
             if (entity.getTableName() == null) continue;
-            String child = entity.getTableName().toLowerCase();
+            String child = entity.getTableName().toLowerCase(Locale.ROOT);
 
             Map<String, RelationshipModel> rels = entity.getRelationships();
             if (rels == null) continue;
 
             for (RelationshipModel rel : rels.values()) {
                 if (rel.isNoConstraint() || rel.getReferencedTable() == null) continue;
-                String parent = rel.getReferencedTable().toLowerCase();
+                String parent = rel.getReferencedTable().toLowerCase(Locale.ROOT);
 
                 if (!scope.contains(parent) || parent.equals(child)) continue;
 
