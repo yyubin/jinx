@@ -14,6 +14,7 @@ import org.jinx.migration.output.SqlRollbackHandler;
 import org.jinx.model.DiffResult;
 import org.jinx.migration.differs.SchemaDiffer;
 import org.jinx.migration.dialect.mysql.MySqlDialect;
+import org.jinx.migration.dialect.postgresql.PostgreSqlDialect;
 import org.jinx.model.SchemaModel;
 import picocli.CommandLine;
 
@@ -223,6 +224,14 @@ public class MigrateCommand implements Callable<Integer> {
                 yield DialectBundle.builder(mysql, DatabaseType.MYSQL)
                         .identity(mysql)
                         .tableGenerator(mysql)
+                        .build();
+            }
+            case "postgresql", "postgres" -> {
+                PostgreSqlDialect pg = new PostgreSqlDialect();
+                yield DialectBundle.builder(pg, DatabaseType.POSTGRESQL)
+                        .identity(pg)
+                        .sequence(pg)
+                        .tableGenerator(pg)
                         .build();
             }
             default -> throw new IllegalArgumentException("Unsupported dialect: " + name);
