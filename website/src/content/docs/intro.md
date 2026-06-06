@@ -9,7 +9,7 @@ Jinx analyzes your **JPA annotations at compile time**, generates **schema snaps
 [![Gradle Plugin Portal](https://img.shields.io/gradle-plugin-portal/v/io.github.yyubin.jinx)](https://plugins.gradle.org/plugin/io.github.yyubin.jinx)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/yyubin/jinx/blob/main/LICENSE)
 
-**MySQL First** · **JDK 21+ Required** · **Latest Version: 0.1.2** · **JPA 3.2.0 Supported**
+**MySQL First** · **JDK 21+ Required** · **Latest Version: 0.1.3** · **JPA 3.2.0 Supported**
 
 Liquibase YAML is supported as an output dialect, but **SQL is the primary and most thoroughly validated output format**.
 

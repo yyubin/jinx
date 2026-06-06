@@ -8,7 +8,7 @@ Jinx analyzes your **JPA annotations at compile time**, generates **schema snaps
 
 Liquibase YAML is supported as an **output dialect**, but **SQL is the primary and most thoroughly validated output format**.
 
-**MySQL First** | **JDK 21+ Required** | **Latest Version: 0.1.2** | **JPA 3.2.0 Supported**
+**MySQL & PostgreSQL** | **JDK 21+ Required** | **Latest Version: 0.1.3** | **JPA 3.2.0 Supported**
 
 ---
 
@@ -86,8 +86,8 @@ Liquibase support is **not the core model**, but a translation layer on top of S
 
 ```gradle
 dependencies {
-    annotationProcessor("io.github.yyubin:jinx-processor:0.1.2")
-    implementation("io.github.yyubin:jinx-core:0.1.2")
+    annotationProcessor("io.github.yyubin:jinx-processor:0.1.3")
+    implementation("io.github.yyubin:jinx-core:0.1.3")
 }
 ```
 
@@ -155,6 +155,17 @@ jinx db migrate \
   --liquibase
 ```
 
+```bash
+# PostgreSQL
+jinx db migrate \
+  -p build/classes/java/main/jinx \
+  -d postgresql \
+  --out build/jinx \
+  --rollback
+```
+
+> **Note:** PostgreSQL support via the CLI is currently limited. Using the Gradle plugin with `dialect.set("postgresql")` is the recommended approach for PostgreSQL projects.
+
 Example SQL output:
 
 ```sql
@@ -176,7 +187,7 @@ CREATE INDEX `ix_bird__zoo_id` ON `Bird` (`zoo_id`);
 
 ```kotlin
 plugins {
-    id("io.github.yyubin.jinx") version "0.1.2"
+    id("io.github.yyubin.jinx") version "0.1.3"
 }
 ```
 
@@ -201,6 +212,14 @@ jinx {
         format.set("sql")
         directory.set("build/jinx")
     }
+}
+```
+
+To use PostgreSQL:
+
+```kotlin
+database {
+    dialect.set("postgresql")  // or "mysql"
 }
 ```
 
@@ -308,19 +327,42 @@ compileJava {
 | ------------------ | -------------------------------------------- |
 | `db migrate`       | Generate SQL by diffing schema snapshots     |
 | `promote-baseline` | Promote the current snapshot as the baseline |
-| `-d, --dialect`    | Database dialect (mysql, etc.)               |
+| `-d, --dialect`    | Database dialect (mysql, postgresql)         |
 | `--rollback`       | Generate rollback SQL                        |
 | `--liquibase`      | Output Liquibase YAML                        |
 | `--force`          | Allow potentially destructive changes        |
 
 ---
 
+## Safe Migration Order
+
+When adding or dropping multiple tables at once, Jinx automatically determines the correct execution order using a topological sort over foreign key dependencies.
+
+**No manual ordering required** — Jinx analyzes the FK graph and produces CREATE/DROP statements in the correct order regardless of the order entities appear in your code.
+
+| Operation | Order |
+|-----------|-------|
+| `CREATE TABLE` | Parent tables before child tables |
+| `DROP TABLE` | Child tables (FK owners) before parent tables |
+
+Supported topologies:
+- Linear chains: `A → B → C`
+- Diamond shapes: `A → C`, `B → C`
+- Join tables: `AB → A`, `AB → B`
+- Multiple independent trees
+
+If a circular FK dependency is detected, Jinx logs a warning and falls back to the original order safely.
+
+---
+
 ## Supported Features
 
 * Table, column, primary key, index, and constraint diffing
+* FK dependency-based table ordering — CREATE and DROP order is automatically determined from foreign key relationships
 * Rollback SQL generation
 * Liquibase YAML output
-* MySQL dialect included (additional dialects via SPI)
+* MySQL dialect (default)
+* PostgreSQL dialect — double-quoted identifiers, BIGSERIAL/SERIAL, SEQUENCE, `BOOLEAN`, `uuid`, `BYTEA`, `DOUBLE PRECISION`, `TIMESTAMP WITH TIME ZONE`
 
 ---
 

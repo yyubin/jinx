@@ -11,7 +11,7 @@ Jinx는 **컴파일 타임에 JPA 애노테이션을 분석**하여
 Liquibase YAML도 **출력 포맷 중 하나**로 지원하지만,  
 **SQL이 주력이며 가장 많이 검증된 출력 결과**입니다.
 
-**MySQL 우선 지원** | **JDK 21+ 필요** | **최신 버전: 0.1.2** | **JPA 3.2.0 지원**
+**MySQL & PostgreSQL** | **JDK 21+ 필요** | **최신 버전: 0.1.3** | **JPA 3.2.0 지원**
 
 ---
 
@@ -98,8 +98,8 @@ Liquibase는 핵심 모델이 아니라
 
 ```gradle
 dependencies {
-    annotationProcessor("io.github.yyubin:jinx-processor:0.1.2")
-    implementation("io.github.yyubin:jinx-core:0.1.2")
+    annotationProcessor("io.github.yyubin:jinx-processor:0.1.3")
+    implementation("io.github.yyubin:jinx-core:0.1.3")
 }
 ````
 
@@ -147,6 +147,17 @@ jinx db migrate \
   --liquibase
 ```
 
+```bash
+# PostgreSQL (Gradle 플러그인 경유 권장)
+jinx db migrate \
+  -p build/classes/java/main/jinx \
+  -d postgresql \
+  --out build/jinx \
+  --rollback
+```
+
+> **참고:** CLI에서 PostgreSQL을 직접 사용하는 것은 현재 제한적으로 지원됩니다. PostgreSQL 프로젝트에는 Gradle 플러그인을 통해 `dialect.set("postgresql")`을 설정하는 방법을 권장합니다.
+
 ---
 
 ## Gradle 연동 (Spring Boot & JDK 21)
@@ -155,7 +166,7 @@ jinx db migrate \
 
 ```kotlin
 plugins {
-    id("io.github.yyubin.jinx") version "0.1.2"
+    id("io.github.yyubin.jinx") version "0.1.3"
 }
 ```
 
@@ -180,6 +191,14 @@ jinx {
         format.set("sql")
         directory.set("build/jinx")
     }
+}
+```
+
+PostgreSQL을 사용하려면:
+
+```kotlin
+database {
+    dialect.set("postgresql")  // 또는 "mysql"
 }
 ```
 
@@ -287,19 +306,42 @@ compileJava {
 | ------------------ | ------------------- |
 | `db migrate`       | 스냅샷 diff 기반 SQL 생성  |
 | `promote-baseline` | 현재 스냅샷을 기준선으로 승격    |
-| `-d, --dialect`    | 데이터베이스 방언 (mysql 등) |
+| `-d, --dialect`    | 데이터베이스 방언 (mysql, postgresql) |
 | `--rollback`       | 롤백 SQL 생성           |
 | `--liquibase`      | Liquibase YAML 출력   |
 | `--force`          | 파괴적 변경 허용           |
 
 ---
 
+## 안전한 마이그레이션 순서
+
+여러 테이블을 한 번에 추가하거나 삭제할 때, Jinx는 외래 키 의존성을 기반으로 위상정렬을 수행해 올바른 실행 순서를 자동으로 결정합니다.
+
+**수동으로 순서를 지정할 필요가 없습니다.** Jinx가 FK 그래프를 분석해 코드에서 엔티티가 등장하는 순서와 무관하게 올바른 CREATE/DROP 문을 생성합니다.
+
+| 작업 | 순서 |
+|------|------|
+| `CREATE TABLE` | 부모 테이블 → 자식 테이블 |
+| `DROP TABLE` | 자식 테이블(FK 보유) → 부모 테이블 |
+
+지원하는 구조:
+- 선형 체인: `A → B → C`
+- 다이아몬드: `A → C`, `B → C`
+- 조인 테이블: `AB → A`, `AB → B`
+- 복수의 독립 트리
+
+순환 FK가 감지되면 경고를 출력하고 원본 순서를 안전하게 유지합니다.
+
+---
+
 ## 지원 기능
 
 * 테이블 / 컬럼 / PK / 인덱스 / 제약 조건 diff
+* FK 의존성 기반 테이블 순서 결정 — 외래 키 그래프를 분석해 CREATE/DROP 순서를 자동으로 결정
 * 롤백 SQL 생성
 * Liquibase YAML 출력
-* MySQL 방언 기본 제공 (SPI로 확장 가능)
+* MySQL 방언 (기본값)
+* PostgreSQL 방언 — 큰따옴표 식별자, BIGSERIAL/SERIAL, SEQUENCE, `BOOLEAN`, `uuid`, `BYTEA`, `DOUBLE PRECISION`, `TIMESTAMP WITH TIME ZONE`
 
 ---
 
