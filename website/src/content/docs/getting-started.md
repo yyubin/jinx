@@ -19,7 +19,7 @@ The Gradle plugin handles annotation processor configuration automatically.
 
 ```kotlin
 plugins {
-    id("io.github.yyubin.jinx") version "0.1.3"
+    id("io.github.yyubin.jinx") version "0.1.4"
 }
 ```
 
@@ -49,8 +49,8 @@ jinx {
 
 ```gradle
 dependencies {
-    annotationProcessor("io.github.yyubin:jinx-processor:0.1.3")
-    implementation("io.github.yyubin:jinx-core:0.1.3")
+    annotationProcessor("io.github.yyubin:jinx-processor:0.1.4")
+    implementation("io.github.yyubin:jinx-core:0.1.4")
 }
 ```
 
